@@ -31,6 +31,7 @@ from app.models.schemas import (
     PillarPostInfo,
     MergeCandidateInfo,
     PipelineStatusResponse,
+    EcosystemVisualsResponse,
 )
 
 from app.utils.task_retry import with_retry
@@ -643,3 +644,30 @@ async def get_pipeline_status(
         completed_at=row["completed_at"],
         error=row["error"],
     )
+
+
+# ──────────────── Phase 6: Ecosystem Visuals ────────────────
+
+
+@router.get(
+    "/{site_id}/intelligence/ecosystem-visuals",
+    response_model=EcosystemVisualsResponse,
+)
+async def get_ecosystem_visuals(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get ecosystem visual metadata — rivers, grass, weather, animals, terrain features."""
+    await _verify_site(site_id, user_id, db)
+
+    from app.services.ecosystem_visuals import EcosystemVisualsService
+
+    service = EcosystemVisualsService()
+    try:
+        result = await service.compute_visuals(db, site_id)
+    except Exception as e:
+        logger.error("Ecosystem visuals computation failed for site %s: %s", site_id, e)
+        raise HTTPException(status_code=500, detail="Failed to compute ecosystem visuals")
+
+    return EcosystemVisualsResponse(**result)

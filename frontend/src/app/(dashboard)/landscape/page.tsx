@@ -10,7 +10,9 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { useSWRFetch } from '@/lib/hooks/useSWRFetch';
+import { useEcosystemVisuals } from '@/lib/hooks/useApi';
 import { EcosystemNarrative } from '@/components/landscape/EcosystemNarrative';
+import { EcosystemOverlay } from '@/components/landscape/EcosystemOverlay';
 import { ROLE_COLORS, ROLE_LABELS, TREND_ICONS, TREND_COLORS } from '@/lib/constants';
 import type { PostHealth, ClusterDetail } from '@/lib/types';
 import type { EcosystemState } from '@/lib/constants';
@@ -23,6 +25,9 @@ export default function LandscapePage() {
   const { data: clusters, isLoading, error } = useClusters(currentSite?.id ?? null);
   const [zoomedClusterId, setZoomedClusterId] = useState<string | null>(initialCluster);
   const [selectedPost, setSelectedPost] = useState<PostHealth | null>(null);
+
+  // Fetch ecosystem visuals
+  const { data: ecosystemVisuals } = useEcosystemVisuals(currentSite?.id ?? null);
 
   // Fetch all cluster details
   const clusterIds = clusters?.map((c) => c.id) ?? [];
@@ -125,6 +130,14 @@ export default function LandscapePage() {
           onZoomToCluster={handleZoomToCluster}
           zoomedClusterId={zoomedClusterId}
         />
+
+        {/* Phase 6: Living ecosystem overlay */}
+        {ecosystemVisuals && effectiveClusters.length > 0 && (
+          <EcosystemOverlay
+            visuals={ecosystemVisuals}
+            clusters={effectiveClusters}
+          />
+        )}
       </div>
 
       {/* Post detail panel */}

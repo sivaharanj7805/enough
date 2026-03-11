@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Enough — Ecosystem Landscape</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #060a13; font-family: 'Inter', sans-serif; overflow: hidden; }
+  .container { width: 1400px; height: 820px; margin: 0 auto; position: relative; }
+  canvas { display: block; }
+
+  .header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 18px 28px;
+    background: linear-gradient(180deg, rgba(6,10,19,0.97) 0%, rgba(6,10,19,0.5) 70%, rgba(6,10,19,0) 100%);
+  }
+  .header h1 { color: #e2e8f0; font-size: 18px; font-weight: 600; }
+  .header h1 span { color: #4ade80; }
+  .header .subtitle { color: #64748b; font-size: 12px; margin-top: 2px; }
+
+  .legend {
+    position: absolute; top: 70px; right: 24px;
+    background: rgba(10,15,26,0.75); backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 18px 20px; z-index: 10;
+  }
+  .legend h3 { color: #94a3b8; font-size: 10px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+  .legend-item { display: flex; align-items: center; gap: 10px; margin: 7px 0; color: #cbd5e1; font-size: 11px; }
+  .legend-dot { width: 14px; height: 10px; border-radius: 5px; }
+
+  .narrative {
+    position: absolute; top: 70px; left: 24px; max-width: 280px;
+    background: rgba(10,15,26,0.75); backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 18px 20px; z-index: 10;
+  }
+  .narrative h3 { color: #e2e8f0; font-size: 13px; margin-bottom: 8px; font-weight: 600; }
+  .narrative p { color: #94a3b8; font-size: 11.5px; line-height: 1.6; }
+  .narrative .highlight { color: #f97316; font-weight: 600; }
+  .narrative .good { color: #4ade80; font-weight: 600; }
+
+  .stats-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; gap: 32px; padding: 16px 28px;
+    background: linear-gradient(0deg, rgba(6,10,19,0.97) 0%, rgba(6,10,19,0.5) 70%, rgba(6,10,19,0) 100%);
+    z-index: 10;
+  }
+  .stat { text-align: center; }
+  .stat-value { color: #e2e8f0; font-size: 20px; font-weight: 700; }
+  .stat-label { color: #475569; font-size: 10px; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>🌿 <span>Enough</span> — acme-saas.com</h1>
+      <div class="subtitle">47 posts • 6 topic clusters • Ecosystem health 67/100</div>
+    </div>
+  </div>
+  <canvas id="canvas" width="2800" height="1640"></canvas>
+  <div class="narrative">
+    <h3>🔍 Ecosystem Insight</h3>
+    <p>Your <span class="good">"API Integration"</span> and <span class="good">"Security"</span> clusters are thriving forests.</p>
+    <p style="margin-top:8px"><span class="highlight">"Getting Started"</span> is a swamp — 8 posts cannibalizing each other. Consolidating could recover ~2,400 monthly visits.</p>
+  </div>
+  <div class="legend">
+    <h3>Biomes</h3>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(135deg,#166534,#22c55e)"></div> Forest — Thriving</div>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(135deg,#365314,#84cc16)"></div> Meadow — Balanced</div>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(135deg,#14532d,#4ade80)"></div> Seedbed — Emerging</div>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(135deg,#3f2d1a,#92400e)"></div> Swamp — Cannibalized</div>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(135deg,#78716c,#d6d3d1)"></div> Desert — Neglected</div>
+    <h3 style="margin-top:16px">Flora</h3>
+    <div class="legend-item"><div class="legend-dot" style="background:#22c55e;border-radius:50%;width:10px;height:10px"></div> Pillar — full trees</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;border-radius:50%;width:10px;height:10px"></div> Supporter — bushes</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f97316;border-radius:50%;width:10px;height:10px"></div> Competitor — dead tangles</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#6b7280;border-radius:50%;width:10px;height:10px"></div> Dead weight — stumps</div>
+  </div>
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-value">47</div><div class="stat-label">Posts</div></div>
+    <div class="stat"><div class="stat-value">6</div><div class="stat-label">Clusters</div></div>
+    <div class="stat"><div class="stat-value" style="color:#4ade80">67</div><div class="stat-label">Health</div></div>
+    <div class="stat"><div class="stat-value" style="color:#f87171">12</div><div class="stat-label">Cannibalizing</div></div>
+    <div class="stat"><div class="stat-value" style="color:#fbbf24">3</div><div class="stat-label">Quick Wins</div></div>
+    <div class="stat"><div class="stat-value">0.64</div><div class="stat-label">Efficiency</div></div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+canvas.style.width = '1400px';
+canvas.style.height = '820px';
+const ctx = canvas.getContext('2d');
+const P = 2; // pixel ratio
+
+// ═══════════════════════════════════════════
+// Procedural L-System Tree Generator
+// ═══════════════════════════════════════════
+
+// Seeded random for deterministic trees
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpColor(c1, c2, t) {
+  return [lerp(c1[0],c2[0],t), lerp(c1[1],c2[1],t), lerp(c1[2],c2[2],t)];
+}
+function rgbStr(c, a) { return `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`; }
+
+// Generate tree branch structure recursively
+function generateBranches(seed, opts) {
+  const rng = mulberry32(seed);
+  const branches = [];
+  const leaves = [];
+
+  function branch(x, y, angle, length, width, depth, maxDepth) {
+    if (depth > maxDepth || length < 2) return;
+
+    const endX = x + Math.cos(angle) * length;
+    const endY = y + Math.sin(angle) * length;
+
+    branches.push({ x1: x, y1: y, x2: endX, y2: endY, width, depth });
+
+    // At tips, add leaf clusters
+    if (depth >= maxDepth - 1 || length < opts.leafThreshold) {
+      const numLeaves = 3 + (rng() * 8) | 0;
+      for (let i = 0; i < numLeaves; i++) {
+        const lAngle = angle + (rng() - 0.5) * Math.PI;
+        const lDist = (rng() * 12 + 4) * opts.scale;
+        const lx = endX + Math.cos(lAngle) * lDist;
+        const ly = endY + Math.sin(lAngle) * lDist;
+        const lSize = (rng() * 5 + 3) * opts.scale;
+        const shade = rng(); // 0=dark 1=bright
+        leaves.push({ x: lx, y: ly, size: lSize, shade, angle: rng() * Math.PI * 2 });
+      }
+    }
+
+    // Sub-branches
+    const numChildren = depth < 2 ? (2 + (rng() * 2) | 0) : (1 + (rng() * 3) | 0);
+    for (let i = 0; i < numChildren; i++) {
+      const spread = opts.spread * (0.7 + rng() * 0.6);
+      const childAngle = angle + (rng() - 0.5) * spread;
+      const childLen = length * (opts.lengthDecay + (rng() - 0.5) * 0.15);
+      const childWidth = width * (0.6 + rng() * 0.15);
+      branch(endX, endY, childAngle, childLen, childWidth, depth + 1, maxDepth);
+    }
+  }
+
+  branch(0, 0, -Math.PI / 2 + (rng() - 0.5) * 0.15,
+    opts.trunkLength, opts.trunkWidth, 0, opts.maxDepth);
+
+  return { branches, leaves };
+}
+
+// Pre-generate all trees for each cluster
+const clusters = [
+  { label: 'API Integration', state: 'forest', health: 82, x: 350, y: 310, rx: 145, ry: 95,
+    posts: [
+      { role: 'pillar', t: 4200 }, { role: 'pillar', t: 3100 },
+      { role: 'supporter', t: 1800 }, { role: 'supporter', t: 1200 },
+      { role: 'supporter', t: 900 }, { role: 'supporter', t: 600 }, { role: 'supporter', t: 450 },
+    ]},
+  { label: 'Getting Started', state: 'swamp', health: 31, x: 660, y: 410, rx: 155, ry: 105,
+    posts: [
+      { role: 'competitor', t: 2100 }, { role: 'competitor', t: 1900 },
+      { role: 'competitor', t: 1700 }, { role: 'competitor', t: 1400 },
+      { role: 'competitor', t: 1100 }, { role: 'dead_weight', t: 200 },
+      { role: 'dead_weight', t: 150 }, { role: 'dead_weight', t: 80 },
+    ]},
+  { label: 'Security', state: 'forest', health: 78, x: 1020, y: 290, rx: 135, ry: 88,
+    posts: [
+      { role: 'pillar', t: 5500 }, { role: 'supporter', t: 2200 },
+      { role: 'supporter', t: 1500 }, { role: 'supporter', t: 800 }, { role: 'supporter', t: 600 },
+    ]},
+  { label: 'Pricing', state: 'desert', health: 22, x: 230, y: 560, rx: 88, ry: 58,
+    posts: [{ role: 'dead_weight', t: 300 }, { role: 'dead_weight', t: 120 }]},
+  { label: 'Release Notes', state: 'meadow', health: 65, x: 560, y: 590, rx: 115, ry: 72,
+    posts: [
+      { role: 'pillar', t: 3200 }, { role: 'supporter', t: 1100 },
+      { role: 'supporter', t: 900 }, { role: 'supporter', t: 700 },
+    ]},
+  { label: 'Dev Tools', state: 'seedbed', health: 55, x: 880, y: 545, rx: 100, ry: 62,
+    posts: [
+      { role: 'pillar', t: 1800 }, { role: 'supporter', t: 400 }, { role: 'supporter', t: 300 },
+    ]},
+];
+
+// Leaf color palettes per role
+const LEAF_COLORS = {
+  pillar:      { dark: [22,83,45], mid: [21,128,61], bright: [74,222,128], highlight: [187,247,208] },
+  supporter:   { dark: [30,64,175], mid: [37,99,235], bright: [96,165,250], highlight: [191,219,254] },
+  competitor:  { dark: [146,64,14], mid: [234,88,12], bright: [251,146,60], highlight: [254,215,170] },
+  dead_weight: { dark: [55,65,81], mid: [75,85,99], bright: [107,114,128], highlight: [156,163,175] },
+};
+
+// Bark colors per role
+const BARK_COLORS = {
+  pillar:      { base: [74,55,40], dark: [50,35,25] },
+  supporter:   { base: [65,50,38], dark: [45,32,22] },
+  competitor:  { base: [80,50,30], dark: [55,35,18] },
+  dead_weight: { base: [60,60,60], dark: [40,40,40] },
+};
+
+// Tree generation options per role
+const TREE_OPTS = {
+  pillar: { trunkLength: 55, trunkWidth: 5, maxDepth: 6, spread: 1.1, lengthDecay: 0.68, leafThreshold: 12, scale: 1.0 },
+  supporter: { trunkLength: 25, trunkWidth: 3, maxDepth: 5, spread: 1.4, lengthDecay: 0.65, leafThreshold: 8, scale: 0.7 },
+  competitor: { trunkLength: 35, trunkWidth: 3.5, maxDepth: 5, spread: 1.6, lengthDecay: 0.6, leafThreshold: 10, scale: 0.8 },
+  dead_weight: { trunkLength: 18, trunkWidth: 4, maxDepth: 3, spread: 0.8, lengthDecay: 0.55, leafThreshold: 20, scale: 0.6 },
+};
+
+// Pre-generate all tree data
+const treeData = [];
+let seedCounter = 42;
+clusters.forEach((cluster, ci) => {
+  const maxT = Math.max(...cluster.posts.map(p => p.t), 1);
+  cluster.posts.forEach((post, pi) => {
+    const angle = (pi / Math.max(cluster.posts.length, 1)) * Math.PI * 2 + 0.3;
+    const dist = cluster.rx * 0.25 + (pi % 3) * cluster.rx * 0.18;
+    const px = cluster.x + Math.cos(angle) * dist;
+    const py = cluster.y + Math.sin(angle) * dist * 0.6;
+    const tScale = 0.5 + (post.t / maxT) * 0.5;
+
+    const opts = { ...TREE_OPTS[post.role] };
+    opts.trunkLength *= tScale;
+    opts.trunkWidth *= tScale;
+    opts.scale *= tScale;
+
+    const { branches, leaves } = generateBranches(seedCounter++, opts);
+    treeData.push({ x: px, y: py, role: post.role, branches, leaves, scale: tScale, seed: seedCounter });
+  });
+});
+
+// Fireflies
+const fireflies = [];
+for (let i = 0; i < 35; i++) {
+  fireflies.push({
+    x: 100 + Math.random() * 1200, y: 100 + Math.random() * 600,
+    vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.15,
+    r: 1.5 + Math.random() * 2, phase: Math.random() * Math.PI * 2,
+    speed: 0.015 + Math.random() * 0.025,
+    color: ['#4ade80','#86efac','#fbbf24','#60a5fa'][Math.floor(Math.random()*4)],
+  });
+}
+
+// Floating leaves
+const floatingLeaves = [];
+for (let i = 0; i < 20; i++) {
+  floatingLeaves.push({
+    x: Math.random() * 1500, y: Math.random() * 800,
+    vx: 0.2 + Math.random() * 0.6, vy: 0.05 + Math.random() * 0.2,
+    rot: Math.random() * Math.PI * 2, rotSpeed: (Math.random()-0.5)*0.03,
+    size: 3 + Math.random() * 5, wobblePhase: Math.random() * Math.PI * 2,
+    color: ['#22c55e','#4ade80','#86efac','#a3e635','#fbbf24','#fb923c'][Math.floor(Math.random()*6)],
+    opacity: 0.25 + Math.random() * 0.35,
+  });
+}
+
+// Embers from swamp
+const embers = [];
+for (let i = 0; i < 15; i++) {
+  embers.push({
+    x: clusters[1].x + (Math.random()-0.5)*clusters[1].rx*1.2,
+    y: clusters[1].y + (Math.random()-0.5)*clusters[1].ry*0.5,
+    vy: -0.15 - Math.random()*0.4, vx: (Math.random()-0.5)*0.15,
+    life: Math.random(), r: 1+Math.random()*1.5,
+  });
+}
+
+// Fog
+const fogLayers = [];
+for (let i = 0; i < 6; i++) {
+  fogLayers.push({
+    x: Math.random()*1600-200, y: 200+Math.random()*500,
+    w: 200+Math.random()*400, h: 30+Math.random()*70,
+    vx: 0.04+Math.random()*0.1, opacity: 0.012+Math.random()*0.018,
+  });
+}
+
+// Stars
+const stars = [];
+for (let i = 0; i < 80; i++) {
+  stars.push({ x: Math.random()*1400, y: Math.random()*820, r: 0.3+Math.random()*1,
+    phase: Math.random()*Math.PI*2, speed: 0.008+Math.random()*0.015 });
+}
+
+const groundColors = {
+  forest:  { inner: [26,71,46], glow: [34,197,94], border: [45,107,79] },
+  swamp:   { inner: [42,40,16], glow: [234,179,8], border: [74,90,47] },
+  desert:  { inner: [61,48,32], glow: [168,140,100], border: [120,100,75] },
+  seedbed: { inner: [26,61,32], glow: [74,222,128], border: [61,122,52] },
+  meadow:  { inner: [26,61,26], glow: [132,204,22], border: [77,139,77] },
+};
+
+function scoreColor(s) { return s >= 70 ? '#4ade80' : s >= 40 ? '#fbbf24' : '#f87171'; }
+
+// ─── Draw functions ───
+
+function drawGround(cluster, time) {
+  const c = groundColors[cluster.state];
+  const cx = cluster.x*P, cy = cluster.y*P, rx = cluster.rx*P, ry = cluster.ry*P;
+
+  // Outer glow
+  const og = ctx.createRadialGradient(cx, cy, rx*0.2, cx, cy, rx*1.8);
+  og.addColorStop(0, rgbStr(c.glow, 0.07));
+  og.addColorStop(0.5, rgbStr(c.glow, 0.02));
+  og.addColorStop(1, 'rgba(6,10,19,0)');
+  ctx.fillStyle = og;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx*1.8, ry*1.5, 0, 0, Math.PI*2); ctx.fill();
+
+  // Main ground
+  const mg = ctx.createRadialGradient(cx, cy-ry*0.1, 0, cx, cy, rx);
+  mg.addColorStop(0, rgbStr(c.inner, 0.8));
+  mg.addColorStop(0.6, rgbStr(c.inner, 0.4));
+  mg.addColorStop(1, rgbStr(c.inner, 0));
+  ctx.fillStyle = mg;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); ctx.fill();
+
+  // Border
+  ctx.strokeStyle = rgbStr(c.border, 0.15 + Math.sin(time*0.5)*0.04);
+  ctx.lineWidth = 1.5*P;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); ctx.stroke();
+
+  // State textures
+  if (cluster.state === 'swamp') {
+    for (let i = 0; i < 6; i++) {
+      const a = (i/6)*Math.PI*2 + time*0.08;
+      const d = cluster.rx*0.3 + Math.sin(time*0.3+i)*cluster.rx*0.08;
+      ctx.fillStyle = `rgba(30,25,5,${0.25+Math.sin(time*0.5+i)*0.08})`;
+      ctx.beginPath();
+      ctx.ellipse(cx+Math.cos(a)*d*P, cy+Math.sin(a)*d*0.6*P, (10+i*3)*P, (5+i*1.5)*P, a*0.2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  } else if (cluster.state === 'meadow') {
+    const fc = ['#fbbf24','#fb923c','#f472b6','#a78bfa','#60a5fa','#4ade80','#f87171','#e879f9'];
+    for (let i = 0; i < 14; i++) {
+      const a = (i/14)*Math.PI*2, d = cluster.rx*0.15+(i%3)*cluster.rx*0.15;
+      const fx = cx + Math.cos(a)*d*P + Math.sin(time*0.4+i)*2*P;
+      const fy = cy + Math.sin(a)*d*0.6*P;
+      ctx.globalAlpha = 0.3+Math.sin(time*0.8+i*0.7)*0.1;
+      ctx.fillStyle = fc[i%fc.length];
+      ctx.beginPath(); ctx.arc(fx, fy, (2+Math.sin(time+i)*0.5)*P, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else if (cluster.state === 'desert') {
+    for (let i = 0; i < 5; i++) {
+      const a = Math.PI*0.3+i*0.5, len = cluster.rx*(0.15+i*0.06);
+      ctx.strokeStyle = `rgba(168,140,100,${0.12})`;
+      ctx.lineWidth = 0.5*P;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(a)*10*P, cy+Math.sin(a)*6*P);
+      ctx.lineTo(cx+Math.cos(a)*len*P, cy+Math.sin(a)*len*0.6*P);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawTreeEntity(tree, time) {
+  const { x, y, role, branches, leaves: leafData } = tree;
+  const barkC = BARK_COLORS[role];
+  const leafC = LEAF_COLORS[role];
+  const tx = x * P, ty = y * P;
+
+  // Wind sway per depth
+  const windStrength = role === 'dead_weight' ? 0 : 1;
+  const windBase = Math.sin(time * 1.0 + x * 0.02) * 2 * windStrength;
+
+  // Shadow on ground
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(tx, ty + 4*P, 18*tree.scale*P, 5*tree.scale*P, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Draw branches (back to front by depth)
+  const sortedBranches = [...branches].sort((a,b) => a.depth - b.depth);
+  sortedBranches.forEach(b => {
+    const depthSway = windBase * (b.depth * 0.4);
+    const sx1 = tx + b.x1 * P + depthSway * 0.5 * P;
+    const sy1 = ty + b.y1 * P;
+    const sx2 = tx + b.x2 * P + depthSway * P;
+    const sy2 = ty + b.y2 * P;
+
+    // Branch with taper
+    const w = Math.max(b.width * P * 0.8, 0.5*P);
+    const darkness = 1 - b.depth * 0.08;
+    const col = lerpColor(barkC.dark, barkC.base, darkness);
+
+    ctx.strokeStyle = rgbStr(col, 0.9);
+    ctx.lineWidth = w;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(sx1, sy1);
+
+    // Slight curve for organic feel
+    const mx = (sx1+sx2)/2 + depthSway*0.3*P;
+    const my = (sy1+sy2)/2;
+    ctx.quadraticCurveTo(mx, my, sx2, sy2);
+    ctx.stroke();
+  });
+
+  // Draw leaves — sorted by y for depth
+  const sortedLeaves = [...leafData].sort((a,b) => a.y - b.y);
+  sortedLeaves.forEach(leaf => {
+    const depthSway = windBase * 1.2;
+    const lx = tx + leaf.x * P + depthSway * P + Math.sin(time*1.5 + leaf.angle)*1.5*P;
+    const ly = ty + leaf.y * P + Math.cos(time*0.8 + leaf.x*0.1)*0.8*P;
+
+    // Leaf color based on shade value
+    let col;
+    if (leaf.shade < 0.25) col = leafC.dark;
+    else if (leaf.shade < 0.5) col = leafC.mid;
+    else if (leaf.shade < 0.8) col = leafC.bright;
+    else col = leafC.highlight;
+
+    const size = leaf.size * P;
+
+    // Leaf shape — small ellipse rotated
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(leaf.angle + Math.sin(time + leaf.x) * 0.15);
+
+    // Soft glow behind leaf cluster
+    if (leaf.shade > 0.7) {
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = rgbStr(leafC.highlight, 1);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, size*1.5, size, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 0.75 + leaf.shade * 0.2;
+    ctx.fillStyle = rgbStr(col, 1);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size, size * 0.65, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  });
+}
+
+// ─── Main render ───
+function render(timestamp) {
+  const time = timestamp * 0.001;
+  ctx.clearRect(0, 0, 2800, 1640);
+
+  // Background gradient
+  const bg = ctx.createLinearGradient(0, 0, 0, 1640);
+  bg.addColorStop(0, '#060a13');
+  bg.addColorStop(0.3, '#0a1020');
+  bg.addColorStop(1, '#060a13');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 2800, 1640);
+
+  // Stars
+  stars.forEach(s => {
+    const tw = 0.08 + (Math.sin(time*s.speed*10+s.phase)+1)*0.12;
+    ctx.fillStyle = `rgba(226,232,240,${tw})`;
+    ctx.beginPath(); ctx.arc(s.x*P, s.y*P, s.r*P, 0, Math.PI*2); ctx.fill();
+  });
+
+  // Fog
+  fogLayers.forEach(f => {
+    f.x += f.vx;
+    if (f.x > 1600) f.x = -f.w;
+    const fg = ctx.createRadialGradient(f.x*P, f.y*P, 0, f.x*P, f.y*P, f.w*P*0.5);
+    fg.addColorStop(0, `rgba(100,180,130,${f.opacity})`);
+    fg.addColorStop(1, 'rgba(100,180,130,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.ellipse(f.x*P, f.y*P, f.w*P*0.5, f.h*P*0.5, 0, 0, Math.PI*2); ctx.fill();
+  });
+
+  // Connection paths
+  const conns = [[0,1],[1,4],[2,0],[4,5],[3,1],[2,5]];
+  conns.forEach(([a,b]) => {
+    const ca = clusters[a], cb = clusters[b];
+    ctx.strokeStyle = `rgba(74,222,128,${0.035+Math.sin(time*0.5+a+b)*0.012})`;
+    ctx.lineWidth = 1.5*P;
+    ctx.setLineDash([8*P,10*P]);
+    ctx.beginPath();
+    ctx.moveTo(ca.x*P, ca.y*P);
+    const mx = (ca.x+cb.x)/2+Math.sin(time*0.3+a)*15;
+    const my = (ca.y+cb.y)/2+Math.cos(time*0.2+b)*10;
+    ctx.quadraticCurveTo(mx*P, my*P, cb.x*P, cb.y*P);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // Grounds
+  clusters.forEach(c => drawGround(c, time));
+
+  // Sort trees by y for depth ordering
+  const sortedTrees = [...treeData].sort((a,b) => a.y - b.y);
+  sortedTrees.forEach(tree => drawTreeEntity(tree, time));
+
+  // Labels + badges
+  ctx.textAlign = 'center';
+  ctx.font = `600 ${13*P}px Inter, sans-serif`;
+  clusters.forEach(c => {
+    const emoji = {forest:'🌲',swamp:'🪴',desert:'🏜️',seedbed:'🌱',meadow:'🌻'}[c.state];
+    const gc = groundColors[c.state];
+    ctx.shadowColor = rgbStr(gc.glow, 0.4);
+    ctx.shadowBlur = 12*P;
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(`${emoji} ${c.label}`, c.x*P, (c.y-c.ry-18)*P);
+    ctx.shadowBlur = 0;
+
+    const bx = (c.x+c.rx*0.65)*P, by = (c.y-c.ry*0.55)*P;
+    const sc = scoreColor(c.health);
+    ctx.fillStyle = 'rgba(10,15,26,0.85)';
+    ctx.beginPath(); ctx.roundRect(bx-18*P, by-11*P, 36*P, 22*P, 11*P); ctx.fill();
+    ctx.strokeStyle = sc; ctx.lineWidth = 1.5*P;
+    ctx.beginPath(); ctx.roundRect(bx-18*P, by-11*P, 36*P, 22*P, 11*P); ctx.stroke();
+    ctx.font = `700 ${11*P}px Inter, sans-serif`;
+    ctx.fillStyle = sc;
+    ctx.fillText(c.health.toString(), bx, by+5*P);
+    ctx.font = `600 ${13*P}px Inter, sans-serif`;
+  });
+
+  // Fireflies
+  fireflies.forEach(f => {
+    f.x += f.vx + Math.sin(time*0.5+f.phase)*0.12;
+    f.y += f.vy + Math.cos(time*0.4+f.phase)*0.08;
+    if (f.x<50) f.x=1350; if (f.x>1350) f.x=50;
+    if (f.y<50) f.y=750; if (f.y>750) f.y=50;
+    const pulse = (Math.sin(time*f.speed*50+f.phase)+1)*0.5;
+    const opacity = 0.08+pulse*0.45;
+    const r = f.r*(0.7+pulse*0.3);
+    const gf = ctx.createRadialGradient(f.x*P,f.y*P,0,f.x*P,f.y*P,r*5*P);
+    gf.addColorStop(0, f.color.replace(')',`,${opacity*0.25})`).replace('#','')); // fallback
+    gf.addColorStop(0, `rgba(74,222,128,${opacity*0.2})`);
+    gf.addColorStop(1, 'rgba(74,222,128,0)');
+    ctx.fillStyle = gf;
+    ctx.beginPath(); ctx.arc(f.x*P,f.y*P,r*5*P,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = f.color;
+    ctx.beginPath(); ctx.arc(f.x*P,f.y*P,r*P,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // Floating leaves
+  floatingLeaves.forEach(l => {
+    l.x += l.vx; l.y += l.vy + Math.sin(time*2+l.wobblePhase)*0.2;
+    l.rot += l.rotSpeed;
+    if (l.x>1500) { l.x=-20; l.y=Math.random()*600+100; }
+    ctx.save();
+    ctx.translate(l.x*P, l.y*P); ctx.rotate(l.rot);
+    ctx.globalAlpha = l.opacity;
+    ctx.fillStyle = l.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -l.size*P);
+    ctx.quadraticCurveTo(l.size*0.6*P, -l.size*0.3*P, 0, l.size*0.3*P);
+    ctx.quadraticCurveTo(-l.size*0.6*P, -l.size*0.3*P, 0, -l.size*P);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  });
+
+  // Embers from swamp
+  embers.forEach(e => {
+    e.y+=e.vy; e.x+=e.vx+Math.sin(time*2+e.x*0.1)*0.1; e.life-=0.003;
+    if (e.life<=0) { e.x=clusters[1].x+(Math.random()-0.5)*clusters[1].rx*1.2; e.y=clusters[1].y; e.life=1; }
+    const a=e.life*0.5, r=e.r*e.life;
+    const eg=ctx.createRadialGradient(e.x*P,e.y*P,0,e.x*P,e.y*P,r*3*P);
+    eg.addColorStop(0,`rgba(251,191,36,${a*0.3})`); eg.addColorStop(1,'rgba(251,191,36,0)');
+    ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(e.x*P,e.y*P,r*3*P,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=`rgba(251,191,36,${a})`; ctx.beginPath(); ctx.arc(e.x*P,e.y*P,r*P,0,Math.PI*2); ctx.fill();
+  });
+
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

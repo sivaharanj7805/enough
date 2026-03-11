@@ -456,3 +456,57 @@ class SubscriptionResponse(BaseModel):
 class PortalResponse(BaseModel):
     """Stripe customer portal URL."""
     portal_url: str
+
+
+# ──────────────────────────── Phase 6: Living Ecosystem ────────────────────────────
+
+class RiverData(BaseModel):
+    """Internal link flow between two clusters."""
+    from_cluster_id: str
+    to_cluster_id: str
+    forward_links: int
+    backward_links: int
+    total_links: int
+    bidirectional_ratio: float
+    width: float
+    quality: str  # sparkling, clear, murky, toxic
+
+
+class GrassData(BaseModel):
+    """Content freshness ground cover for a cluster."""
+    state: str  # fresh, maintained, overgrown, dead
+    avg_days_old: int
+    oldest_post_days: int | None = None
+    newest_post_days: int | None = None
+
+
+class WeatherData(BaseModel):
+    """Traffic trend weather for a cluster."""
+    state: str  # sunny, cloudy, rain, storm, fog
+    recent_traffic: int
+    previous_traffic: int
+    change_percent: float | None = None
+
+
+class AnimalData(BaseModel):
+    """User behavior animal for a cluster."""
+    type: str  # birds, foxes, deer, bees, vultures
+    count: int
+    meaning: str
+
+
+class TerrainFeature(BaseModel):
+    """Structural issue terrain feature for a cluster."""
+    type: str  # boulders, erosion, mushrooms
+    count: int
+    meaning: str
+
+
+class EcosystemVisualsResponse(BaseModel):
+    """Full ecosystem visual metadata payload."""
+    rivers: list[RiverData]
+    grass: dict[str, GrassData]
+    weather: dict[str, WeatherData]
+    animals: dict[str, list[AnimalData]]
+    water_quality_note: str | None = None
+    terrain_features: dict[str, list[TerrainFeature]]

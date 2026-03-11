@@ -13,6 +13,7 @@ import type {
   CalendarResponse,
   RedirectStatusResponse,
 } from '@/lib/types';
+import type { EcosystemVisualsResponse } from '@/lib/types/phase6';
 
 export function useSites() {
   return useSWRFetch<SiteListResponse>('/sites');
@@ -69,5 +70,13 @@ export function useCalendar(siteId: string | null) {
 export function useRedirectStatus(siteId: string | null) {
   return useSWRFetch<RedirectStatusResponse>(
     siteId ? `/sites/${siteId}/redirects/status` : null
+  );
+}
+
+// ─── Phase 6: Living Ecosystem ───────────────────
+
+export function useEcosystemVisuals(siteId: string | null) {
+  return useSWRFetch<EcosystemVisualsResponse>(
+    siteId ? `/sites/${siteId}/intelligence/ecosystem-visuals` : null
   );
 }
