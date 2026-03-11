@@ -290,3 +290,14 @@ class OracleVerdictResponse(BaseModel):
     similar_posts: list[SimilarPostInfo]
     cluster_state: str | None
     recommendation: str
+
+
+class PipelineStatusResponse(BaseModel):
+    """Intelligence pipeline job status."""
+    site_id: UUID
+    status: str  # idle, running, completed, failed
+    current_step: str | None = None
+    steps_completed: list[str] = []
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None

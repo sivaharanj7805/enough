@@ -162,6 +162,18 @@ CREATE TABLE post_health_scores (
     calculated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Intelligence pipeline job tracking
+CREATE TABLE pipeline_jobs (
+    site_id UUID PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'completed', 'failed')),
+    current_step TEXT CHECK (current_step IN ('clustering', 'cannibalization', 'health_scoring', NULL)),
+    steps_completed TEXT[] DEFAULT '{}',
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    error TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Indexes
 CREATE INDEX idx_posts_site_id ON posts(site_id);
 CREATE INDEX idx_posts_url ON posts(url);

@@ -3,6 +3,8 @@
 Computes composite health scores from traffic, ranking, trend, and link metrics.
 Assigns roles (pillar, supporter, competitor, dead_weight) and ecosystem states
 (forest, swamp, desert, seedbed, meadow).
+
+Optimized: uses batched CTEs instead of per-post queries to minimize DB round trips.
 """
 
 import logging
@@ -63,12 +65,15 @@ class HealthScorer:
     async def _score_cluster(
         self, db: asyncpg.Connection, cluster_id: UUID, site_id: UUID,
     ) -> int:
-        """Score all posts in a cluster and assign ecosystem state."""
+        """Score all posts in a cluster and assign ecosystem state.
+
+        Uses batched queries: one query per metric type instead of per-post.
+        """
         now = datetime.now(timezone.utc)
         ninety_days_ago = now - timedelta(days=90)
         thirty_days_ago = now - timedelta(days=30)
 
-        # Get all posts in cluster
+        # ── Batch 1: Get all posts in cluster ──
         post_rows = await db.fetch(
             """
             SELECT p.id, p.title, p.url, p.publish_date, p.word_count
@@ -82,39 +87,78 @@ class HealthScorer:
         if not post_rows:
             return 0
 
-        # Gather per-post metrics
-        post_metrics: list[dict] = []
+        post_ids = [r["id"] for r in post_rows]
 
-        # Cluster-level traffic total (90 days)
-        cluster_traffic = 0
-        for row in post_rows:
-            pv = await db.fetchval(
-                """
-                SELECT COALESCE(SUM(pageviews), 0)
-                FROM ga4_metrics
-                WHERE post_id = $1 AND date >= $2
-                """,
-                row["id"], ninety_days_ago.date(),
+        # ── Batch 2: Traffic per post (90 days) — single query ──
+        traffic_rows = await db.fetch(
+            """
+            SELECT post_id, COALESCE(SUM(pageviews), 0) AS total_pv
+            FROM ga4_metrics
+            WHERE post_id = ANY($1::uuid[])
+              AND date >= $2
+            GROUP BY post_id
+            """,
+            post_ids, ninety_days_ago.date(),
+        )
+        traffic_map: dict[UUID, int] = {r["post_id"]: r["total_pv"] for r in traffic_rows}
+        cluster_traffic = sum(traffic_map.values())
+
+        # ── Batch 3: Average position per post (90 days) — single query ──
+        position_rows = await db.fetch(
+            """
+            SELECT post_id, AVG(avg_position) AS avg_pos
+            FROM gsc_metrics
+            WHERE post_id = ANY($1::uuid[])
+              AND date >= $2
+            GROUP BY post_id
+            """,
+            post_ids, ninety_days_ago.date(),
+        )
+        position_map: dict[UUID, float] = {
+            r["post_id"]: float(r["avg_pos"]) for r in position_rows if r["avg_pos"] is not None
+        }
+
+        # ── Batch 4: Daily traffic for trend calculation — single query ──
+        daily_rows = await db.fetch(
+            """
+            SELECT post_id, date, SUM(pageviews) AS pv
+            FROM ga4_metrics
+            WHERE post_id = ANY($1::uuid[])
+              AND date >= $2
+            GROUP BY post_id, date
+            ORDER BY post_id, date
+            """,
+            post_ids, ninety_days_ago.date(),
+        )
+        # Group by post_id
+        daily_map: dict[UUID, list[dict]] = {}
+        for r in daily_rows:
+            daily_map.setdefault(r["post_id"], []).append(
+                {"date": r["date"], "pv": r["pv"]}
             )
-            cluster_traffic += pv
 
-        # Max internal links in cluster (for normalization)
-        max_links = 1  # Avoid division by zero
-        for row in post_rows:
-            links = await db.fetchval(
-                """
-                SELECT COUNT(*) FROM (
-                    SELECT id FROM internal_links WHERE source_post_id = $1
-                    UNION ALL
-                    SELECT id FROM internal_links WHERE target_post_id = $1
-                ) combined
-                """,
-                row["id"],
-            )
-            max_links = max(max_links, links)
+        # ── Batch 5: Internal link counts — single query ──
+        link_rows = await db.fetch(
+            """
+            SELECT post_id, SUM(cnt) AS total_links FROM (
+                SELECT source_post_id AS post_id, COUNT(*) AS cnt
+                FROM internal_links
+                WHERE source_post_id = ANY($1::uuid[])
+                GROUP BY source_post_id
+                UNION ALL
+                SELECT target_post_id AS post_id, COUNT(*) AS cnt
+                FROM internal_links
+                WHERE target_post_id = ANY($1::uuid[])
+                GROUP BY target_post_id
+            ) combined
+            GROUP BY post_id
+            """,
+            post_ids,
+        )
+        link_map: dict[UUID, int] = {r["post_id"]: r["total_links"] for r in link_rows}
+        max_links = max(link_map.values()) if link_map else 1
 
-        # Cannibalization post IDs (medium+ severity)
-        cannibalizing_post_ids = set()
+        # ── Batch 6: Cannibalizing post IDs (medium+ severity) — single query ──
         cannibal_rows = await db.fetch(
             """
             SELECT post_a_id, post_b_id FROM cannibalization_pairs
@@ -122,65 +166,34 @@ class HealthScorer:
             """,
             cluster_id,
         )
+        cannibalizing_post_ids: set[UUID] = set()
         for cr in cannibal_rows:
             cannibalizing_post_ids.add(cr["post_a_id"])
             cannibalizing_post_ids.add(cr["post_b_id"])
+
+        # ── Score each post (no DB calls in this loop) ──
+        post_metrics: list[dict] = []
 
         for row in post_rows:
             post_id = row["id"]
 
             # 1. Traffic contribution
-            post_pageviews = await db.fetchval(
-                """
-                SELECT COALESCE(SUM(pageviews), 0)
-                FROM ga4_metrics
-                WHERE post_id = $1 AND date >= $2
-                """,
-                post_id, ninety_days_ago.date(),
-            )
+            post_pageviews = traffic_map.get(post_id, 0)
             traffic_contribution = (
                 post_pageviews / cluster_traffic if cluster_traffic > 0 else 0.0
             )
 
             # 2. Ranking strength
-            avg_pos_row = await db.fetchrow(
-                """
-                SELECT AVG(avg_position) AS avg_pos
-                FROM gsc_metrics
-                WHERE post_id = $1 AND date >= $2
-                """,
-                post_id, ninety_days_ago.date(),
-            )
-            avg_position = (
-                avg_pos_row["avg_pos"] if avg_pos_row and avg_pos_row["avg_pos"] else 100.0
-            )
+            avg_position = position_map.get(post_id, 100.0)
             ranking_strength = max(0.0, 1.0 - (avg_position - 1.0) / 50.0)
 
-            # 3. Trend (linear regression on daily traffic, last 90 days)
-            daily_rows = await db.fetch(
-                """
-                SELECT date, SUM(pageviews) AS pv
-                FROM ga4_metrics
-                WHERE post_id = $1 AND date >= $2
-                GROUP BY date
-                ORDER BY date
-                """,
-                post_id, ninety_days_ago.date(),
-            )
-            trend, trend_score = _compute_trend(daily_rows)
+            # 3. Trend
+            daily_data = daily_map.get(post_id, [])
+            trend, trend_score = _compute_trend(daily_data)
 
             # 4. Internal link score
-            link_count = await db.fetchval(
-                """
-                SELECT COUNT(*) FROM (
-                    SELECT id FROM internal_links WHERE source_post_id = $1
-                    UNION ALL
-                    SELECT id FROM internal_links WHERE target_post_id = $1
-                ) combined
-                """,
-                post_id,
-            )
-            internal_link_score = link_count / max_links
+            link_count = link_map.get(post_id, 0)
+            internal_link_score = link_count / max_links if max_links > 0 else 0.0
 
             # 5. Composite score (0-100)
             composite = (
@@ -196,27 +209,37 @@ class HealthScorer:
                 composite, traffic_contribution, post_pageviews, is_cannibalizing,
             )
 
-            # Store health score
-            await db.execute(
-                """
-                INSERT INTO post_health_scores
-                    (post_id, traffic_contribution, ranking_strength,
-                     trend, internal_link_score, composite_score, role)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                """,
-                post_id, traffic_contribution, ranking_strength,
-                trend, internal_link_score, composite, role,
-            )
-
             post_metrics.append({
                 "post_id": post_id,
                 "composite": composite,
-                "traffic": post_pageviews,
+                "traffic_contribution": traffic_contribution,
+                "ranking_strength": ranking_strength,
                 "trend": trend,
+                "trend_score": trend_score,
+                "internal_link_score": internal_link_score,
+                "role": role,
+                "traffic": post_pageviews,
                 "publish_date": row["publish_date"],
             })
 
-        # Cluster-level health and ecosystem state
+        # ── Batch insert all health scores — single executemany ──
+        await db.executemany(
+            """
+            INSERT INTO post_health_scores
+                (post_id, traffic_contribution, ranking_strength,
+                 trend, internal_link_score, composite_score, role)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """,
+            [
+                (
+                    m["post_id"], m["traffic_contribution"], m["ranking_strength"],
+                    m["trend"], m["internal_link_score"], m["composite"], m["role"],
+                )
+                for m in post_metrics
+            ],
+        )
+
+        # ── Cluster-level health and ecosystem state ──
         if post_metrics:
             total_traffic = sum(m["traffic"] for m in post_metrics)
             if total_traffic > 0:
@@ -248,7 +271,7 @@ class HealthScorer:
         return len(post_metrics)
 
 
-def _compute_trend(daily_rows: list) -> tuple[str, float]:
+def _compute_trend(daily_rows: list[dict]) -> tuple[str, float]:
     """Compute traffic trend via linear regression.
 
     Returns (trend_label, trend_score) where score is 0.0-1.0.
@@ -261,13 +284,10 @@ def _compute_trend(daily_rows: list) -> tuple[str, float]:
     y = np.array(pageviews, dtype=np.float64)
 
     # Simple linear regression
-    n = len(x)
     x_mean = x.mean()
     y_mean = y.mean()
-    slope = (
-        np.sum((x - x_mean) * (y - y_mean)) / np.sum((x - x_mean) ** 2)
-        if np.sum((x - x_mean) ** 2) > 0 else 0.0
-    )
+    denom = np.sum((x - x_mean) ** 2)
+    slope = np.sum((x - x_mean) * (y - y_mean)) / denom if denom > 0 else 0.0
 
     # Normalize slope as weekly percentage change
     avg_traffic = y_mean if y_mean > 0 else 1.0
@@ -308,11 +328,7 @@ def _assign_ecosystem_state(
     thirty_days_ago: datetime,
 ) -> str:
     """Assign ecosystem state to a cluster."""
-    # Check for pillar
-    has_pillar = any(
-        m["composite"] >= 40 and m.get("traffic", 0) > 0
-        for m in post_metrics
-    )
+    has_pillar = any(m["role"] == "pillar" for m in post_metrics)
 
     # Cannibalization rate
     total_possible_pairs = post_count * (post_count - 1) / 2 if post_count > 1 else 1
@@ -328,9 +344,9 @@ def _assign_ecosystem_state(
 
     # Any recent posts?
     has_recent = any(
-        m["publish_date"] and m["publish_date"].replace(tzinfo=timezone.utc) >= thirty_days_ago
+        m["publish_date"] is not None
+        and m["publish_date"].replace(tzinfo=timezone.utc) >= thirty_days_ago
         for m in post_metrics
-        if m["publish_date"] is not None
     )
 
     # Seedbed: recent posts, small cluster

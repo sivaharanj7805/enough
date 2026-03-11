@@ -2,8 +2,12 @@
 
 Groups post embeddings into topic clusters, labels them via Claude API,
 and stores results in the clusters/post_clusters tables.
+
+CPU-bound ML operations (UMAP, HDBSCAN) are offloaded to a thread
+via asyncio.to_thread() to avoid blocking the event loop.
 """
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -73,7 +77,8 @@ class TopicClusterer:
             logger.info("< 5 posts — creating single cluster for site %s", site_id)
             labels = np.zeros(n_posts, dtype=int)
         else:
-            labels = self._run_clustering(embeddings, n_posts)
+            # Offload CPU-bound ML to thread to avoid blocking event loop
+            labels = await asyncio.to_thread(self._run_clustering, embeddings, n_posts)
 
         # 4. Prepare cluster groups
         cluster_groups: dict[int, list[int]] = {}

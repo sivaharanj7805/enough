@@ -26,6 +26,7 @@ from app.models.schemas import (
     SimilarPostInfo,
     PillarPostInfo,
     MergeCandidateInfo,
+    PipelineStatusResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,34 +93,126 @@ async def _run_health_scoring(site_id: UUID) -> None:
             logger.error("BG task: health scoring failed for site %s: %s", site_id, e)
 
 
+async def _update_pipeline_status(
+    pool, site_id: UUID, *,
+    status: str | None = None,
+    current_step: str | None = None,
+    step_completed: str | None = None,
+    error: str | None = None,
+    started: bool = False,
+    completed: bool = False,
+) -> None:
+    """Update pipeline job status in DB."""
+    from datetime import datetime, timezone
+    async with pool.acquire() as conn:
+        if started:
+            await conn.execute(
+                """
+                INSERT INTO pipeline_jobs (site_id, status, current_step, steps_completed, started_at)
+                VALUES ($1, 'running', $2, '{}', $3)
+                ON CONFLICT (site_id) DO UPDATE SET
+                    status = 'running',
+                    current_step = $2,
+                    steps_completed = '{}',
+                    started_at = $3,
+                    completed_at = NULL,
+                    error = NULL,
+                    updated_at = NOW()
+                """,
+                site_id, current_step, datetime.now(timezone.utc),
+            )
+            return
+
+        sets = ["updated_at = NOW()"]
+        params = [site_id]
+        idx = 2
+
+        if status:
+            sets.append(f"status = ${idx}")
+            params.append(status)
+            idx += 1
+        if current_step is not None:
+            sets.append(f"current_step = ${idx}")
+            params.append(current_step if current_step else None)
+            idx += 1
+        if step_completed:
+            sets.append(f"steps_completed = array_append(steps_completed, ${idx})")
+            params.append(step_completed)
+            idx += 1
+        if error:
+            sets.append(f"error = ${idx}")
+            params.append(error[:500])
+            idx += 1
+        if completed:
+            sets.append(f"completed_at = ${idx}")
+            params.append(datetime.now(timezone.utc))
+            idx += 1
+
+        await conn.execute(
+            f"UPDATE pipeline_jobs SET {', '.join(sets)} WHERE site_id = $1",
+            *params,
+        )
+
+
 async def _run_full_pipeline(site_id: UUID) -> None:
-    """Background: run full intelligence pipeline in sequence."""
+    """Background: run full intelligence pipeline in sequence with status tracking."""
     from app.services.clustering import TopicClusterer
     from app.services.cannibalization import CannibalizationDetector
     from app.services.health_scoring import HealthScorer
 
     logger.info("BG task: full intelligence pipeline started for site %s", site_id)
     pool = await get_pool()
-    async with pool.acquire() as conn:
-        try:
+
+    # Initialize pipeline status
+    await _update_pipeline_status(pool, site_id, started=True, current_step="clustering")
+
+    try:
+        async with pool.acquire() as conn:
             # Step 1: Clustering
             clusterer = TopicClusterer()
             clusters = await clusterer.cluster_site(conn, site_id)
             logger.info("Pipeline step 1 complete: %d clusters", clusters)
 
+        await _update_pipeline_status(
+            pool, site_id,
+            current_step="cannibalization",
+            step_completed="clustering",
+        )
+
+        async with pool.acquire() as conn:
             # Step 2: Cannibalization
             detector = CannibalizationDetector()
             pairs = await detector.detect_for_site(conn, site_id)
             logger.info("Pipeline step 2 complete: %d cannibalization pairs", pairs)
 
+        await _update_pipeline_status(
+            pool, site_id,
+            current_step="health_scoring",
+            step_completed="cannibalization",
+        )
+
+        async with pool.acquire() as conn:
             # Step 3: Health scoring
             scorer = HealthScorer()
             scored = await scorer.score_site(conn, site_id)
             logger.info("Pipeline step 3 complete: %d posts scored", scored)
 
-            logger.info("BG task: full pipeline complete for site %s", site_id)
-        except Exception as e:
-            logger.error("BG task: full pipeline failed for site %s: %s", site_id, e)
+        await _update_pipeline_status(
+            pool, site_id,
+            status="completed",
+            current_step=None,
+            step_completed="health_scoring",
+            completed=True,
+        )
+        logger.info("BG task: full pipeline complete for site %s", site_id)
+
+    except Exception as e:
+        logger.error("BG task: full pipeline failed for site %s: %s", site_id, e)
+        await _update_pipeline_status(
+            pool, site_id,
+            status="failed",
+            error=str(e),
+        )
 
 
 # ──────────────────────── Endpoints ────────────────────────
@@ -507,4 +600,33 @@ async def run_full_pipeline(
     background_tasks.add_task(_run_full_pipeline, site_id)
     return TaskTriggerResponse(
         message="Full intelligence pipeline started", site_id=site_id,
+    )
+
+
+@router.get(
+    "/{site_id}/intelligence/pipeline-status",
+    response_model=PipelineStatusResponse,
+)
+async def get_pipeline_status(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Check the current status of the intelligence pipeline."""
+    await _verify_site(site_id, user_id, db)
+
+    row = await db.fetchrow(
+        "SELECT * FROM pipeline_jobs WHERE site_id = $1", site_id,
+    )
+    if not row:
+        return PipelineStatusResponse(site_id=site_id, status="idle")
+
+    return PipelineStatusResponse(
+        site_id=row["site_id"],
+        status=row["status"],
+        current_step=row["current_step"],
+        steps_completed=row["steps_completed"] or [],
+        started_at=row["started_at"],
+        completed_at=row["completed_at"],
+        error=row["error"],
     )
