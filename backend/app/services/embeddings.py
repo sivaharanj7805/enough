@@ -2,8 +2,11 @@
 
 Generates text-embedding-3-small vectors for post content,
 with change detection via content_hash and batch processing.
+
+Uses pgvector's bracket format [x,y,z] for reliable vector serialization.
 """
 
+import json
 import logging
 from uuid import UUID
 
@@ -21,6 +24,11 @@ DIMENSIONS = 1536
 MAX_TOKENS_PER_TEXT = 8191  # Model max
 TRUNCATE_CHARS = 20000  # ~5000 tokens, safe truncation
 BATCH_SIZE = 100  # Max texts per API call
+
+
+def _vector_to_pgvector(vector: list[float]) -> str:
+    """Convert a list of floats to pgvector's bracket format: [x,y,z,...]"""
+    return "[" + ",".join(str(v) for v in vector) + "]"
 
 
 class EmbeddingPipeline:
@@ -87,14 +95,14 @@ class EmbeddingPipeline:
                     await db.execute(
                         """
                         INSERT INTO post_embeddings (post_id, embedding, model, content_hash)
-                        VALUES ($1, $2, $3, $4)
+                        VALUES ($1, $2::vector, $3, $4)
                         ON CONFLICT (post_id) DO UPDATE SET
                             embedding = EXCLUDED.embedding,
                             content_hash = EXCLUDED.content_hash,
                             updated_at = NOW()
                         """,
                         row["id"],
-                        str(vector),  # pgvector accepts string representation
+                        _vector_to_pgvector(vector),
                         MODEL,
                         row["content_hash"],
                     )
@@ -129,14 +137,14 @@ class EmbeddingPipeline:
             await db.execute(
                 """
                 INSERT INTO post_embeddings (post_id, embedding, model, content_hash)
-                VALUES ($1, $2, $3, $4)
+                VALUES ($1, $2::vector, $3, $4)
                 ON CONFLICT (post_id) DO UPDATE SET
                     embedding = EXCLUDED.embedding,
                     content_hash = EXCLUDED.content_hash,
                     updated_at = NOW()
                 """,
                 row["id"],
-                str(vector),
+                _vector_to_pgvector(vector),
                 MODEL,
                 row["content_hash"],
             )

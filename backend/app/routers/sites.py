@@ -5,37 +5,28 @@ from uuid import UUID
 from typing import Annotated
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import get_db
+from app.dependencies import get_current_user_id
+from pydantic import BaseModel
 from app.models.schemas import SiteCreate, SiteResponse, SiteListResponse
+from app.utils.encryption import encrypt_value
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _get_user_id(authorization: Annotated[str, Header()]) -> str:
-    """Extract user ID from the authorization header.
-
-    In production this would validate the Supabase JWT.
-    For Phase 1, we accept the user_id directly as a bearer token
-    or validate via Supabase.
-    """
-    token = authorization.replace("Bearer ", "")
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authorization")
-    # Phase 1: trust the token as user_id for development
-    # Production: validate JWT via Supabase and extract sub claim
-    return token
-
-
 @router.post("", response_model=SiteResponse, status_code=201)
 async def create_site(
     body: SiteCreate,
-    user_id: Annotated[str, Depends(_get_user_id)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Add a new site for crawling."""
+    # Encrypt sensitive fields before storage
+    encrypted_wp_password = encrypt_value(body.wordpress_app_password) if body.wordpress_app_password else None
+
     try:
         row = await db.fetchrow(
             """
@@ -46,10 +37,10 @@ async def create_site(
             RETURNING *
             """,
             user_id, body.name, body.domain, body.cms_type,
-            body.wordpress_url, body.wordpress_app_password,
+            body.wordpress_url, encrypted_wp_password,
             body.sitemap_url, body.ga4_property_id, body.gsc_site_url,
         )
-        return SiteResponse(**dict(row))
+        return _sanitize_site_response(row)
     except asyncpg.ForeignKeyViolationError:
         raise HTTPException(status_code=400, detail="User profile not found")
     except Exception as e:
@@ -59,7 +50,7 @@ async def create_site(
 
 @router.get("", response_model=SiteListResponse)
 async def list_sites(
-    user_id: Annotated[str, Depends(_get_user_id)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """List all sites for the authenticated user."""
@@ -67,14 +58,14 @@ async def list_sites(
         "SELECT * FROM sites WHERE user_id = $1 ORDER BY created_at DESC",
         user_id,
     )
-    sites = [SiteResponse(**dict(r)) for r in rows]
+    sites = [_sanitize_site_response(r) for r in rows]
     return SiteListResponse(sites=sites, total=len(sites))
 
 
 @router.get("/{site_id}", response_model=SiteResponse)
 async def get_site(
     site_id: UUID,
-    user_id: Annotated[str, Depends(_get_user_id)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Get a single site by ID."""
@@ -84,13 +75,13 @@ async def get_site(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Site not found")
-    return SiteResponse(**dict(row))
+    return _sanitize_site_response(row)
 
 
 @router.delete("/{site_id}", status_code=204)
 async def delete_site(
     site_id: UUID,
-    user_id: Annotated[str, Depends(_get_user_id)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Remove a site and all associated data (cascades)."""
@@ -100,3 +91,34 @@ async def delete_site(
     )
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Site not found")
+
+
+class GoogleTokenUpdate(BaseModel):
+    refresh_token: str
+
+
+@router.put("/{site_id}/google-token", status_code=200)
+async def store_google_token(
+    site_id: UUID,
+    body: GoogleTokenUpdate,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Store an encrypted Google refresh token for GA4/GSC access."""
+    encrypted_token = encrypt_value(body.refresh_token)
+    result = await db.execute(
+        "UPDATE sites SET google_refresh_token = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+        encrypted_token, site_id, user_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(status_code=404, detail="Site not found")
+    return {"message": "Google refresh token stored securely"}
+
+
+def _sanitize_site_response(row) -> SiteResponse:
+    """Build a SiteResponse, stripping encrypted fields from output."""
+    data = dict(row)
+    # Never return encrypted secrets in API responses
+    data.pop("wordpress_app_password", None)
+    data.pop("google_refresh_token", None)
+    return SiteResponse(**data)

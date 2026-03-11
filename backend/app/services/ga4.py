@@ -2,11 +2,16 @@
 
 Uses the GA4 Data API to fetch per-URL metrics (pageviews, sessions,
 engagement) with incremental sync support.
+
+Note: The Google Analytics client is synchronous, so API calls are
+wrapped in asyncio.to_thread() to avoid blocking the event loop.
 """
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
+from urllib.parse import urlparse
 
 import asyncpg
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
@@ -48,6 +53,10 @@ class GA4Connector:
         credentials = self._get_credentials()
         return BetaAnalyticsDataClient(credentials=credentials)
 
+    def _run_report_sync(self, client: BetaAnalyticsDataClient, request: RunReportRequest):
+        """Synchronous GA4 API call — called via asyncio.to_thread."""
+        return client.run_report(request)
+
     async def sync_metrics(self, db: asyncpg.Connection, site_id: UUID) -> int:
         """Sync GA4 metrics for all posts in a site.
 
@@ -75,7 +84,6 @@ class GA4Connector:
             return 0
 
         # Build URL path → post_id map
-        from urllib.parse import urlparse
         url_map: dict[str, UUID] = {}
         for row in post_rows:
             parsed = urlparse(row["url"])
@@ -114,7 +122,8 @@ class GA4Connector:
             )
 
             try:
-                response = client.run_report(request)
+                # Run synchronous Google API call in a thread to avoid blocking
+                response = await asyncio.to_thread(self._run_report_sync, client, request)
             except Exception as e:
                 logger.error("GA4 API error: %s", e)
                 break

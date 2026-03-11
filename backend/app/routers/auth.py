@@ -123,11 +123,13 @@ async def google_oauth_callback(
             resp.raise_for_status()
             tokens = resp.json()
 
+        # Return tokens — the frontend should call PUT /sites/{id} to store
+        # the refresh_token with the appropriate site
         return {
             "access_token": tokens.get("access_token"),
             "refresh_token": tokens.get("refresh_token"),
             "expires_in": tokens.get("expires_in"),
-            "message": "Store the refresh_token with the site to enable GA4/GSC sync.",
+            "message": "Use PUT /sites/{site_id}/google-token to store the refresh_token.",
         }
     except httpx.HTTPStatusError as e:
         logger.error("Google OAuth token exchange failed: %s", e.response.text)

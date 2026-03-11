@@ -2,12 +2,13 @@
 
 import logging
 from uuid import UUID
-from typing import Annotated, Optional
+from typing import Annotated
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import get_db
+from app.dependencies import get_current_user_id
 from app.models.schemas import (
     PostResponse, PostDetailResponse, PostListResponse,
     GA4MetricResponse, GSCMetricResponse, InternalLinkSchema,
@@ -18,15 +19,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _get_user_id(authorization: Annotated[str, Header()]) -> str:
-    token = authorization.replace("Bearer ", "")
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authorization")
-    return token
-
-
 async def _verify_site_ownership(
-    site_id: UUID, user_id: str, db: asyncpg.Connection
+    site_id: UUID, user_id: str, db: asyncpg.Connection,
 ) -> None:
     """Ensure the user owns the site."""
     row = await db.fetchrow(
@@ -40,7 +34,7 @@ async def _verify_site_ownership(
 @router.get("/{site_id}/posts", response_model=PostListResponse)
 async def list_posts(
     site_id: UUID,
-    user_id: Annotated[str, Depends(_get_user_id)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0, ge=0),
@@ -68,7 +62,7 @@ async def list_posts(
 async def get_post_detail(
     site_id: UUID,
     post_id: UUID,
-    user_id: Annotated[str, Depends(_get_user_id)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Get a single post with full metrics."""
@@ -114,7 +108,7 @@ async def get_post_detail(
 @router.get("/{site_id}/analytics/overview", response_model=AnalyticsOverview)
 async def analytics_overview(
     site_id: UUID,
-    user_id: Annotated[str, Depends(_get_user_id)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Aggregated analytics overview for a site."""

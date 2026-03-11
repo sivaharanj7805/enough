@@ -137,6 +137,18 @@ CREATE TABLE cannibalization_pairs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Crawl job tracking (DB-backed, survives restarts)
+CREATE TABLE crawl_jobs (
+    site_id UUID PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'crawling', 'completed', 'failed')),
+    posts_found INTEGER DEFAULT 0,
+    posts_processed INTEGER DEFAULT 0,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    error TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Health scores per post (populated by Phase 2)
 CREATE TABLE post_health_scores (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

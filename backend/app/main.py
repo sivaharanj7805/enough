@@ -56,5 +56,29 @@ app.include_router(analytics.router, prefix="/sites", tags=["Analytics"])
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "enough-backend", "version": "0.1.0"}
+    """Health check endpoint — verifies DB connectivity."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.fetchval("SELECT 1")
+            if result != 1:
+                raise Exception("Unexpected DB response")
+        return {
+            "status": "ok",
+            "service": "enough-backend",
+            "version": "0.1.0",
+            "database": "connected",
+        }
+    except Exception as e:
+        logger.error("Health check failed: %s", e)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "service": "enough-backend",
+                "version": "0.1.0",
+                "database": "disconnected",
+                "error": str(e),
+            },
+        )

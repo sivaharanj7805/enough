@@ -2,8 +2,12 @@
 
 Uses the Search Console API to fetch per-URL search performance data
 (queries, impressions, clicks, CTR, position) with incremental sync.
+
+Note: The Google API client is synchronous, so API calls are wrapped
+in asyncio.to_thread() to avoid blocking the event loop.
 """
 
+import asyncio
 import logging
 from datetime import date, timedelta
 from uuid import UUID
@@ -41,10 +45,16 @@ class GSCConnector:
             token_uri="https://oauth2.googleapis.com/token",
         )
 
-    def _get_service(self):
-        """Create an authenticated Search Console API service."""
+    def _build_service(self):
+        """Create an authenticated Search Console API service (synchronous)."""
         credentials = self._get_credentials()
         return build("searchconsole", "v1", credentials=credentials)
+
+    def _execute_query_sync(self, service, site_url: str, request_body: dict) -> dict:
+        """Synchronous GSC API call — called via asyncio.to_thread."""
+        return service.searchanalytics().query(
+            siteUrl=site_url, body=request_body
+        ).execute()
 
     async def sync_metrics(self, db: asyncpg.Connection, site_id: UUID) -> int:
         """Sync GSC search analytics for all posts in a site.
@@ -76,12 +86,12 @@ class GSCConnector:
         url_map: dict[str, UUID] = {}
         for row in post_rows:
             url_map[row["url"].rstrip("/")] = row["id"]
-            # Also map without trailing slash variations
             parsed = urlparse(row["url"])
             path = parsed.path.rstrip("/") or "/"
             url_map[f"{parsed.scheme}://{parsed.netloc}{path}"] = row["id"]
 
-        service = self._get_service()
+        # Build service (synchronous construction is fine — it's just object setup)
+        service = await asyncio.to_thread(self._build_service)
         total_upserted = 0
         start_row = 0
 
@@ -97,9 +107,10 @@ class GSCConnector:
             }
 
             try:
-                response = service.searchanalytics().query(
-                    siteUrl=self.site_url, body=request_body
-                ).execute()
+                # Run synchronous API call in a thread
+                response = await asyncio.to_thread(
+                    self._execute_query_sync, service, self.site_url, request_body
+                )
             except Exception as e:
                 logger.error("GSC API error: %s", e)
                 break
@@ -113,7 +124,6 @@ class GSCConnector:
                 query = row["keys"][1]
                 date_str = row["keys"][2]
 
-                # Find matching post
                 post_id = url_map.get(page_url)
                 if not post_id:
                     continue
