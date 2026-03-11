@@ -1,5 +1,10 @@
-"""Stripe subscription management — checkout, webhooks, usage limits."""
+"""Stripe subscription management — checkout, webhooks, usage limits.
 
+Note: Stripe Python SDK is synchronous. All Stripe API calls are wrapped
+in asyncio.to_thread() to avoid blocking the event loop.
+"""
+
+import asyncio
 import logging
 from uuid import UUID
 
@@ -44,7 +49,8 @@ class StripeService:
 
         customer_id = profile["stripe_customer_id"]
         if not customer_id:
-            customer = stripe.Customer.create(
+            customer = await asyncio.to_thread(
+                stripe.Customer.create,
                 email=profile["email"],
                 metadata={"user_id": user_id},
             )
@@ -55,7 +61,8 @@ class StripeService:
                 user_id,
             )
 
-        session = stripe.checkout.Session.create(
+        session = await asyncio.to_thread(
+            stripe.checkout.Session.create,
             customer=customer_id,
             payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
@@ -74,8 +81,9 @@ class StripeService:
         settings = get_settings()
 
         try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, settings.stripe_webhook_secret
+            event = await asyncio.to_thread(
+                stripe.Webhook.construct_event,
+                payload, sig_header, settings.stripe_webhook_secret,
             )
         except stripe.SignatureVerificationError:
             logger.error("Invalid Stripe webhook signature")
@@ -92,7 +100,9 @@ class StripeService:
             customer_id = data.get("customer")
             if user_id and subscription_id:
                 # Determine tier from price
-                sub = stripe.Subscription.retrieve(subscription_id)
+                sub = await asyncio.to_thread(
+                    stripe.Subscription.retrieve, subscription_id
+                )
                 price_id = sub["items"]["data"][0]["price"]["id"]
                 tier = self._price_to_tier(price_id)
                 await db.execute(
@@ -196,7 +206,8 @@ class StripeService:
         if not profile or not profile["stripe_customer_id"]:
             raise ValueError("No Stripe customer found. Subscribe first.")
 
-        session = stripe.billing_portal.Session.create(
+        session = await asyncio.to_thread(
+            stripe.billing_portal.Session.create,
             customer=profile["stripe_customer_id"],
             return_url=return_url,
         )

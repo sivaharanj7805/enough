@@ -23,14 +23,14 @@ class WeeklyReportService:
 
         active = await db.fetchval(
             """SELECT COUNT(*) FROM posts p
-               JOIN post_health ph ON ph.post_id = p.id
+               JOIN post_health_scores ph ON ph.post_id = p.id
                WHERE p.site_id = $1 AND ph.role IN ('pillar', 'supporter')""",
             site_id,
         ) or 0
 
         dead = await db.fetchval(
             """SELECT COUNT(*) FROM posts p
-               JOIN post_health ph ON ph.post_id = p.id
+               JOIN post_health_scores ph ON ph.post_id = p.id
                WHERE p.site_id = $1 AND ph.role = 'dead_weight'""",
             site_id,
         ) or 0
@@ -49,7 +49,7 @@ class WeeklyReportService:
         # Health score
         health_row = await db.fetchrow(
             """SELECT AVG(ph.composite_score) as avg_score
-               FROM posts p JOIN post_health ph ON ph.post_id = p.id
+               FROM posts p JOIN post_health_scores ph ON ph.post_id = p.id
                WHERE p.site_id = $1""",
             site_id,
         )
@@ -154,12 +154,10 @@ class WeeklyReportService:
 
         # Get top consolidation opportunity
         quick_win = await db.fetchrow(
-            """SELECT c.label, COUNT(p.id) as post_count
+            """SELECT c.label, c.post_count
                FROM clusters c
-               JOIN posts p ON p.cluster_id = c.id
                WHERE c.site_id = $1 AND c.ecosystem_state = 'swamp'
-               GROUP BY c.id, c.label
-               ORDER BY post_count DESC LIMIT 1""",
+               ORDER BY c.post_count DESC LIMIT 1""",
             site_id,
         )
 

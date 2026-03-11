@@ -58,7 +58,9 @@ class StewardService:
                      SELECT 1 FROM redirect_log rl
                      WHERE rl.site_id = $1
                      AND rl.old_url IN (
-                       SELECT p.url FROM posts p WHERE p.cluster_id = c.id
+                       SELECT p.url FROM posts p
+                       JOIN post_clusters pc ON pc.post_id = p.id
+                       WHERE pc.cluster_id = c.id
                      )
                    )""",
                 sid,
@@ -74,7 +76,7 @@ class StewardService:
                    FROM clusters c
                    WHERE c.site_id = $1
                    AND c.ecosystem_state IN ('meadow', 'forest')
-                   AND (SELECT COUNT(*) FROM posts p WHERE p.cluster_id = c.id) <= 3""",
+                   AND c.post_count <= 3""",
                 sid,
             ) or 0
             deserts_revived += count
@@ -85,7 +87,8 @@ class StewardService:
             count = await db.fetchval(
                 """SELECT COUNT(p.id)
                    FROM posts p
-                   JOIN clusters c ON c.id = p.cluster_id
+                   JOIN post_clusters pc ON pc.post_id = p.id
+                   JOIN clusters c ON c.id = pc.cluster_id
                    WHERE c.site_id = $1 AND c.ecosystem_state = 'seedbed'""",
                 sid,
             ) or 0
