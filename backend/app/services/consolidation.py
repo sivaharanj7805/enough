@@ -115,15 +115,21 @@ class ConsolidationPlanner:
                 merge_candidates.append(post_info)
 
         # Estimate traffic recovery
+        # Sum traffic from all non-pillar posts involved in cannibalization
+        pillar_id = pillar["id"]
         cannibal_traffic = await db.fetchval(
             """
             SELECT COALESCE(SUM(g.pageviews), 0)
-            FROM cannibalization_pairs cp
-            JOIN ga4_metrics g ON g.post_id = cp.post_b_id
-            WHERE cp.cluster_id = $1
-              AND g.date >= CURRENT_DATE - INTERVAL '90 days'
+            FROM ga4_metrics g
+            WHERE g.post_id IN (
+                SELECT DISTINCT
+                    CASE WHEN cp.post_a_id = $2 THEN cp.post_b_id ELSE cp.post_a_id END
+                FROM cannibalization_pairs cp
+                WHERE cp.cluster_id = $1
+            )
+            AND g.date >= CURRENT_DATE - INTERVAL '90 days'
             """,
-            cluster_id,
+            cluster_id, pillar_id,
         )
         estimated_traffic_recovery = int(cannibal_traffic * 0.6)
 
@@ -249,7 +255,7 @@ from the merge posts that aren't already in the pillar
 4. Ensure the final piece is comprehensive and authoritative
 5. Output the complete merged post in markdown format"""
 
-        await self.rate_limiter.acquire()
+        await self.rate_limiter.wait()
         try:
             response = await self.anthropic.messages.create(
                 model=CLAUDE_MODEL,

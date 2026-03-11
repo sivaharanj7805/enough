@@ -185,11 +185,7 @@ class TopicClusterer:
                 "DELETE FROM cannibalization_pairs WHERE cluster_id = ANY($1::uuid[])",
                 ids,
             )
-            await db.execute(
-                "DELETE FROM post_clusters WHERE cluster_id = ANY($1::uuid[])",
-                ids,
-            )
-            # Delete health scores for posts in these clusters
+            # Delete health scores BEFORE post_clusters (subquery depends on it)
             await db.execute(
                 """
                 DELETE FROM post_health_scores
@@ -197,6 +193,10 @@ class TopicClusterer:
                     SELECT DISTINCT post_id FROM post_clusters WHERE cluster_id = ANY($1::uuid[])
                 )
                 """,
+                ids,
+            )
+            await db.execute(
+                "DELETE FROM post_clusters WHERE cluster_id = ANY($1::uuid[])",
                 ids,
             )
             await db.execute(
@@ -210,7 +210,7 @@ class TopicClusterer:
         sample_titles = titles[:5]
         titles_text = "\n".join(f"- {t}" for t in sample_titles)
 
-        await self.rate_limiter.acquire()
+        await self.rate_limiter.wait()
         try:
             response = await self.anthropic.messages.create(
                 model=CLAUDE_MODEL,

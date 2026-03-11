@@ -202,7 +202,8 @@ class PrePublishOracle:
         if not similar_posts:
             return None
 
-        post_id = similar_posts[0]["post_id"]
+        from uuid import UUID as _UUID
+        post_id = _UUID(similar_posts[0]["post_id"])
         row = await db.fetchrow(
             """
             SELECT c.ecosystem_state
@@ -264,7 +265,7 @@ Reply in this exact JSON format:
   "recommendation": "Specific action to take..."
 }}"""
 
-        await self.rate_limiter.acquire()
+        await self.rate_limiter.wait()
         try:
             response = await self.anthropic.messages.create(
                 model=CLAUDE_MODEL,
