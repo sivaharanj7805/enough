@@ -13,6 +13,7 @@ from openai import AsyncOpenAI
 
 from app.config import get_settings
 from app.utils.rate_limiter import RateLimiter
+from app.utils.token_guard import truncate_for_api, ORACLE_CHAR_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class PrePublishOracle:
     ) -> list[dict]:
         """Find similar existing posts via embedding cosine similarity."""
         # Generate embedding for draft
-        truncated = draft_text[:20000]
+        truncated = truncate_for_api(draft_text, max_chars=20000, label="oracle_embedding")
         try:
             resp = await self.openai.embeddings.create(
                 model=EMBEDDING_MODEL,
@@ -235,7 +236,7 @@ class PrePublishOracle:
             sim_info = f", similarity: {sp.get('similarity_score', 'N/A')}" if sp.get("similarity_score") else ""
             similar_summary += f"- {sp['title']} ({sp['url']}){sim_info}{pos_info}\n"
 
-        draft_snippet = (draft_text[:2000] + "...") if draft_text and len(draft_text) > 2000 else (draft_text or "N/A")
+        draft_snippet = truncate_for_api(draft_text, max_chars=2000, label="oracle_verdict") if draft_text else "N/A"
         keyword_info = target_keyword or "N/A"
 
         prompt = f"""You are a content ecosystem analyst. Assess whether this new content should \

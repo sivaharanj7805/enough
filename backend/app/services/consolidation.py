@@ -12,6 +12,7 @@ from anthropic import AsyncAnthropic
 
 from app.config import get_settings
 from app.utils.rate_limiter import RateLimiter
+from app.utils.token_guard import truncate_for_api, DRAFT_CHAR_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -231,11 +232,11 @@ class ConsolidationPlanner:
         # Build prompt
         merge_texts = []
         for mr in merge_rows:
-            body = (mr["body_text"] or "")[:3000]  # Truncate for token limits
+            body = truncate_for_api(mr["body_text"] or "", max_chars=3000, label=f"merge:{mr['title']}")
             merge_texts.append(f"### {mr['title']}\n{body}")
 
         merge_section = "\n\n---\n\n".join(merge_texts) if merge_texts else "(no merge candidates)"
-        pillar_body = (pillar_row["body_text"] or "")[:5000]
+        pillar_body = truncate_for_api(pillar_row["body_text"] or "", max_chars=5000, label="pillar")
 
         prompt = f"""You are a content strategist consolidating multiple blog posts into one \
 authoritative piece.

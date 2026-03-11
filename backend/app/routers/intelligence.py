@@ -5,10 +5,14 @@ from uuid import UUID
 from typing import Annotated
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
 from app.dependencies import get_current_user_id
+
+limiter = Limiter(key_func=get_remote_address)
 from app.models.schemas import (
     TaskTriggerResponse,
     ClusterResponse,
@@ -29,6 +33,8 @@ from app.models.schemas import (
     PipelineStatusResponse,
 )
 
+from app.utils.task_retry import with_retry
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -48,6 +54,7 @@ async def _verify_site(site_id: UUID, user_id: str, db: asyncpg.Connection) -> N
 # ──────────────── Background Task Runners ────────────────
 
 
+@with_retry(max_retries=2, base_delay=5.0)
 async def _run_clustering(site_id: UUID) -> None:
     """Background: run topic clustering pipeline."""
     from app.services.clustering import TopicClusterer
@@ -63,6 +70,7 @@ async def _run_clustering(site_id: UUID) -> None:
             logger.error("BG task: clustering failed for site %s: %s", site_id, e)
 
 
+@with_retry(max_retries=2, base_delay=5.0)
 async def _run_cannibalization(site_id: UUID) -> None:
     """Background: run cannibalization detection."""
     from app.services.cannibalization import CannibalizationDetector
@@ -78,6 +86,7 @@ async def _run_cannibalization(site_id: UUID) -> None:
             logger.error("BG task: cannibalization failed for site %s: %s", site_id, e)
 
 
+@with_retry(max_retries=2, base_delay=5.0)
 async def _run_health_scoring(site_id: UUID) -> None:
     """Background: run health scoring pipeline."""
     from app.services.health_scoring import HealthScorer
@@ -513,7 +522,9 @@ async def get_consolidation_detail(
     "/{site_id}/intelligence/consolidation/{cluster_id}/draft",
     response_model=ConsolidationDraftResponse,
 )
+@limiter.limit("5/minute")
 async def generate_consolidation_draft(
+    request: Request,
     site_id: UUID,
     cluster_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],
@@ -551,7 +562,9 @@ async def generate_consolidation_draft(
     "/{site_id}/intelligence/oracle",
     response_model=OracleVerdictResponse,
 )
+@limiter.limit("10/minute")
 async def oracle_check(
+    request: Request,
     site_id: UUID,
     body: OracleRequest,
     user_id: Annotated[str, Depends(get_current_user_id)],

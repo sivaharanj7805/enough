@@ -69,33 +69,129 @@ function LandingPage() {
           </Link>
         </div>
 
-        {/* Mock landscape */}
+        {/* Landscape SVG Illustration */}
         <div className="mt-16 rounded-xl border border-brand-border bg-brand-surface p-1 shadow-2xl">
-          <div className="rounded-lg bg-brand-bg p-8">
-            <div className="grid grid-cols-5 gap-3">
+          <div className="rounded-lg bg-brand-bg overflow-hidden">
+            <svg viewBox="0 0 900 320" className="w-full" xmlns="http://www.w3.org/2000/svg">
+              {/* Sky gradient */}
+              <defs>
+                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0f172a" />
+                  <stop offset="100%" stopColor="#1e293b" />
+                </linearGradient>
+                <linearGradient id="forestGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#166534" />
+                  <stop offset="100%" stopColor="#14532d" />
+                </linearGradient>
+                <linearGradient id="swampGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#365314" />
+                  <stop offset="100%" stopColor="#1a2e05" />
+                </linearGradient>
+                <linearGradient id="desertGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#92400e" />
+                  <stop offset="100%" stopColor="#78350f" />
+                </linearGradient>
+                <linearGradient id="seedbedGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#15803d" />
+                  <stop offset="100%" stopColor="#166534" />
+                </linearGradient>
+              </defs>
+              <rect width="900" height="320" fill="url(#sky)" />
+
+              {/* Stars */}
               {[
-                { state: 'forest', h: 'h-32' },
-                { state: 'meadow', h: 'h-24' },
-                { state: 'swamp', h: 'h-28' },
-                { state: 'seedbed', h: 'h-20' },
-                { state: 'desert', h: 'h-16' },
-              ].map(({ state, h }, i) => (
-                <div
-                  key={i}
-                  className={`${h} rounded-lg opacity-60`}
-                  style={{
-                    backgroundColor:
-                      state === 'forest' ? '#1a4731'
-                      : state === 'meadow' ? '#3d6b3d'
-                      : state === 'swamp' ? '#2d3a1f'
-                      : state === 'seedbed' ? '#2d5a27'
-                      : '#8b7355',
-                  }}
-                />
+                [120, 25], [280, 15], [400, 35], [550, 20], [700, 30], [820, 18],
+                [60, 50], [350, 55], [650, 45], [780, 55],
+              ].map(([cx, cy], i) => (
+                <circle key={`star-${i}`} cx={cx} cy={cy} r={1} fill="#94a3b8" opacity={0.6} />
               ))}
-            </div>
-            <p className="mt-4 text-xs text-brand-text-muted text-center">
-              Your content ecosystem — forests thrive, swamps need clearing, deserts need revival.
+
+              {/* ── FOREST region (left) ── */}
+              {/* Hills */}
+              <path d="M0 200 Q50 140 100 180 Q150 130 200 170 Q230 160 260 190 L260 320 L0 320Z"
+                    fill="url(#forestGrad)" opacity={0.9} />
+              {/* Trees — tall triangles */}
+              {[[30, 195], [55, 185], [80, 190], [110, 175], [135, 180], [160, 168], [185, 172], [210, 165], [240, 185]].map(
+                ([x, y], i) => (
+                  <g key={`tree-${i}`}>
+                    <polygon points={`${x},${y - 45} ${x - 10},${y} ${x + 10},${y}`} fill="#22c55e" opacity={0.7 + (i % 3) * 0.1} />
+                    <polygon points={`${x},${y - 60} ${x - 8},${y - 25} ${x + 8},${y - 25}`} fill="#4ade80" opacity={0.6} />
+                    <rect x={x - 2} y={y} width={4} height={8} fill="#854d0e" opacity={0.6} />
+                  </g>
+                )
+              )}
+              {/* Forest label */}
+              <text x="130" y="290" textAnchor="middle" fill="#4ade80" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>FOREST</text>
+              <text x="130" y="305" textAnchor="middle" fill="#86efac" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Thriving</text>
+
+              {/* ── SWAMP region ── */}
+              <path d="M260 190 Q290 210 330 200 Q370 215 410 195 Q430 200 440 210 L440 320 L260 320Z"
+                    fill="url(#swampGrad)" opacity={0.85} />
+              {/* Swamp vegetation — messy, tangled */}
+              {[[275, 200], [305, 195], [330, 200], [360, 198], [390, 195], [415, 200]].map(
+                ([x, y], i) => (
+                  <g key={`swamp-${i}`}>
+                    {/* Tangled roots/vines */}
+                    <path d={`M${x} ${y} Q${x - 5} ${y - 15} ${x + 3} ${y - 25} Q${x + 8} ${y - 30} ${x - 2} ${y - 35}`}
+                          fill="none" stroke="#65a30d" strokeWidth={1.5} opacity={0.5} />
+                    <path d={`M${x + 5} ${y} Q${x + 12} ${y - 20} ${x + 2} ${y - 28}`}
+                          fill="none" stroke="#4d7c0f" strokeWidth={1} opacity={0.4} />
+                    <circle cx={x} cy={y + 5} r={5} fill="#1a2e05" opacity={0.3} />
+                  </g>
+                )
+              )}
+              {/* Murky water highlights */}
+              <ellipse cx="350" cy="245" rx="60" ry="4" fill="#365314" opacity={0.3} />
+              <text x="350" y="290" textAnchor="middle" fill="#a3e635" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>SWAMP</text>
+              <text x="350" y="305" textAnchor="middle" fill="#bef264" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Cannibalized</text>
+
+              {/* ── DESERT region ── */}
+              <path d="M440 210 Q480 185 530 195 Q580 175 630 195 Q650 190 660 200 L660 320 L440 320Z"
+                    fill="url(#desertGrad)" opacity={0.85} />
+              {/* Sand dunes */}
+              <path d="M450 230 Q490 215 530 225 Q570 210 610 220 Q640 215 660 225 L660 250 L440 250Z"
+                    fill="#b45309" opacity={0.3} />
+              {/* Dead stumps */}
+              {[[475, 215], [520, 205], [565, 200], [610, 210]].map(
+                ([x, y], i) => (
+                  <g key={`stump-${i}`}>
+                    <rect x={x - 2} y={y - 10} width={4} height={14} fill="#78350f" opacity={0.5} />
+                    <line x1={x - 5} y1={y - 7} x2={x} y2={y - 12} stroke="#78350f" strokeWidth={1.5} opacity={0.4} />
+                    <line x1={x + 5} y1={y - 5} x2={x} y2={y - 10} stroke="#78350f" strokeWidth={1.5} opacity={0.4} />
+                  </g>
+                )
+              )}
+              {/* Tumbleweed */}
+              <circle cx="555" cy="225" r={6} fill="none" stroke="#a16207" strokeWidth={1} opacity={0.4} strokeDasharray="2 2" />
+              <text x="550" y="290" textAnchor="middle" fill="#fbbf24" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>DESERT</text>
+              <text x="550" y="305" textAnchor="middle" fill="#fde68a" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Declining</text>
+
+              {/* ── SEEDBED region (right) ── */}
+              <path d="M660 200 Q700 185 750 195 Q800 180 850 190 Q875 195 900 200 L900 320 L660 320Z"
+                    fill="url(#seedbedGrad)" opacity={0.85} />
+              {/* Small sprouts */}
+              {[[690, 200], [720, 192], [755, 188], [790, 185], [825, 190], [860, 195]].map(
+                ([x, y], i) => (
+                  <g key={`sprout-${i}`}>
+                    <line x1={x} y1={y} x2={x} y2={y - 12 - (i % 3) * 4} stroke="#22c55e" strokeWidth={1.5} opacity={0.6} />
+                    <ellipse cx={x - 4} cy={y - 12 - (i % 3) * 4} rx={4} ry={2.5} fill="#4ade80" opacity={0.5} />
+                    <ellipse cx={x + 4} cy={y - 14 - (i % 3) * 4} rx={4} ry={2.5} fill="#86efac" opacity={0.4} />
+                  </g>
+                )
+              )}
+              {/* Soil texture */}
+              <path d="M660 240 Q720 235 780 240 Q840 235 900 240 L900 260 L660 260Z"
+                    fill="#15803d" opacity={0.15} />
+              <text x="780" y="290" textAnchor="middle" fill="#4ade80" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>SEEDBED</text>
+              <text x="780" y="305" textAnchor="middle" fill="#86efac" fontSize="8" fontFamily="sans-serif" opacity={0.5}>New Growth</text>
+
+              {/* Terrain divider lines */}
+              <line x1="260" y1="180" x2="260" y2="320" stroke="#334155" strokeWidth={0.5} opacity={0.3} />
+              <line x1="440" y1="195" x2="440" y2="320" stroke="#334155" strokeWidth={0.5} opacity={0.3} />
+              <line x1="660" y1="195" x2="660" y2="320" stroke="#334155" strokeWidth={0.5} opacity={0.3} />
+            </svg>
+            <p className="py-3 text-xs text-brand-text-muted text-center">
+              Your content ecosystem — forests thrive, swamps need clearing, deserts need revival, seedbeds hold new growth.
             </p>
           </div>
         </div>

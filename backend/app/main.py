@@ -3,7 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
@@ -47,14 +47,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
-app.include_router(auth.router, prefix="/auth", tags=["Auth"])
-app.include_router(sites.router, prefix="/sites", tags=["Sites"])
-app.include_router(ingestion.router, prefix="/sites", tags=["Ingestion"])
-app.include_router(analytics.router, prefix="/sites", tags=["Analytics"])
-app.include_router(intelligence.router, prefix="/sites", tags=["Intelligence"])
-app.include_router(actions.router, prefix="/sites", tags=["Actions"])
-app.include_router(retention.router, tags=["Retention"])
+# ── API Rate Limiting (slowapi) ──
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ── v1 API Router ──
+v1_router = APIRouter(prefix="/v1")
+v1_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
+v1_router.include_router(sites.router, prefix="/sites", tags=["Sites"])
+v1_router.include_router(ingestion.router, prefix="/sites", tags=["Ingestion"])
+v1_router.include_router(analytics.router, prefix="/sites", tags=["Analytics"])
+v1_router.include_router(intelligence.router, prefix="/sites", tags=["Intelligence"])
+v1_router.include_router(actions.router, prefix="/sites", tags=["Actions"])
+v1_router.include_router(retention.router, tags=["Retention"])
+
+app.include_router(v1_router)
 
 
 @app.get("/health")
