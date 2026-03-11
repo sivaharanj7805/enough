@@ -1,0 +1,328 @@
+"""Pre-publish Oracle — analyze draft content against the existing ecosystem.
+
+Checks for topic overlap, cluster saturation, and provides a publish/update/skip
+verdict via Claude API before new content goes live.
+"""
+
+import logging
+from uuid import UUID
+
+import asyncpg
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
+
+from app.config import get_settings
+from app.utils.rate_limiter import RateLimiter
+
+logger = logging.getLogger(__name__)
+
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
+EMBEDDING_MODEL = "text-embedding-3-small"
+SIMILARITY_THRESHOLD = 0.3  # Cosine distance — lower = more similar
+
+
+class PrePublishOracle:
+    """Analyze new content against the existing ecosystem before publishing."""
+
+    def __init__(self) -> None:
+        settings = get_settings()
+        self.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self.openai = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.rate_limiter = RateLimiter(requests_per_second=5)
+
+    async def analyze(
+        self,
+        db: asyncpg.Connection,
+        site_id: UUID,
+        draft_text: str | None = None,
+        target_keyword: str | None = None,
+    ) -> dict:
+        """Run pre-publish analysis against the existing content ecosystem.
+
+        Args:
+            db: Database connection.
+            site_id: Site to analyze against.
+            draft_text: Optional draft content text.
+            target_keyword: Optional target keyword to check.
+
+        Returns:
+            OracleVerdict dict with confidence, verdict, reasoning, similar posts,
+            cluster state, and recommendation.
+        """
+        if not draft_text and not target_keyword:
+            raise ValueError("At least one of draft_text or target_keyword is required")
+
+        logger.info(
+            "Oracle analysis for site %s (draft=%s, keyword=%s)",
+            site_id,
+            "yes" if draft_text else "no",
+            target_keyword or "none",
+        )
+
+        similar_posts: list[dict] = []
+        keyword_posts: list[dict] = []
+
+        # 1. Embedding similarity search
+        if draft_text:
+            similar_posts = await self._find_similar_by_embedding(
+                db, site_id, draft_text,
+            )
+
+        # 2. GSC keyword check
+        if target_keyword:
+            keyword_posts = await self._find_by_keyword(
+                db, site_id, target_keyword,
+            )
+
+        # Merge and deduplicate
+        all_similar = self._merge_similar(similar_posts, keyword_posts)
+
+        # 3. Determine cluster context
+        cluster_state = await self._get_cluster_context(db, all_similar)
+
+        # 4. Generate verdict via Claude
+        verdict_data = await self._generate_verdict(
+            draft_text=draft_text,
+            target_keyword=target_keyword,
+            similar_posts=all_similar,
+            cluster_state=cluster_state,
+        )
+
+        return verdict_data
+
+    async def _find_similar_by_embedding(
+        self,
+        db: asyncpg.Connection,
+        site_id: UUID,
+        draft_text: str,
+    ) -> list[dict]:
+        """Find similar existing posts via embedding cosine similarity."""
+        # Generate embedding for draft
+        truncated = draft_text[:20000]
+        try:
+            resp = await self.openai.embeddings.create(
+                model=EMBEDDING_MODEL,
+                input=truncated,
+            )
+            draft_embedding = resp.data[0].embedding
+        except Exception as e:
+            logger.error("Failed to generate draft embedding: %s", e)
+            return []
+
+        # Format as pgvector
+        vec_str = "[" + ",".join(str(v) for v in draft_embedding) + "]"
+
+        # Query similar posts
+        rows = await db.fetch(
+            """
+            SELECT p.id, p.title, p.url, p.word_count, p.publish_date,
+                   pe.embedding <=> $1::vector AS distance
+            FROM post_embeddings pe
+            JOIN posts p ON p.id = pe.post_id
+            WHERE p.site_id = $2
+            ORDER BY pe.embedding <=> $1::vector
+            LIMIT 10
+            """,
+            vec_str, site_id,
+        )
+
+        results = []
+        for r in rows:
+            results.append({
+                "post_id": str(r["id"]),
+                "title": r["title"],
+                "url": r["url"],
+                "similarity_score": round(1.0 - float(r["distance"]), 3),
+                "distance": round(float(r["distance"]), 3),
+                "word_count": r["word_count"],
+                "source": "embedding",
+            })
+        return results
+
+    async def _find_by_keyword(
+        self,
+        db: asyncpg.Connection,
+        site_id: UUID,
+        keyword: str,
+    ) -> list[dict]:
+        """Find existing posts ranking for a target keyword in GSC data."""
+        rows = await db.fetch(
+            """
+            SELECT DISTINCT p.id, p.title, p.url, p.word_count,
+                   AVG(g.avg_position) AS avg_pos,
+                   SUM(g.clicks) AS total_clicks
+            FROM gsc_metrics g
+            JOIN posts p ON p.id = g.post_id
+            WHERE p.site_id = $1 AND g.query ILIKE $2
+            GROUP BY p.id, p.title, p.url, p.word_count
+            ORDER BY total_clicks DESC
+            LIMIT 10
+            """,
+            site_id, f"%{keyword}%",
+        )
+
+        results = []
+        for r in rows:
+            results.append({
+                "post_id": str(r["id"]),
+                "title": r["title"],
+                "url": r["url"],
+                "avg_position": round(float(r["avg_pos"]), 1) if r["avg_pos"] else None,
+                "total_clicks": r["total_clicks"],
+                "word_count": r["word_count"],
+                "source": "keyword",
+            })
+        return results
+
+    def _merge_similar(
+        self,
+        embedding_results: list[dict],
+        keyword_results: list[dict],
+    ) -> list[dict]:
+        """Merge and deduplicate results from embedding and keyword searches."""
+        seen: dict[str, dict] = {}
+        for r in embedding_results:
+            seen[r["post_id"]] = r
+        for r in keyword_results:
+            pid = r["post_id"]
+            if pid in seen:
+                seen[pid]["source"] = "both"
+                seen[pid]["avg_position"] = r.get("avg_position")
+                seen[pid]["total_clicks"] = r.get("total_clicks")
+            else:
+                seen[pid] = r
+        return list(seen.values())
+
+    async def _get_cluster_context(
+        self,
+        db: asyncpg.Connection,
+        similar_posts: list[dict],
+    ) -> str | None:
+        """Determine the cluster ecosystem state for similar posts."""
+        if not similar_posts:
+            return None
+
+        post_id = similar_posts[0]["post_id"]
+        row = await db.fetchrow(
+            """
+            SELECT c.ecosystem_state
+            FROM post_clusters pc
+            JOIN clusters c ON c.id = pc.cluster_id
+            WHERE pc.post_id = $1
+            LIMIT 1
+            """,
+            post_id,
+        )
+        return row["ecosystem_state"] if row else None
+
+    async def _generate_verdict(
+        self,
+        draft_text: str | None,
+        target_keyword: str | None,
+        similar_posts: list[dict],
+        cluster_state: str | None,
+    ) -> dict:
+        """Generate a structured verdict using Claude API."""
+        # Build context
+        similar_summary = ""
+        very_similar_count = 0
+        for sp in similar_posts:
+            dist = sp.get("distance")
+            if dist is not None and dist < SIMILARITY_THRESHOLD:
+                very_similar_count += 1
+            pos_info = f", avg position: {sp.get('avg_position', 'N/A')}" if sp.get("avg_position") else ""
+            sim_info = f", similarity: {sp.get('similarity_score', 'N/A')}" if sp.get("similarity_score") else ""
+            similar_summary += f"- {sp['title']} ({sp['url']}){sim_info}{pos_info}\n"
+
+        draft_snippet = (draft_text[:2000] + "...") if draft_text and len(draft_text) > 2000 else (draft_text or "N/A")
+        keyword_info = target_keyword or "N/A"
+
+        prompt = f"""You are a content ecosystem analyst. Assess whether this new content should \
+be published, should update an existing post, or should be skipped entirely.
+
+NEW CONTENT:
+Target keyword: {keyword_info}
+Draft excerpt: {draft_snippet}
+
+EXISTING SIMILAR POSTS ({len(similar_posts)} found):
+{similar_summary or "(none)"}
+
+CLUSTER STATE: {cluster_state or "unknown"}
+VERY SIMILAR POSTS (cosine distance < 0.3): {very_similar_count}
+
+Analyze and provide your assessment. Consider:
+1. Is there significant topic overlap with existing content?
+2. Would publishing create cannibalization?
+3. Is the cluster already saturated (swamp)?
+4. Could an existing post be updated instead?
+
+Reply in this exact JSON format:
+{{
+  "confidence": "high" | "medium" | "low",
+  "verdict": "publish" | "update_existing" | "skip",
+  "reasoning": "Your detailed analysis...",
+  "recommendation": "Specific action to take..."
+}}"""
+
+        await self.rate_limiter.acquire()
+        try:
+            response = await self.anthropic.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
+
+            # Parse JSON from Claude response
+            import json
+            # Try to extract JSON from the response
+            verdict = self._parse_json_response(raw)
+        except Exception as e:
+            logger.error("Claude oracle verdict failed: %s", e)
+            verdict = {
+                "confidence": "low",
+                "verdict": "publish",
+                "reasoning": f"Unable to generate AI analysis: {e}",
+                "recommendation": "Manual review recommended.",
+            }
+
+        # Build final response
+        return {
+            "confidence": verdict.get("confidence", "low"),
+            "verdict": verdict.get("verdict", "publish"),
+            "reasoning": verdict.get("reasoning", ""),
+            "similar_posts": similar_posts,
+            "cluster_state": cluster_state,
+            "recommendation": verdict.get("recommendation", ""),
+        }
+
+    @staticmethod
+    def _parse_json_response(raw: str) -> dict:
+        """Parse JSON from Claude response, handling markdown code blocks."""
+        import json
+
+        # Strip markdown code blocks if present
+        text = raw.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            # Remove first and last lines (``` markers)
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            text = "\n".join(lines)
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # Try to find JSON object in the text
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                try:
+                    return json.loads(text[start:end])
+                except json.JSONDecodeError:
+                    pass
+            return {
+                "confidence": "low",
+                "verdict": "publish",
+                "reasoning": raw,
+                "recommendation": "Manual review recommended — AI response was not structured.",
+            }

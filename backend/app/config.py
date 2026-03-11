@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str = ""
 
+    # Anthropic (Claude API for consolidation drafts, oracle, cluster labels)
+    anthropic_api_key: str = ""
+
     # App
     secret_key: str = "change-me-in-production"
     cors_origins: str = "http://localhost:3000"

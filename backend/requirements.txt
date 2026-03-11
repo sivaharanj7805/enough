@@ -35,3 +35,10 @@ python-multipart==0.0.20
 # Security
 cryptography==44.0.0
 PyJWT==2.10.1
+
+# Phase 2: Intelligence Engine
+hdbscan==0.8.40
+umap-learn==0.5.7
+scikit-learn==1.6.1
+numpy==2.2.2
+anthropic==0.42.0

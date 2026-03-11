@@ -148,3 +148,145 @@ class TaskTriggerResponse(BaseModel):
 
 # Rebuild forward refs
 PostDetailResponse.model_rebuild()
+
+
+# ──────────────────────────── Phase 2: Intelligence ────────────────────────────
+
+class ClusterSummary(BaseModel):
+    """Lightweight cluster info for dashboard listings."""
+    id: UUID
+    label: str | None
+    ecosystem_state: str | None
+    post_count: int
+
+
+class PostHealthResponse(BaseModel):
+    """Post with health metrics and role assignment."""
+    post_id: UUID
+    title: str
+    url: str
+    composite_score: float | None
+    role: str | None
+    trend: str | None
+    traffic_contribution: float | None
+    ranking_strength: float | None
+    internal_link_score: float | None
+
+
+class ClusterResponse(BaseModel):
+    """Cluster with ecosystem state and health score."""
+    id: UUID
+    site_id: UUID
+    label: str | None
+    ecosystem_state: str | None
+    health_score: float | None
+    post_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ClusterDetailResponse(ClusterResponse):
+    """Cluster with full post list and health details."""
+    posts: list[PostHealthResponse] = []
+
+
+class CannibalizationPairResponse(BaseModel):
+    """A pair of posts cannibalizing each other."""
+    id: UUID
+    cluster_id: UUID
+    post_a: PostHealthResponse
+    post_b: PostHealthResponse
+    overlap_score: float
+    severity: str
+    overlapping_queries: list[str] | None
+
+
+class SiteHealthResponse(BaseModel):
+    """Site-wide health dashboard."""
+    content_health_score: float
+    total_posts: int
+    active_posts: int
+    passive_posts: int
+    cannibalistic_posts: int
+    dead_posts: int
+    content_efficiency_ratio: float
+    clusters: list[ClusterSummary]
+    trends: dict[str, float]
+
+
+class PillarPostInfo(BaseModel):
+    """Pillar post summary for consolidation plans."""
+    post_id: str
+    title: str
+    url: str
+    composite_score: float
+
+
+class MergeCandidateInfo(BaseModel):
+    """Merge candidate details."""
+    post_id: str
+    title: str
+    url: str
+    composite_score: float
+    word_count: int
+
+
+class RedirectEntry(BaseModel):
+    """A single redirect mapping."""
+    old_url: str
+    new_url: str
+
+
+class ConsolidationPlanResponse(BaseModel):
+    """Ranked consolidation opportunity for a swamp cluster."""
+    cluster_id: str
+    cluster_label: str | None
+    priority_score: float
+    pillar_post: PillarPostInfo
+    merge_candidates_count: int
+    dead_weight_count: int
+    estimated_traffic_recovery: int
+    estimated_effort: float
+    is_quick_win: bool
+
+
+class ConsolidationDetailResponse(ConsolidationPlanResponse):
+    """Detailed consolidation plan with full post lists."""
+    merge_candidates: list[MergeCandidateInfo] = []
+    dead_weight: list[MergeCandidateInfo] = []
+    redirect_map: list[RedirectEntry] = []
+
+
+class ConsolidationDraftResponse(BaseModel):
+    """AI-generated consolidated draft."""
+    draft_markdown: str
+    redirect_map: list[RedirectEntry]
+
+
+class SimilarPostInfo(BaseModel):
+    """Similar post info from the Oracle."""
+    post_id: str
+    title: str
+    url: str
+    similarity_score: float | None = None
+    distance: float | None = None
+    avg_position: float | None = None
+    total_clicks: int | None = None
+    word_count: int | None = None
+    source: str
+
+
+class OracleRequest(BaseModel):
+    """Pre-publish oracle request body."""
+    draft_text: str | None = None
+    target_keyword: str | None = None
+
+
+class OracleVerdictResponse(BaseModel):
+    """Pre-publish oracle verdict."""
+    confidence: str
+    verdict: str
+    reasoning: str
+    similar_posts: list[SimilarPostInfo]
+    cluster_state: str | None
+    recommendation: str
