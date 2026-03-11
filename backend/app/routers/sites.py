@@ -6,10 +6,10 @@ from typing import Annotated
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
-from pydantic import BaseModel
 from app.models.schemas import SiteCreate, SiteResponse, SiteListResponse
 from app.utils.encryption import encrypt_value
 
@@ -24,7 +24,6 @@ async def create_site(
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Add a new site for crawling."""
-    # Encrypt sensitive fields before storage
     encrypted_wp_password = encrypt_value(body.wordpress_app_password) if body.wordpress_app_password else None
 
     try:
@@ -118,7 +117,6 @@ async def store_google_token(
 def _sanitize_site_response(row) -> SiteResponse:
     """Build a SiteResponse, stripping encrypted fields from output."""
     data = dict(row)
-    # Never return encrypted secrets in API responses
     data.pop("wordpress_app_password", None)
     data.pop("google_refresh_token", None)
     return SiteResponse(**data)
