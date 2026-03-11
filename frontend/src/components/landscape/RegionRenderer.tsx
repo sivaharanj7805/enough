@@ -10,7 +10,7 @@ import type { PostHealth } from '@/lib/types';
 
 export interface RegionData {
   id: string;
-  label: string;
+  label: string | null;
   ecosystemState: EcosystemState;
   healthScore: number;
   posts: PostHealth[];
@@ -143,7 +143,7 @@ export function renderRegion(
     .on('click', () => onClickRegion(region.id));
 
   // Place vegetation for each post
-  const maxTraffic = Math.max(...region.posts.map((p) => p.traffic_90d), 1);
+  const maxTraffic = Math.max(...region.posts.map((p) => p.traffic_contribution ?? 0), 0.01);
   const postCount = region.posts.length;
 
   region.posts.forEach((post, i) => {
@@ -169,8 +169,8 @@ export function renderRegion(
       });
 
     const config: VegetationConfig = {
-      role: post.role,
-      traffic: post.traffic_90d,
+      role: post.role ?? 'dead_weight',
+      traffic: post.traffic_contribution ?? 0,
       maxTraffic,
       isNew: isNewPost(post),
     };
@@ -186,7 +186,7 @@ export function renderRegion(
     .attr('fill', '#e2e8f0')
     .attr('font-size', '12px')
     .attr('font-weight', '600')
-    .text(region.label);
+    .text(region.label ?? 'Unlabeled');
 
   // Health score badge
   const badgeX = region.radius * 0.7;

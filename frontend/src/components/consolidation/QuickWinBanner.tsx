@@ -24,7 +24,7 @@ export function QuickWinBanner({ plan }: QuickWinBannerProps) {
             Consolidate: {plan.cluster_label}
           </h3>
           <p className="text-sm text-brand-text-muted mt-1">
-            {plan.merge_count} posts to merge · {plan.redirect_count} redirects ·{' '}
+            {plan.merge_candidates_count} posts to merge · {plan.dead_weight_count} to remove ·{' '}
             Est. +{plan.estimated_traffic_recovery.toLocaleString()} traffic recovery
           </p>
         </div>

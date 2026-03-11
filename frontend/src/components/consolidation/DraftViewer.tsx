@@ -42,18 +42,18 @@ export function DraftViewer({ siteId, clusterId }: DraftViewerProps) {
 
   async function copyToClipboard() {
     if (!draft) return;
-    await navigator.clipboard.writeText(draft.content_markdown);
+    await navigator.clipboard.writeText(draft.draft_markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   function downloadMarkdown() {
     if (!draft) return;
-    const blob = new Blob([draft.content_markdown], { type: 'text/markdown' });
+    const blob = new Blob([draft.draft_markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${draft.title.toLowerCase().replace(/\s+/g, '-')}.md`;
+    a.download = 'consolidated-draft.md';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -95,9 +95,9 @@ export function DraftViewer({ siteId, clusterId }: DraftViewerProps) {
     <Card>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-brand-text">{draft.title}</h3>
+          <h3 className="text-sm font-semibold text-brand-text">Consolidated Draft</h3>
           <p className="text-xs text-brand-text-muted">
-            {draft.word_count.toLocaleString()} words · Generated {new Date(draft.generated_at).toLocaleString()}
+            Draft generated
           </p>
         </div>
         <div className="flex gap-2">
@@ -114,7 +114,7 @@ export function DraftViewer({ siteId, clusterId }: DraftViewerProps) {
 
       <div className="prose prose-invert prose-sm max-w-none rounded-lg bg-brand-bg p-4 border border-brand-border overflow-y-auto max-h-[600px]">
         <pre className="whitespace-pre-wrap text-sm text-brand-text font-sans leading-relaxed">
-          {draft.content_markdown}
+          {draft.draft_markdown}
         </pre>
       </div>
 

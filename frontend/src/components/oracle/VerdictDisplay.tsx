@@ -3,7 +3,7 @@
 import { Sun, CloudRain, Waves } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import type { OracleVerdict, OracleConfidence } from '@/lib/types';
+import type { OracleVerdict } from '@/lib/types';
 
 interface VerdictDisplayProps {
   verdict: OracleVerdict;
@@ -15,34 +15,44 @@ interface VerdictConfig {
   glowColor: string;
   title: string;
   subtitle: string;
+  progressValue: number;
 }
 
-const VERDICT_CONFIG: Record<OracleConfidence, VerdictConfig> = {
-  publish: {
-    icon: Sun,
-    color: '#22c55e',
-    glowColor: '#22c55e',
-    title: 'Clear skies. This content has room to grow.',
-    subtitle: 'Publish with confidence',
-  },
-  update: {
-    icon: CloudRain,
-    color: '#eab308',
-    glowColor: '#eab308',
-    title: 'Some overlap detected. Consider updating existing content instead.',
-    subtitle: 'Update recommended',
-  },
-  skip: {
+function getVerdictConfig(verdict: OracleVerdict): VerdictConfig {
+  // Backend sends confidence: high|medium|low and verdict: publish|update_existing|skip
+  if (verdict.verdict === 'publish' || verdict.confidence === 'high') {
+    return {
+      icon: Sun,
+      color: '#22c55e',
+      glowColor: '#22c55e',
+      title: 'Clear skies. This content has room to grow.',
+      subtitle: 'Publish with confidence',
+      progressValue: 85,
+    };
+  }
+  if (verdict.verdict === 'update_existing' || verdict.confidence === 'medium') {
+    return {
+      icon: CloudRain,
+      color: '#eab308',
+      glowColor: '#eab308',
+      title: 'Some overlap detected. Consider updating existing content instead.',
+      subtitle: 'Update recommended',
+      progressValue: 50,
+    };
+  }
+  // skip / low
+  return {
     icon: Waves,
     color: '#ef4444',
     glowColor: '#ef4444',
     title: 'This topic is saturated. Publishing will likely cannibalize existing content.',
     subtitle: 'Skip or consolidate',
-  },
-};
+    progressValue: 20,
+  };
+}
 
 export function VerdictDisplay({ verdict }: VerdictDisplayProps) {
-  const config = VERDICT_CONFIG[verdict.confidence];
+  const config = getVerdictConfig(verdict);
   const Icon = config.icon;
 
   return (
@@ -62,11 +72,11 @@ export function VerdictDisplay({ verdict }: VerdictDisplayProps) {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-brand-text-muted">Confidence</span>
-          <span className="text-xs font-mono" style={{ color: config.color }}>
-            {(verdict.confidence_score * 100).toFixed(0)}%
+          <span className="text-xs font-mono capitalize" style={{ color: config.color }}>
+            {verdict.confidence}
           </span>
         </div>
-        <ProgressBar value={verdict.confidence_score * 100} color={config.color} />
+        <ProgressBar value={config.progressValue} color={config.color} />
       </div>
 
       {/* Reasoning */}
@@ -86,18 +96,12 @@ export function VerdictDisplay({ verdict }: VerdictDisplayProps) {
         <p className="text-sm text-brand-text">{verdict.recommendation}</p>
       </div>
 
-      {/* Existing post to update */}
-      {verdict.existing_post_to_update && (
-        <div className="mt-4 rounded-lg bg-yellow-500/5 border border-yellow-500/20 p-3">
-          <p className="text-xs text-brand-text-muted mb-1">Consider updating instead:</p>
-          <a
-            href={verdict.existing_post_to_update}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-brand-accent hover:underline"
-          >
-            {verdict.existing_post_to_update}
-          </a>
+      {/* Cluster state */}
+      {verdict.cluster_state && (
+        <div className="mt-4 rounded-lg bg-blue-500/5 border border-blue-500/20 p-3">
+          <p className="text-xs text-brand-text-muted">
+            This topic cluster is currently a <span className="font-semibold capitalize text-brand-text">{verdict.cluster_state}</span>
+          </p>
         </div>
       )}
     </Card>

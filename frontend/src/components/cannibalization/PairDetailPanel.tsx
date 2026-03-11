@@ -13,6 +13,8 @@ interface PairDetailPanelProps {
 }
 
 export function PairDetailPanel({ pair, onClose }: PairDetailPanelProps) {
+  const queries = pair.overlapping_queries ?? [];
+
   return (
     <div className="w-96 border-l border-brand-border bg-brand-surface p-6 overflow-y-auto">
       <div className="flex items-center justify-between mb-6">
@@ -39,14 +41,14 @@ export function PairDetailPanel({ pair, onClose }: PairDetailPanelProps) {
         </span>
       </div>
 
-      {/* Posts */}
+      {/* Posts — using nested post_a / post_b objects from backend */}
       <div className="space-y-3 mb-6">
         {[
-          { title: pair.post_a_title, url: pair.post_a_url, label: 'Post A' },
-          { title: pair.post_b_title, url: pair.post_b_url, label: 'Post B' },
-        ].map((post) => (
-          <div key={post.label} className="rounded-lg border border-brand-border p-3">
-            <p className="text-xs text-brand-text-muted mb-1">{post.label}</p>
+          { post: pair.post_a, label: 'Post A' },
+          { post: pair.post_b, label: 'Post B' },
+        ].map(({ post, label }) => (
+          <div key={label} className="rounded-lg border border-brand-border p-3">
+            <p className="text-xs text-brand-text-muted mb-1">{label}</p>
             <p className="text-sm font-medium text-brand-text truncate">{post.title}</p>
             <a
               href={post.url}
@@ -57,26 +59,37 @@ export function PairDetailPanel({ pair, onClose }: PairDetailPanelProps) {
               <ExternalLink size={12} />
               {post.url}
             </a>
+            <div className="mt-2 flex gap-2 text-xs text-brand-text-muted">
+              <span>Score: {Math.round(post.composite_score ?? 0)}</span>
+              <span>·</span>
+              <span>Role: {post.role ?? 'unknown'}</span>
+            </div>
           </div>
         ))}
       </div>
 
       {/* Overlapping queries */}
-      <div className="mb-6">
-        <h4 className="text-xs font-semibold text-brand-text-muted mb-2">
-          Overlapping Queries ({pair.overlapping_queries.length})
-        </h4>
-        <div className="flex flex-wrap gap-1">
-          {pair.overlapping_queries.map((q) => (
-            <Badge key={q}>{q}</Badge>
-          ))}
+      {queries.length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-xs font-semibold text-brand-text-muted mb-2">
+            Overlapping Queries ({queries.length})
+          </h4>
+          <div className="flex flex-wrap gap-1">
+            {queries.map((q) => (
+              <Badge key={q}>{q}</Badge>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Recommendation */}
+      {/* Recommendation based on severity */}
       <div className="rounded-lg bg-brand-accent/5 border border-brand-accent/20 p-3">
         <h4 className="text-xs font-semibold text-brand-accent mb-1">Recommendation</h4>
-        <p className="text-sm text-brand-text">{pair.recommendation}</p>
+        <p className="text-sm text-brand-text">
+          {pair.severity === 'critical' || pair.severity === 'high'
+            ? `Merge "${pair.post_b.title}" into "${pair.post_a.title}" and set up a 301 redirect.`
+            : `Differentiate these posts by adjusting the target keyword of the weaker one.`}
+        </p>
       </div>
     </div>
   );

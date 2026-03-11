@@ -45,19 +45,25 @@ export default function DashboardPage() {
     );
   }
 
+  // Transform trends dict into chart-friendly format
+  const trendData = Object.entries(data.trends).map(([key, value]) => ({
+    date: key,
+    pageviews: value,
+  }));
+
   return (
     <div className="space-y-6">
       {/* Row 1 — Hero metrics */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <HealthScoreCard
           title="Content Health Score"
-          value={data.health_score}
-          trend={data.health_trend}
+          value={Math.round(data.content_health_score)}
+          trend="stable"
           description="Overall ecosystem health"
         />
         <EfficiencyRatio
-          ratio={data.efficiency_ratio}
-          trend={data.efficiency_trend}
+          ratio={data.content_efficiency_ratio}
+          trend="stable"
         />
         <HealthScoreCard
           title="Total Posts"
@@ -71,12 +77,12 @@ export default function DashboardPage() {
       <PostBreakdown
         active={data.active_posts}
         passive={data.passive_posts}
-        cannibal={data.cannibal_posts}
+        cannibal={data.cannibalistic_posts}
         dead={data.dead_posts}
       />
 
       {/* Row 3 — Trend chart */}
-      <TrendChart data={data.traffic_series} />
+      <TrendChart data={trendData} />
 
       {/* Row 4 — Clusters */}
       <ClusterList clusters={data.clusters} />

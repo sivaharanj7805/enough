@@ -5,6 +5,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from 'react';
 import type { Site } from '@/lib/types';
@@ -21,11 +22,12 @@ interface SiteContextValue {
 export const SiteContext = createContext<SiteContextValue | null>(null);
 
 export function SiteProvider({ children }: { children: ReactNode }) {
-  const { data: sites, error, isLoading } = useSites();
+  const { data: response, error, isLoading } = useSites();
+  const sites = useMemo(() => response?.sites ?? [], [response]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (sites && sites.length > 0 && !selectedId) {
+    if (sites.length > 0 && !selectedId) {
       const saved = typeof window !== 'undefined'
         ? localStorage.getItem('enough_site_id')
         : null;
@@ -41,12 +43,12 @@ export function SiteProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const currentSite = sites?.find((s) => s.id === selectedId) ?? null;
+  const currentSite = sites.find((s) => s.id === selectedId) ?? null;
 
   return (
     <SiteContext.Provider
       value={{
-        sites: sites ?? [],
+        sites,
         currentSite,
         selectSite,
         loading: isLoading,

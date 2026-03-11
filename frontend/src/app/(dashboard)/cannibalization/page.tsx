@@ -21,36 +21,16 @@ export default function CannibalizationPage() {
   const [selectedPairId, setSelectedPairId] = useState<string | null>(null);
   const [, setSelectedNodeId] = useState<string | null>(null);
 
-  // Derive posts from pairs
+  // Derive unique posts from pairs (backend sends nested post_a/post_b objects)
   const posts: PostHealth[] = useMemo(() => {
     if (!pairs) return [];
     const map = new Map<string, PostHealth>();
     pairs.forEach((p) => {
-      if (!map.has(p.post_a_id)) {
-        map.set(p.post_a_id, {
-          post_id: p.post_a_id,
-          title: p.post_a_title,
-          url: p.post_a_url,
-          role: 'competitor',
-          health_score: 0,
-          traffic_90d: 0,
-          trend: 'stable',
-          cluster_id: p.cluster_id,
-          keyword_count: 0,
-        });
+      if (!map.has(p.post_a.post_id)) {
+        map.set(p.post_a.post_id, p.post_a);
       }
-      if (!map.has(p.post_b_id)) {
-        map.set(p.post_b_id, {
-          post_id: p.post_b_id,
-          title: p.post_b_title,
-          url: p.post_b_url,
-          role: 'competitor',
-          health_score: 0,
-          traffic_90d: 0,
-          trend: 'stable',
-          cluster_id: p.cluster_id,
-          keyword_count: 0,
-        });
+      if (!map.has(p.post_b.post_id)) {
+        map.set(p.post_b.post_id, p.post_b);
       }
     });
     return Array.from(map.values());

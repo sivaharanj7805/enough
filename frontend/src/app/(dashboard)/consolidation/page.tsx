@@ -57,7 +57,7 @@ export default function ConsolidationPage() {
           </h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {otherPlans.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} />
+              <PlanCard key={plan.cluster_id} plan={plan} />
             ))}
           </div>
         </div>

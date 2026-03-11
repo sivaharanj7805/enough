@@ -138,29 +138,29 @@ export default function LandscapePage() {
             </div>
 
             <div className="flex gap-2">
-              <Badge color={ROLE_COLORS[selectedPost.role]}>
-                {ROLE_LABELS[selectedPost.role]}
+              <Badge color={ROLE_COLORS[selectedPost.role ?? 'dead_weight']}>
+                {ROLE_LABELS[selectedPost.role ?? 'dead_weight']}
               </Badge>
               <span
                 className="text-sm font-medium"
-                style={{ color: TREND_COLORS[selectedPost.trend] }}
+                style={{ color: TREND_COLORS[selectedPost.trend ?? 'stable'] }}
               >
-                {TREND_ICONS[selectedPost.trend]}
+                {TREND_ICONS[selectedPost.trend ?? 'stable']}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <Card className="!p-3">
                 <p className="text-xs text-brand-text-muted">Health</p>
-                <p className="text-lg font-bold text-brand-text">{selectedPost.health_score}</p>
+                <p className="text-lg font-bold text-brand-text">{Math.round(selectedPost.composite_score ?? 0)}</p>
               </Card>
               <Card className="!p-3">
-                <p className="text-xs text-brand-text-muted">Traffic (90d)</p>
-                <p className="text-lg font-bold text-brand-text">{selectedPost.traffic_90d.toLocaleString()}</p>
+                <p className="text-xs text-brand-text-muted">Traffic Share</p>
+                <p className="text-lg font-bold text-brand-text">{((selectedPost.traffic_contribution ?? 0) * 100).toFixed(1)}%</p>
               </Card>
               <Card className="!p-3">
-                <p className="text-xs text-brand-text-muted">Keywords</p>
-                <p className="text-lg font-bold text-brand-text">{selectedPost.keyword_count}</p>
+                <p className="text-xs text-brand-text-muted">Ranking</p>
+                <p className="text-lg font-bold text-brand-text">{((selectedPost.ranking_strength ?? 0) * 100).toFixed(0)}</p>
               </Card>
             </div>
           </div>

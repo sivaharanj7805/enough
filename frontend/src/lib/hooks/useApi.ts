@@ -2,7 +2,7 @@
 
 import { useSWRFetch } from './useSWRFetch';
 import type {
-  Site,
+  SiteListResponse,
   SiteHealth,
   Cluster,
   ClusterDetail,
@@ -13,11 +13,11 @@ import type {
 } from '@/lib/types';
 
 export function useSites() {
-  return useSWRFetch<Site[]>('/sites');
+  return useSWRFetch<SiteListResponse>('/sites');
 }
 
 export function useSiteHealth(siteId: string | null) {
-  return useSWRFetch<SiteHealth>(siteId ? `/sites/${siteId}/health` : null);
+  return useSWRFetch<SiteHealth>(siteId ? `/sites/${siteId}/intelligence/health` : null);
 }
 
 export function useClusters(siteId: string | null) {

@@ -32,7 +32,7 @@ export default function OraclePage() {
           {
             method: 'POST',
             token: session?.access_token,
-            body: JSON.stringify({ content, target_keyword: keyword }),
+            body: JSON.stringify({ draft_text: content, target_keyword: keyword }),
           }
         );
         setVerdict(result);

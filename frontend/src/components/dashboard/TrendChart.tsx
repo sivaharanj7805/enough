@@ -11,10 +11,13 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Card } from '@/components/ui/Card';
-import type { TrafficDataPoint } from '@/lib/types';
+interface TrendDataPoint {
+  date: string;
+  pageviews: number;
+}
 
 interface TrendChartProps {
-  data: TrafficDataPoint[];
+  data: TrendDataPoint[];
 }
 
 type TimeRange = '30d' | '60d' | '90d';

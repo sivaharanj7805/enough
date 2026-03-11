@@ -5,29 +5,22 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { ECOSYSTEM_COLORS, type EcosystemState } from '@/lib/constants';
-import type { Cluster } from '@/lib/types';
+import type { ClusterSummary } from '@/lib/types';
 
 interface ClusterListProps {
-  clusters: Cluster[];
+  clusters: ClusterSummary[];
 }
 
-type SortKey = 'health_score' | 'post_count' | 'ecosystem_state';
+type SortKey = 'post_count' | 'ecosystem_state';
 
 export function ClusterList({ clusters }: ClusterListProps) {
-  const [sortBy, setSortBy] = useState<SortKey>('health_score');
+  const [sortBy, setSortBy] = useState<SortKey>('post_count');
   const router = useRouter();
 
   const sorted = [...clusters].sort((a, b) => {
-    if (sortBy === 'health_score') return b.health_score - a.health_score;
     if (sortBy === 'post_count') return b.post_count - a.post_count;
-    return a.ecosystem_state.localeCompare(b.ecosystem_state);
+    return (a.ecosystem_state ?? '').localeCompare(b.ecosystem_state ?? '');
   });
-
-  function scoreColor(score: number): string {
-    if (score >= 70) return '#22c55e';
-    if (score >= 40) return '#eab308';
-    return '#ef4444';
-  }
 
   return (
     <Card>
@@ -35,7 +28,6 @@ export function ClusterList({ clusters }: ClusterListProps) {
         <p className="text-sm font-medium text-brand-text-muted">Clusters</p>
         <div className="flex gap-1">
           {([
-            { key: 'health_score' as const, label: 'Health' },
             { key: 'post_count' as const, label: 'Posts' },
             { key: 'ecosystem_state' as const, label: 'State' },
           ]).map((opt) => (
@@ -60,29 +52,28 @@ export function ClusterList({ clusters }: ClusterListProps) {
         </p>
       ) : (
         <div className="space-y-1">
-          {sorted.map((cluster) => (
-            <button
-              key={cluster.id}
-              onClick={() => router.push(`/landscape?cluster=${cluster.id}`)}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-surface-hover"
-            >
-              <Badge color={ECOSYSTEM_COLORS[cluster.ecosystem_state as EcosystemState]?.bg}>
-                {ECOSYSTEM_COLORS[cluster.ecosystem_state as EcosystemState]?.label ?? cluster.ecosystem_state}
-              </Badge>
-              <span className="flex-1 text-sm font-medium text-brand-text truncate">
-                {cluster.label}
-              </span>
-              <span className="text-xs text-brand-text-muted">
-                {cluster.post_count} posts
-              </span>
-              <span
-                className="text-sm font-semibold"
-                style={{ color: scoreColor(cluster.health_score) }}
+          {sorted.map((cluster) => {
+            const state = cluster.ecosystem_state as EcosystemState | null;
+            const ecoColors = state ? ECOSYSTEM_COLORS[state] : null;
+
+            return (
+              <button
+                key={cluster.id}
+                onClick={() => router.push(`/landscape?cluster=${cluster.id}`)}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-surface-hover"
               >
-                {cluster.health_score}
-              </span>
-            </button>
-          ))}
+                <Badge color={ecoColors?.bg ?? '#6b7280'}>
+                  {ecoColors?.label ?? cluster.ecosystem_state ?? 'Unknown'}
+                </Badge>
+                <span className="flex-1 text-sm font-medium text-brand-text truncate">
+                  {cluster.label ?? 'Unlabeled'}
+                </span>
+                <span className="text-xs text-brand-text-muted">
+                  {cluster.post_count} posts
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </Card>

@@ -9,7 +9,7 @@ interface NetworkNode extends d3.SimulationNodeDatum {
   id: string;
   title: string;
   url: string;
-  role: PostRole;
+  role: PostRole | null;
   traffic: number;
   clusterId: string | null;
 }
@@ -61,11 +61,12 @@ export function NetworkGraph({
       ? filteredPairs.filter((p) => p.cluster_id === clusterFilter)
       : filteredPairs;
 
+
     // Build node set from filtered pairs
     const nodeIds = new Set<string>();
     filteredByCluster.forEach((p) => {
-      nodeIds.add(p.post_a_id);
-      nodeIds.add(p.post_b_id);
+      nodeIds.add(p.post_a.post_id);
+      nodeIds.add(p.post_b.post_id);
     });
 
     const nodes: NetworkNode[] = posts
@@ -75,17 +76,17 @@ export function NetworkGraph({
         title: p.title,
         url: p.url,
         role: p.role,
-        traffic: p.traffic_90d,
-        clusterId: p.cluster_id,
+        traffic: p.traffic_contribution ?? 0,
+        clusterId: null,
       }));
 
     const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
     const links: NetworkLink[] = filteredByCluster
-      .filter((p) => nodeMap.has(p.post_a_id) && nodeMap.has(p.post_b_id))
+      .filter((p) => nodeMap.has(p.post_a.post_id) && nodeMap.has(p.post_b.post_id))
       .map((p) => ({
-        source: p.post_a_id,
-        target: p.post_b_id,
+        source: p.post_a.post_id,
+        target: p.post_b.post_id,
         pairId: p.id,
         overlapScore: p.overlap_score,
         severity: p.severity,
@@ -159,9 +160,9 @@ export function NetworkGraph({
       const d = nodeG.datum();
       nodeG.append('circle')
         .attr('r', radiusScale(d.traffic))
-        .attr('fill', ROLE_COLORS[d.role])
+        .attr('fill', ROLE_COLORS[d.role ?? 'dead_weight'])
         .attr('fill-opacity', 0.8)
-        .attr('stroke', ROLE_COLORS[d.role])
+        .attr('stroke', ROLE_COLORS[d.role ?? 'dead_weight'])
         .attr('stroke-width', 2);
 
       nodeG.append('text')

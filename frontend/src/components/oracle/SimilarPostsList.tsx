@@ -35,19 +35,26 @@ export function SimilarPostsList({ posts }: SimilarPostsListProps) {
               </a>
             </div>
             <div className="text-right shrink-0 space-y-1">
-              <div className="text-xs text-brand-text-muted">
-                Similarity:{' '}
-                <span className="font-mono text-brand-text">
-                  {(post.similarity_score * 100).toFixed(0)}%
-                </span>
-              </div>
-              {post.ranking_position !== null && (
+              {post.similarity_score !== null && (
                 <div className="text-xs text-brand-text-muted">
-                  Rank: <span className="font-mono text-brand-text">#{post.ranking_position}</span>
+                  Similarity:{' '}
+                  <span className="font-mono text-brand-text">
+                    {(post.similarity_score * 100).toFixed(0)}%
+                  </span>
                 </div>
               )}
-              <div className="text-xs text-brand-text-muted">
-                Traffic: <span className="font-mono text-brand-text">{post.traffic_90d.toLocaleString()}</span>
+              {post.avg_position !== null && (
+                <div className="text-xs text-brand-text-muted">
+                  Avg pos: <span className="font-mono text-brand-text">#{post.avg_position.toFixed(1)}</span>
+                </div>
+              )}
+              {post.total_clicks !== null && (
+                <div className="text-xs text-brand-text-muted">
+                  Clicks: <span className="font-mono text-brand-text">{post.total_clicks.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="text-xs text-brand-text-muted capitalize">
+                Source: {post.source}
               </div>
             </div>
           </div>

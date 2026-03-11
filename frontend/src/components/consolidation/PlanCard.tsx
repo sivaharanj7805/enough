@@ -20,14 +20,14 @@ export function PlanCard({ plan }: PlanCardProps) {
         </span>
       </div>
 
-      <ProgressBar value={plan.priority_score} color="#22c55e" className="mb-3" />
+      <ProgressBar value={Math.min(plan.priority_score, 100)} color="#22c55e" className="mb-3" />
 
       <div className="space-y-1.5 text-sm">
         <p className="text-brand-text-muted">
-          Pillar: <span className="text-brand-text">{plan.pillar_post_title}</span>
+          Pillar: <span className="text-brand-text">{plan.pillar_post.title}</span>
         </p>
         <p className="text-brand-text-muted">
-          {plan.merge_count} posts to merge · {plan.redirect_count} to redirect
+          {plan.merge_candidates_count} posts to merge · {plan.dead_weight_count} to remove
         </p>
         <p className="text-brand-accent text-xs font-medium">
           Est. +{plan.estimated_traffic_recovery.toLocaleString()} traffic recovery

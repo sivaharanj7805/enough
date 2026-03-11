@@ -9,7 +9,16 @@ import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
-import type { Site, PipelineStatus } from '@/lib/types';
+import type { Site } from '@/lib/types';
+
+/** Local build status for the onboarding animation (not the backend PipelineStatus). */
+interface BuildStatus {
+  stage: string;
+  progress: number;
+  message: string;
+  completed: boolean;
+  error: string | null;
+}
 
 type CmsType = 'wordpress' | 'other';
 
@@ -217,7 +226,7 @@ function ConnectStep({ icon: Icon, title, description, onNext, onSkip }: StepPro
 function BuildingStep({ siteId }: { siteId: string }) {
   const router = useRouter();
   const { session } = useAuth();
-  const [status, setStatus] = useState<PipelineStatus>({
+  const [status, setStatus] = useState<BuildStatus>({
     stage: 'crawling',
     progress: 0,
     message: 'Starting ecosystem analysis...',

@@ -56,7 +56,7 @@ export default function ConsolidationDetailPage() {
         <h2 className="text-xl font-bold text-brand-text">{detail.cluster_label}</h2>
         <p className="text-sm text-brand-text-muted mt-1">
           Est. +{detail.estimated_traffic_recovery.toLocaleString()} traffic recovery ·{' '}
-          ~{detail.estimated_effort_hours}h effort
+          ~{detail.estimated_effort}h effort
         </p>
       </div>
 
@@ -78,8 +78,7 @@ export default function ConsolidationDetailPage() {
             {detail.pillar_post.url}
           </a>
           <div className="mt-3 flex gap-3 text-xs text-brand-text-muted">
-            <span>Health: <span className="text-brand-text font-mono">{detail.pillar_post.health_score}</span></span>
-            <span>Traffic: <span className="text-brand-text font-mono">{detail.pillar_post.traffic_90d.toLocaleString()}</span></span>
+            <span>Score: <span className="text-brand-text font-mono">{Math.round(detail.pillar_post.composite_score)}</span></span>
           </div>
         </Card>
 
@@ -94,16 +93,16 @@ export default function ConsolidationDetailPage() {
               <p className="text-xs text-brand-text-muted">Traffic Recovery</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-brand-text">{detail.estimated_effort_hours}h</p>
+              <p className="text-2xl font-bold text-brand-text">{detail.estimated_effort}h</p>
               <p className="text-xs text-brand-text-muted">Effort</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-brand-text">{detail.merge_count}</p>
+              <p className="text-2xl font-bold text-brand-text">{detail.merge_candidates_count}</p>
               <p className="text-xs text-brand-text-muted">Posts to Merge</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-brand-text">{detail.redirect_count}</p>
-              <p className="text-xs text-brand-text-muted">Redirects</p>
+              <p className="text-2xl font-bold text-brand-text">{detail.dead_weight_count}</p>
+              <p className="text-xs text-brand-text-muted">Dead Weight</p>
             </div>
           </div>
         </Card>
@@ -126,10 +125,10 @@ export default function ConsolidationDetailPage() {
                   <p className="text-xs text-brand-text-muted truncate">{mc.url}</p>
                 </div>
                 <Badge color={ROLE_COLORS.competitor}>
-                  {(mc.similarity_score * 100).toFixed(0)}% similar
+                  Score: {Math.round(mc.composite_score)}
                 </Badge>
                 <span className="text-xs text-brand-text-muted shrink-0">
-                  {mc.word_count.toLocaleString()} words
+                  {(mc.word_count ?? 0).toLocaleString()} words
                 </span>
               </div>
             ))}

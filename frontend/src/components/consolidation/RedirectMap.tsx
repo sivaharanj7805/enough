@@ -12,9 +12,9 @@ interface RedirectMapProps {
 
 export function RedirectMap({ entries, isWordPress }: RedirectMapProps) {
   function exportCsv() {
-    const header = 'old_url,new_url,post_title,reason';
+    const header = 'old_url,new_url';
     const rows = entries.map(
-      (e) => `"${e.old_url}","${e.new_url}","${e.post_title}","${e.reason}"`
+      (e) => `"${e.old_url}","${e.new_url}"`
     );
     const csv = [header, ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -55,21 +55,19 @@ export function RedirectMap({ entries, isWordPress }: RedirectMapProps) {
               <tr className="border-b border-brand-border">
                 <th className="text-left py-2 px-3 text-xs font-medium text-brand-text-muted">Old URL</th>
                 <th className="text-left py-2 px-3 text-xs font-medium text-brand-text-muted">→</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-brand-text-muted">New URL</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-brand-text-muted">Reason</th>
+                <th className="text-left py-2 px-3 text-xs font-medium text-brand-text-muted">New URL (Pillar)</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((entry) => (
                 <tr key={entry.old_url} className="border-b border-brand-border/50 hover:bg-brand-surface-hover">
-                  <td className="py-2 px-3 text-brand-text-muted font-mono text-xs truncate max-w-[200px]">
+                  <td className="py-2 px-3 text-brand-text-muted font-mono text-xs truncate max-w-[280px]">
                     {entry.old_url}
                   </td>
                   <td className="py-2 px-3 text-brand-text-muted">→</td>
-                  <td className="py-2 px-3 text-brand-accent font-mono text-xs truncate max-w-[200px]">
+                  <td className="py-2 px-3 text-brand-accent font-mono text-xs truncate max-w-[280px]">
                     {entry.new_url}
                   </td>
-                  <td className="py-2 px-3 text-brand-text-muted text-xs">{entry.reason}</td>
                 </tr>
               ))}
             </tbody>
