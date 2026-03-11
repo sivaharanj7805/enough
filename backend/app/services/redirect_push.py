@@ -124,12 +124,17 @@ class RedirectPusher:
                     error = str(e)[:200]
                     logger.error("Redirect push failed for %s → %s: %s", old_url, new_url, e)
 
-                # Log to DB
+                # Log to DB (upsert — deduplicate on site + old_url)
                 await db.execute(
                     """
                     INSERT INTO redirect_log
                         (site_id, old_url, new_url, status, pushed_at, error)
                     VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (site_id, old_url) DO UPDATE SET
+                        new_url = EXCLUDED.new_url,
+                        status = EXCLUDED.status,
+                        pushed_at = EXCLUDED.pushed_at,
+                        error = EXCLUDED.error
                     """,
                     site_id,
                     old_url,

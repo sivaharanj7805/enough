@@ -29,7 +29,8 @@ CREATE TABLE redirect_log (
     pushed_at TIMESTAMPTZ,
     verified_at TIMESTAMPTZ,
     error TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(site_id, old_url)
 );
 
 CREATE INDEX idx_cluster_narratives_cluster ON cluster_narratives(cluster_id);

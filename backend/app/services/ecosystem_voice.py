@@ -1,10 +1,13 @@
 """Ecosystem Voice — Generate Claude-powered narrative summaries per cluster."""
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
 import asyncpg
+
+from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,9 @@ NARRATIVE_PROMPTS: dict[str, str] = {
 
 class EcosystemVoice:
     """Generate ecosystem-metaphor narratives for content clusters."""
+
+    def __init__(self) -> None:
+        self.rate_limiter = RateLimiter(requests_per_second=3)
 
     async def generate_for_cluster(self, db: asyncpg.Connection, cluster_id: UUID) -> str:
         """Generate a narrative for a single cluster and store it."""
@@ -117,7 +123,8 @@ class EcosystemVoice:
             last_update=last_update,
         )
 
-        # Call Claude
+        # Rate limit + call Claude
+        await self.rate_limiter.wait()
         client = AsyncAnthropic()
         response = await client.messages.create(
             model="claude-sonnet-4-20250514",

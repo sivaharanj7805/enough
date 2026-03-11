@@ -10,8 +10,10 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { useSWRFetch } from '@/lib/hooks/useSWRFetch';
+import { EcosystemNarrative } from '@/components/landscape/EcosystemNarrative';
 import { ROLE_COLORS, ROLE_LABELS, TREND_ICONS, TREND_COLORS } from '@/lib/constants';
 import type { PostHealth, ClusterDetail } from '@/lib/types';
+import type { EcosystemState } from '@/lib/constants';
 
 export default function LandscapePage() {
   const { currentSite } = useSite();
@@ -101,6 +103,21 @@ export default function LandscapePage() {
             Back to full landscape
           </button>
         )}
+
+        {/* Ecosystem narrative when zoomed into a cluster */}
+        {zoomedClusterId && currentSite && (() => {
+          const cluster = clusters?.find((c) => c.id === zoomedClusterId);
+          return cluster ? (
+            <div className="absolute bottom-4 left-4 right-4 z-10 max-w-lg">
+              <EcosystemNarrative
+                siteId={currentSite.id}
+                clusterId={zoomedClusterId}
+                ecosystemState={cluster.ecosystem_state as EcosystemState | null}
+                clusterLabel={cluster.label}
+              />
+            </div>
+          ) : null;
+        })()}
 
         <EcosystemCanvas
           clusters={effectiveClusters}
