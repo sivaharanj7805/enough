@@ -10,6 +10,9 @@ import type {
   ConsolidationPlan,
   ConsolidationDetail,
   PostHealth,
+  ClusterNarrative,
+  CalendarResponse,
+  RedirectStatusResponse,
 } from '@/lib/types';
 
 export function useSites() {
@@ -51,5 +54,27 @@ export function useConsolidationDetail(siteId: string | null, clusterId: string 
 export function useClusterPosts(siteId: string | null, clusterId: string | null) {
   return useSWRFetch<PostHealth[]>(
     siteId && clusterId ? `/sites/${siteId}/intelligence/clusters/${clusterId}/posts` : null
+  );
+}
+
+// ─── Phase 4: Action Layer ───────────────────────
+
+export function useClusterNarrative(siteId: string | null, clusterId: string | null) {
+  return useSWRFetch<ClusterNarrative>(
+    siteId && clusterId
+      ? `/sites/${siteId}/intelligence/clusters/${clusterId}/narrative`
+      : null
+  );
+}
+
+export function useCalendar(siteId: string | null) {
+  return useSWRFetch<CalendarResponse>(
+    siteId ? `/sites/${siteId}/intelligence/calendar` : null
+  );
+}
+
+export function useRedirectStatus(siteId: string | null) {
+  return useSWRFetch<RedirectStatusResponse>(
+    siteId ? `/sites/${siteId}/redirects/status` : null
   );
 }

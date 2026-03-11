@@ -269,6 +269,58 @@ export interface TaskTriggerResponse {
   site_id: string;
 }
 
+// ─── Phase 4: Action Layer ───────────────────────
+
+/** Matches backend ClusterNarrativeResponse */
+export interface ClusterNarrative {
+  cluster_id: string;
+  narrative_text: string;
+  generated_at: string;
+}
+
+/** Matches backend CalendarRecommendation */
+export interface CalendarRecommendation {
+  cluster_id: string;
+  cluster_label: string | null;
+  ecosystem_state: string | null;
+  recommendation_type: string;
+  recommendation_text: string;
+  suggested_keywords: string[] | null;
+  pause_months: number | null;
+}
+
+/** Matches backend CalendarResponse */
+export interface CalendarResponse {
+  site_id: string;
+  recommendations: CalendarRecommendation[];
+  summary: string;
+}
+
+/** Matches backend RedirectPushRequest */
+export interface RedirectPushRequest {
+  redirect_map: RedirectEntry[];
+}
+
+/** Matches backend RedirectStatusEntry */
+export interface RedirectStatusEntry {
+  old_url: string;
+  new_url: string;
+  status: string;
+  pushed_at: string | null;
+  verified_at: string | null;
+  error: string | null;
+}
+
+/** Matches backend RedirectStatusResponse */
+export interface RedirectStatusResponse {
+  site_id: string;
+  entries: RedirectStatusEntry[];
+  total: number;
+  pushed: number;
+  verified: number;
+  failed: number;
+}
+
 // ─── Auth ────────────────────────────────────────
 export interface AuthUser {
   id: string;

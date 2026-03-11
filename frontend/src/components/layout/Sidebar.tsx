@@ -9,6 +9,7 @@ import {
   Network,
   Sparkles,
   BarChart3,
+  Calendar,
   Wrench,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/cannibalization', label: 'Cannibalization', icon: Network },
   { href: '/oracle', label: 'Oracle', icon: Sparkles },
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+  { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/consolidation', label: 'Consolidation', icon: Wrench },
 ];
 

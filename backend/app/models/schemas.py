@@ -301,3 +301,55 @@ class PipelineStatusResponse(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error: str | None = None
+
+
+# ──────────────────────────── Phase 4: Action Layer ────────────────────────────
+
+class ClusterNarrativeResponse(BaseModel):
+    """Ecosystem voice narrative for a cluster."""
+    cluster_id: UUID
+    narrative_text: str
+    generated_at: datetime
+
+
+class CalendarRecommendation(BaseModel):
+    """Publishing cadence recommendation for a cluster."""
+    cluster_id: UUID
+    cluster_label: str | None
+    ecosystem_state: str | None
+    recommendation_type: str  # pause, maintain, revive, grow
+    recommendation_text: str
+    suggested_keywords: list[str] | None
+    pause_months: int | None
+
+
+class CalendarResponse(BaseModel):
+    """Site-wide content calendar response."""
+    site_id: UUID
+    recommendations: list[CalendarRecommendation]
+    summary: str
+
+
+class RedirectPushRequest(BaseModel):
+    """Request body for pushing redirects to WordPress."""
+    redirect_map: list[RedirectEntry]
+
+
+class RedirectStatusEntry(BaseModel):
+    """Status of a single redirect push."""
+    old_url: str
+    new_url: str
+    status: str
+    pushed_at: datetime | None
+    verified_at: datetime | None
+    error: str | None
+
+
+class RedirectStatusResponse(BaseModel):
+    """Response for redirect push status."""
+    site_id: UUID
+    entries: list[RedirectStatusEntry]
+    total: int
+    pushed: int
+    verified: int
+    failed: int
