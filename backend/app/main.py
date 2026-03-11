@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import get_pool, close_pool
-from app.routers import auth, sites, ingestion, analytics, intelligence, actions
+from app.routers import auth, sites, ingestion, analytics, intelligence, actions, retention
 
 # Configure logging
 logging.basicConfig(
@@ -54,6 +54,7 @@ app.include_router(ingestion.router, prefix="/sites", tags=["Ingestion"])
 app.include_router(analytics.router, prefix="/sites", tags=["Analytics"])
 app.include_router(intelligence.router, prefix="/sites", tags=["Intelligence"])
 app.include_router(actions.router, prefix="/sites", tags=["Actions"])
+app.include_router(retention.router, tags=["Retention"])
 
 
 @app.get("/health")

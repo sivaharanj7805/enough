@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     # Anthropic (Claude API for consolidation drafts, oracle, cluster labels)
     anthropic_api_key: str = ""
 
+    # Stripe
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_growth: str = ""
+    stripe_price_scale: str = ""
+
+    # Email (Resend)
+    resend_api_key: str = ""
+    email_from: str = "Enough <reports@enough.app>"
+
     # App
     secret_key: str = "change-me-in-production"
     cors_origins: str = "http://localhost:3000"

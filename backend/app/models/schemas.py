@@ -353,3 +353,106 @@ class RedirectStatusResponse(BaseModel):
     pushed: int
     verified: int
     failed: int
+
+
+# ──────────────────────────── Phase 5: Retention + Growth ────────────────────────────
+
+class ReportHistoryEntry(BaseModel):
+    """Weekly report send history."""
+    id: UUID
+    site_id: UUID
+    subject: str
+    status: str
+    sent_at: datetime
+
+
+class ImpactTrackingResponse(BaseModel):
+    """Impact tracking for a consolidation."""
+    id: UUID
+    site_id: UUID
+    cluster_id: UUID | None
+    pillar_url: str
+    consolidated_urls: list[str]
+    baseline_traffic: int
+    baseline_avg_position: float | None
+    baseline_date: str
+    latest_traffic: int | None
+    latest_avg_position: float | None
+    latest_check_date: str | None
+    traffic_change_pct: float | None
+    status: str
+    days_since: int
+
+
+class ImpactSnapshotResponse(BaseModel):
+    """Impact snapshot at a milestone checkpoint."""
+    snapshot_date: str
+    traffic: int
+    avg_position: float | None
+    redirects_working: int
+    milestone: str | None
+
+
+class ImpactDetailResponse(BaseModel):
+    """Detailed impact tracking with snapshots."""
+    tracking: ImpactTrackingResponse
+    snapshots: list[ImpactSnapshotResponse]
+
+
+class ImpactCardResponse(BaseModel):
+    """Shareable impact card."""
+    tracking_id: UUID
+    headline: str
+    pillar_url: str
+    days_since: int
+    traffic_change: int
+    traffic_change_pct: float
+    posts_consolidated: int
+    redirects_working: int
+    summary: str
+
+
+class StartTrackingRequest(BaseModel):
+    """Request to start impact tracking."""
+    cluster_id: UUID | None = None
+    pillar_url: str
+    consolidated_urls: list[str]
+
+
+class StewardProfile(BaseModel):
+    """Content steward profile stats."""
+    user_id: str
+    member_since: str
+    swamps_cleared: int
+    deserts_revived: int
+    seedlings_planted: int
+    total_posts_consolidated: int
+    total_redirects_created: int
+    estimated_traffic_recovered: int
+    efficiency_improvement: float
+    health_improvement: float
+
+
+class CheckoutRequest(BaseModel):
+    """Stripe checkout request."""
+    price_id: str
+    success_url: str
+    cancel_url: str
+
+
+class CheckoutResponse(BaseModel):
+    """Stripe checkout session URL."""
+    checkout_url: str
+
+
+class SubscriptionResponse(BaseModel):
+    """Current subscription details."""
+    tier: str
+    status: str
+    stripe_subscription_id: str | None
+    current_period_end: str | None
+
+
+class PortalResponse(BaseModel):
+    """Stripe customer portal URL."""
+    portal_url: str

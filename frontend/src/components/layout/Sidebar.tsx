@@ -11,6 +11,9 @@ import {
   BarChart3,
   Calendar,
   Wrench,
+  TrendingUp,
+  User,
+  CreditCard,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -24,7 +27,13 @@ const NAV_ITEMS = [
   { href: '/oracle', label: 'Oracle', icon: Sparkles },
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/impact', label: 'Impact', icon: TrendingUp },
   { href: '/consolidation', label: 'Consolidation', icon: Wrench },
+];
+
+const BOTTOM_NAV_ITEMS = [
+  { href: '/profile', label: 'Profile', icon: User },
+  { href: '/billing', label: 'Billing', icon: CreditCard },
 ];
 
 export function Sidebar() {
@@ -75,6 +84,28 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Bottom Nav */}
+      <div className="border-t border-brand-border p-3 space-y-1">
+        {BOTTOM_NAV_ITEMS.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={clsx(
+                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                active
+                  ? 'bg-brand-accent/10 text-brand-accent'
+                  : 'text-brand-text-muted hover:bg-brand-surface-hover hover:text-brand-text'
+              )}
+            >
+              <item.icon size={18} />
+              {!collapsed && <span>{item.label}</span>}
+            </Link>
+          );
+        })}
+      </div>
 
       {/* Site Selector */}
       <div className="border-t border-brand-border p-3">
