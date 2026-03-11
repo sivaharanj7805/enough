@@ -240,7 +240,7 @@ function BuildingStep({ siteId }: { siteId: string }) {
     setStarted(true);
 
     try {
-      await apiFetch(`/sites/${siteId}/pipeline/start`, {
+      await apiFetch(`/sites/${siteId}/intelligence/run-all`, {
         method: 'POST',
         token: session?.access_token,
       });

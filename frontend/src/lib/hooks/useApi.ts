@@ -9,7 +9,6 @@ import type {
   CannibalizationPair,
   ConsolidationPlan,
   ConsolidationDetail,
-  PostHealth,
   ClusterNarrative,
   CalendarResponse,
   RedirectStatusResponse,
@@ -48,12 +47,6 @@ export function useConsolidationPlans(siteId: string | null) {
 export function useConsolidationDetail(siteId: string | null, clusterId: string | null) {
   return useSWRFetch<ConsolidationDetail>(
     siteId && clusterId ? `/sites/${siteId}/intelligence/consolidation/${clusterId}` : null
-  );
-}
-
-export function useClusterPosts(siteId: string | null, clusterId: string | null) {
-  return useSWRFetch<PostHealth[]>(
-    siteId && clusterId ? `/sites/${siteId}/intelligence/clusters/${clusterId}/posts` : null
   );
 }
 

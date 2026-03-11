@@ -278,17 +278,19 @@ Log in to see your full landscape.
 
             # Send via Resend if configured
             if settings.resend_api_key:
+                import asyncio
                 import resend
 
                 resend.api_key = settings.resend_api_key
-                resend.Emails.send(
+                await asyncio.to_thread(
+                    resend.Emails.send,
                     {
                         "from": settings.email_from,
                         "to": [user_email],
                         "subject": report["subject"],
                         "html": report["html_body"],
                         "text": report["text_body"],
-                    }
+                    },
                 )
                 logger.info("Weekly report sent to %s for site %s", user_email, site_id)
             else:
