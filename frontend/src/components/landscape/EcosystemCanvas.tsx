@@ -1,0 +1,207 @@
+'use client';
+
+import { useEffect, useRef, useState, useCallback } from 'react';
+import * as d3 from 'd3';
+import { renderRegion, type RegionData } from './RegionRenderer';
+import { LandscapeTooltip } from './LandscapeTooltip';
+import { LegendPanel } from './LegendPanel';
+import type { ClusterDetail } from '@/lib/types';
+import type { PostHealth } from '@/lib/types';
+import type { EcosystemState, PostRole, Trend } from '@/lib/constants';
+
+interface EcosystemCanvasProps {
+  clusters: ClusterDetail[];
+  onSelectPost: (post: PostHealth | null) => void;
+  onZoomToCluster: (clusterId: string | null) => void;
+  zoomedClusterId: string | null;
+}
+
+interface TooltipData {
+  title: string;
+  url: string;
+  traffic: number;
+  healthScore: number;
+  role: PostRole;
+  trend: Trend;
+}
+
+interface TooltipState {
+  data: TooltipData;
+  x: number;
+  y: number;
+}
+
+export function EcosystemCanvas({
+  clusters,
+  onSelectPost,
+  onZoomToCluster,
+  zoomedClusterId,
+}: EcosystemCanvasProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  const handleHoverPost = useCallback((post: PostHealth | null, x: number, y: number) => {
+    if (!post) {
+      setTooltip(null);
+      return;
+    }
+    setTooltip({
+      data: {
+        title: post.title,
+        url: post.url,
+        traffic: post.traffic_90d,
+        healthScore: post.health_score,
+        role: post.role,
+        trend: post.trend,
+      },
+      x,
+      y,
+    });
+  }, []);
+
+  const handleClickPost = useCallback((post: PostHealth) => {
+    onSelectPost(post);
+  }, [onSelectPost]);
+
+  const handleClickRegion = useCallback((regionId: string) => {
+    onZoomToCluster(regionId);
+  }, [onZoomToCluster]);
+
+  useEffect(() => {
+    if (!svgRef.current || !containerRef.current || clusters.length === 0) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+    const width = containerRef.current.clientWidth;
+    const height = containerRef.current.clientHeight;
+
+    svg.attr('width', width).attr('height', height);
+
+    // Background
+    svg.append('rect')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('fill', '#0a0f1a');
+
+    // Subtle grid
+    const gridSpacing = 40;
+    const gridG = svg.append('g').attr('class', 'grid');
+    for (let x = 0; x < width; x += gridSpacing) {
+      gridG.append('line')
+        .attr('x1', x).attr('y1', 0)
+        .attr('x2', x).attr('y2', height)
+        .attr('stroke', '#111827')
+        .attr('stroke-width', 0.5);
+    }
+    for (let y = 0; y < height; y += gridSpacing) {
+      gridG.append('line')
+        .attr('x1', 0).attr('y1', y)
+        .attr('x2', width).attr('y2', y)
+        .attr('stroke', '#111827')
+        .attr('stroke-width', 0.5);
+    }
+
+    // Main group for zoom/pan
+    const g = svg.append('g').attr('class', 'landscape');
+
+    // Zoom behavior
+    const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.2, 8])
+      .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        g.attr('transform', event.transform.toString());
+      });
+    svg.call(zoomBehavior);
+
+    // Build region data with force layout for positioning
+    const minRadius = 60;
+    const maxRadius = 180;
+    const maxPosts = Math.max(...clusters.map((c) => c.posts.length), 1);
+
+    const regions: RegionData[] = clusters.map((cluster) => {
+      const postRatio = cluster.posts.length / maxPosts;
+      const radius = minRadius + postRatio * (maxRadius - minRadius);
+
+      return {
+        id: cluster.id,
+        label: cluster.label,
+        ecosystemState: cluster.ecosystem_state as EcosystemState,
+        healthScore: cluster.health_score,
+        posts: cluster.posts,
+        x: width / 2 + (Math.random() - 0.5) * width * 0.5,
+        y: height / 2 + (Math.random() - 0.5) * height * 0.5,
+        radius,
+      };
+    });
+
+    // Force simulation to prevent overlap
+    interface ForceNode extends d3.SimulationNodeDatum {
+      id: string;
+      radius: number;
+    }
+
+    const forceNodes: ForceNode[] = regions.map((r) => ({
+      id: r.id,
+      x: r.x,
+      y: r.y,
+      radius: r.radius,
+    }));
+
+    const simulation = d3.forceSimulation(forceNodes)
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('charge', d3.forceManyBody().strength(-200))
+      .force('collision', d3.forceCollide<ForceNode>().radius((d) => d.radius + 30))
+      .stop();
+
+    // Run simulation synchronously
+    for (let i = 0; i < 200; i++) {
+      simulation.tick();
+    }
+
+    // Update region positions from simulation
+    forceNodes.forEach((node, i) => {
+      regions[i].x = node.x ?? regions[i].x;
+      regions[i].y = node.y ?? regions[i].y;
+    });
+
+    // Render regions
+    regions.forEach((region) => {
+      renderRegion(g, region, handleHoverPost, handleClickPost, handleClickRegion);
+    });
+
+    // If zoomed to a cluster, zoom into it
+    if (zoomedClusterId) {
+      const target = regions.find((r) => r.id === zoomedClusterId);
+      if (target) {
+        const scale = Math.min(width, height) / (target.radius * 3);
+        const tx = width / 2 - target.x * scale;
+        const ty = height / 2 - target.y * scale;
+        svg.transition().duration(750).call(
+          zoomBehavior.transform,
+          d3.zoomIdentity.translate(tx, ty).scale(scale)
+        );
+      }
+    }
+
+    return () => {
+      svg.selectAll('*').remove();
+    };
+  }, [clusters, zoomedClusterId, handleHoverPost, handleClickPost, handleClickRegion]);
+
+  return (
+    <div ref={containerRef} className="relative h-full w-full landscape-canvas">
+      <svg ref={svgRef} className="h-full w-full" />
+
+      {tooltip && (
+        <LandscapeTooltip
+          data={tooltip.data}
+          x={tooltip.x}
+          y={tooltip.y}
+        />
+      )}
+
+      <LegendPanel />
+    </div>
+  );
+}

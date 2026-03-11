@@ -1,0 +1,55 @@
+'use client';
+
+import { useSWRFetch } from './useSWRFetch';
+import type {
+  Site,
+  SiteHealth,
+  Cluster,
+  ClusterDetail,
+  CannibalizationPair,
+  ConsolidationPlan,
+  ConsolidationDetail,
+  PostHealth,
+} from '@/lib/types';
+
+export function useSites() {
+  return useSWRFetch<Site[]>('/sites');
+}
+
+export function useSiteHealth(siteId: string | null) {
+  return useSWRFetch<SiteHealth>(siteId ? `/sites/${siteId}/health` : null);
+}
+
+export function useClusters(siteId: string | null) {
+  return useSWRFetch<Cluster[]>(siteId ? `/sites/${siteId}/intelligence/clusters` : null);
+}
+
+export function useClusterDetail(siteId: string | null, clusterId: string | null) {
+  return useSWRFetch<ClusterDetail>(
+    siteId && clusterId ? `/sites/${siteId}/intelligence/clusters/${clusterId}` : null
+  );
+}
+
+export function useCannibalizationPairs(siteId: string | null) {
+  return useSWRFetch<CannibalizationPair[]>(
+    siteId ? `/sites/${siteId}/intelligence/cannibalization` : null
+  );
+}
+
+export function useConsolidationPlans(siteId: string | null) {
+  return useSWRFetch<ConsolidationPlan[]>(
+    siteId ? `/sites/${siteId}/intelligence/consolidation` : null
+  );
+}
+
+export function useConsolidationDetail(siteId: string | null, clusterId: string | null) {
+  return useSWRFetch<ConsolidationDetail>(
+    siteId && clusterId ? `/sites/${siteId}/intelligence/consolidation/${clusterId}` : null
+  );
+}
+
+export function useClusterPosts(siteId: string | null, clusterId: string | null) {
+  return useSWRFetch<PostHealth[]>(
+    siteId && clusterId ? `/sites/${siteId}/intelligence/clusters/${clusterId}/posts` : null
+  );
+}
