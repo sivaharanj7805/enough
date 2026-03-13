@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Enough — Living Ecosystem V8</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#060a13;font-family:'Inter',sans-serif;overflow:hidden}
+  .wrap{width:1400px;height:820px;margin:0 auto;position:relative}
+  canvas{display:block}
+  .hdr{position:absolute;top:0;left:0;right:0;z-index:10;padding:16px 24px;background:linear-gradient(180deg,rgba(6,10,19,.95) 0%,rgba(6,10,19,.3) 85%,transparent 100%)}
+  .hdr h1{color:#e2e8f0;font-size:17px;font-weight:600} .hdr h1 span{color:#4ade80}
+  .hdr .sub{color:#64748b;font-size:11px;margin-top:2px}
+  .pnl{position:absolute;background:rgba(8,12,22,.78);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 18px;z-index:10}
+  .narr{top:65px;left:20px;max-width:270px}
+  .narr h3{color:#e2e8f0;font-size:12px;margin-bottom:6px;font-weight:600}
+  .narr p{color:#94a3b8;font-size:10.5px;line-height:1.55}
+  .narr .hl{color:#f97316;font-weight:600} .narr .gd{color:#4ade80;font-weight:600}
+  .leg{top:65px;right:20px}
+  .leg h4{color:#94a3b8;font-size:9px;margin-bottom:6px;text-transform:uppercase;letter-spacing:1.5px;font-weight:600}
+  .li{display:flex;align-items:center;gap:7px;margin:4px 0;color:#cbd5e1;font-size:9.5px}
+  .ld{width:12px;height:8px;border-radius:4px;flex-shrink:0}
+  .bar{position:absolute;bottom:0;left:0;right:0;display:flex;gap:24px;padding:12px 24px;background:linear-gradient(0deg,rgba(6,10,19,.95) 0%,rgba(6,10,19,.3) 85%,transparent 100%);z-index:10}
+  .st{text-align:center} .sv{color:#e2e8f0;font-size:17px;font-weight:700} .sl{color:#475569;font-size:9px;margin-top:1px;text-transform:uppercase;letter-spacing:.5px}
+  #tip{position:absolute;z-index:30;background:rgba(6,10,19,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 14px;pointer-events:none;display:none;min-width:200px;max-width:280px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+  #tip h3{color:#e2e8f0;font-size:11px;font-weight:600;margin-bottom:4px}
+  #tip .tr{display:flex;justify-content:space-between;gap:12px;color:#94a3b8;font-size:9.5px;margin:2px 0}
+  #tip .tv{color:#e2e8f0;font-weight:600}
+  #tip .td{color:#64748b;font-size:9px;margin-top:4px;line-height:1.4}
+  #tip .tb{height:3px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:5px;overflow:hidden}
+  #tip .tf{height:100%;border-radius:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr"><h1>🌿 <span>Enough</span> — acme-saas.com</h1><div class="sub">47 posts • 6 clusters • Health 67/100 • Hover any element to explore</div></div>
+  <canvas id="c" width="2800" height="1640"></canvas>
+  <div class="pnl narr">
+    <h3>🔍 Ecosystem Intelligence</h3>
+    <p>Your <span class="gd">API Integration</span> forest is thriving — 7 healthy posts driving 12.4K monthly visits. Strong internal linking (12 links) to <span class="gd">Security</span>.</p>
+    <p style="margin-top:5px">⚠️ <span class="hl">Getting Started</span> is a swamp — 8 posts cannibalizing each other. Traffic down 34%. 3 foxes spotted (high bounce rate).</p>
+    <p style="margin-top:5px">🏜️ <span class="hl">Pricing</span> is a desert. Only 2 thin posts, 420 visits/mo. Vultures circling.</p>
+  </div>
+  <div class="pnl leg">
+    <h4>Biomes</h4>
+    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#15803d,#4ade80)"></div> Forest 🌲 (70+)</div>
+    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#65a30d,#a3e635)"></div> Meadow 🌻 (50-70)</div>
+    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#92400e,#f59e0b)"></div> Swamp 🪴 (25-50)</div>
+    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#57534e,#a8a29e)"></div> Desert 🏜️ (&lt;25)</div>
+    <h4 style="margin-top:8px">Creatures</h4>
+    <div class="li">🦌 Deer — high engagement</div>
+    <div class="li">🐝 Bees — earning backlinks</div>
+    <div class="li">🦊 Fox — high bounce rate</div>
+    <div class="li">🦅 Birds — low CTR</div>
+    <div class="li">🍄 Mushrooms — duplicate content</div>
+    <div class="li">🪨 Boulders — broken links</div>
+    <h4 style="margin-top:8px">Rivers</h4>
+    <div class="li"><div class="ld" style="background:linear-gradient(90deg,#60a5fa,#93c5fd)"></div> Internal link flow</div>
+  </div>
+  <div class="bar">
+    <div class="st"><div class="sv" style="color:#4ade80">67</div><div class="sl">Health</div></div>
+    <div class="st"><div class="sv">47</div><div class="sl">Posts</div></div>
+    <div class="st"><div class="sv">6</div><div class="sl">Clusters</div></div>
+    <div class="st"><div class="sv" style="color:#f87171">12</div><div class="sl">Cannibalizing</div></div>
+    <div class="st"><div class="sv" style="color:#60a5fa">5</div><div class="sl">Rivers</div></div>
+    <div class="st"><div class="sv" style="color:#fbbf24">2</div><div class="sl">⚠ Alerts</div></div>
+  </div>
+  <div id="tip"><h3 id="tn"></h3><div id="tc"></div></div>
+</div>
+<script>
+const c=document.getElementById('c');c.style.width='1400px';c.style.height='820px';
+const x=c.getContext('2d'),P=2;
+function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function rgba(r,g,b,a){return`rgba(${r},${g},${b},${a})`}
+
+// ──────────────────────────────────────
+// DATA: Every element maps to real data
+// ──────────────────────────────────────
+const CL=[
+  {l:'API Integration',st:'forest',hp:82,x:340,y:310,rx:150,ry:100,weather:'sunny',
+   posts:[
+     {title:'How to Authenticate with Our API',role:'pillar',traffic:4200,health:92,age:'3mo',words:2400,url:'/blog/api-auth'},
+     {title:'REST vs GraphQL: Which to Choose',role:'pillar',traffic:3100,health:88,age:'5mo',words:3100,url:'/blog/rest-vs-graphql'},
+     {title:'Rate Limiting Best Practices',role:'supporter',traffic:1800,health:78,age:'4mo',words:1600,url:'/blog/rate-limiting'},
+     {title:'API Versioning Strategies',role:'supporter',traffic:1200,health:72,age:'8mo',words:1400,url:'/blog/api-versioning'},
+     {title:'Webhook Integration Guide',role:'supporter',traffic:900,health:70,age:'6mo',words:1200,url:'/blog/webhooks'},
+     {title:'SDK Quick Start Tutorial',role:'supporter',traffic:600,health:65,age:'10mo',words:900,url:'/blog/sdk-quickstart'},
+     {title:'API Error Handling Patterns',role:'supporter',traffic:450,health:60,age:'12mo',words:800,url:'/blog/error-handling'},
+   ],
+   animals:[{type:'deer',count:2,meaning:'Avg 4.2 min time-on-page — readers deeply engage'},{type:'bees',count:3,meaning:'14 new backlinks this month — content attracting citations'}]},
+  {l:'Getting Started',st:'swamp',hp:31,x:660,y:410,rx:160,ry:110,weather:'storm',
+   posts:[
+     {title:'Getting Started with Acme',role:'competitor',traffic:2100,health:28,age:'18mo',words:1800,url:'/blog/getting-started'},
+     {title:'Quick Start Guide',role:'competitor',traffic:1900,health:25,age:'14mo',words:1600,url:'/blog/quick-start'},
+     {title:'Your First Integration',role:'competitor',traffic:1700,health:22,age:'20mo',words:1500,url:'/blog/first-integration'},
+     {title:'Beginner Tutorial',role:'competitor',traffic:1400,health:20,age:'16mo',words:1400,url:'/blog/beginner-tutorial'},
+     {title:'How to Get Started',role:'competitor',traffic:1100,health:18,age:'22mo',words:1300,url:'/blog/how-to-start'},
+     {title:'Setup Walkthrough',role:'dead_weight',traffic:200,health:12,age:'24mo',words:600,url:'/blog/setup-walkthrough'},
+     {title:'Installation Steps',role:'dead_weight',traffic:150,health:10,age:'26mo',words:400,url:'/blog/install-steps'},
+     {title:'Day One Checklist',role:'dead_weight',traffic:80,health:8,age:'30mo',words:350,url:'/blog/day-one'},
+   ],
+   animals:[{type:'foxes',count:3,meaning:'78% avg bounce rate — visitors land and immediately leave'},{type:'vultures',count:2,meaning:'Rankings dropping on 5 target keywords'}]},
+  {l:'Security',st:'forest',hp:78,x:1020,y:290,rx:140,ry:92,weather:'sunny',
+   posts:[
+     {title:'Complete Security Guide',role:'pillar',traffic:5500,health:90,age:'2mo',words:4200,url:'/blog/security-guide'},
+     {title:'OAuth 2.0 Implementation',role:'supporter',traffic:2200,health:82,age:'4mo',words:2800,url:'/blog/oauth2'},
+     {title:'API Key Management',role:'supporter',traffic:1500,health:75,age:'6mo',words:1900,url:'/blog/api-keys'},
+     {title:'Data Encryption at Rest',role:'supporter',traffic:800,health:68,age:'8mo',words:1500,url:'/blog/encryption'},
+     {title:'Compliance & Certifications',role:'supporter',traffic:600,health:62,age:'10mo',words:1100,url:'/blog/compliance'},
+   ],
+   animals:[{type:'deer',count:1,meaning:'Avg 3.8 min time-on-page'},{type:'bees',count:2,meaning:'8 backlinks this month'}]},
+  {l:'Pricing',st:'desert',hp:22,x:220,y:570,rx:90,ry:60,weather:'cloudy',
+   posts:[
+     {title:'Pricing Plans Compared',role:'dead_weight',traffic:300,health:18,age:'24mo',words:450,url:'/blog/pricing-plans'},
+     {title:'Enterprise vs Growth Plan',role:'dead_weight',traffic:120,health:12,age:'28mo',words:380,url:'/blog/enterprise-vs-growth'},
+   ],
+   animals:[{type:'birds',count:4,meaning:'2,400 impressions/mo but only 0.8% CTR — titles need work'},{type:'vultures',count:1,meaning:'Position dropped from #8 to #19'}]},
+  {l:'Release Notes',st:'meadow',hp:65,x:560,y:600,rx:120,ry:75,weather:'cloudy',
+   posts:[
+     {title:'v3.0 Release: AI Features',role:'pillar',traffic:3200,health:80,age:'1mo',words:2200,url:'/blog/v3-release'},
+     {title:'v2.5: Performance Update',role:'supporter',traffic:1100,health:62,age:'6mo',words:1400,url:'/blog/v25-update'},
+     {title:'Q4 Product Roadmap',role:'supporter',traffic:900,health:58,age:'3mo',words:1000,url:'/blog/q4-roadmap'},
+     {title:'Migration Guide v2→v3',role:'supporter',traffic:700,health:55,age:'2mo',words:1600,url:'/blog/migration-v2-v3'},
+   ],
+   animals:[{type:'bees',count:2,meaning:'v3.0 post got 6 social shares this week'}]},
+  {l:'Dev Tools',st:'seedbed',hp:55,x:880,y:555,rx:105,ry:65,weather:'fog',
+   posts:[
+     {title:'CLI Tool Documentation',role:'pillar',traffic:1800,health:68,age:'2mo',words:2000,url:'/blog/cli-docs'},
+     {title:'VS Code Extension Guide',role:'supporter',traffic:400,health:48,age:'4mo',words:800,url:'/blog/vscode-ext'},
+     {title:'Debugging with DevTools',role:'supporter',traffic:300,health:42,age:'6mo',words:700,url:'/blog/debugging'},
+   ],
+   animals:[]},
+];
+
+const RV=[
+  {a:0,b:2,links:12,q:'sparkling',meaning:'12 bidirectional links — strongest connection in the ecosystem'},
+  {a:0,b:1,links:3,q:'murky',meaning:'Only 3 links, mostly one-directional API→Getting Started'},
+  {a:1,b:4,links:1,q:'toxic',meaning:'1 weak link. Getting Started barely connects to Release Notes'},
+  {a:2,b:5,links:6,q:'clear',meaning:'6 healthy links — Security ↔ Dev Tools well connected'},
+  {a:4,b:5,links:4,q:'clear',meaning:'4 links — Release Notes ↔ Dev Tools'},
+];
+
+// ──────────────────────────────────────
+// INTERACTIVE ELEMENTS (populated during render)
+// ──────────────────────────────────────
+let hitTargets=[];
+let hoveredTarget=null;
+let mouseX=-1,mouseY=-1;
+
+c.parentElement.addEventListener('mousemove',e=>{
+  const r=c.getBoundingClientRect();
+  mouseX=(e.clientX-r.left);mouseY=(e.clientY-r.top);
+  // Find nearest hit target
+  let best=null,bestD=Infinity;
+  for(const t of hitTargets){
+    const dx=mouseX-t.sx,dy=mouseY-t.sy;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(d<t.r&&d<bestD){best=t;bestD=d;}
+  }
+  hoveredTarget=best;
+  const tip=document.getElementById('tip');
+  if(best){
+    document.getElementById('tn').innerHTML=best.icon+' '+best.name;
+    document.getElementById('tc').innerHTML=best.html;
+    let tx=e.clientX+14,ty=e.clientY-8;
+    const wr=c.parentElement.getBoundingClientRect();
+    if(tx-wr.left+280>1400)tx=e.clientX-290;
+    if(ty-wr.top+150>820)ty=e.clientY-160;
+    tip.style.left=(tx-wr.left)+'px';tip.style.top=(ty-wr.top)+'px';
+    tip.style.display='block';
+    c.style.cursor='pointer';
+  }else{
+    tip.style.display='none';
+    c.style.cursor='default';
+  }
+});
+c.parentElement.addEventListener('mouseleave',()=>{hoveredTarget=null;document.getElementById('tip').style.display='none';});
+
+// ──────────────────────────────────────
+// TREE GENERATOR (L-system, improved)
+// ──────────────────────────────────────
+const LC={
+  pillar:{d:[20,90,45],m:[22,140,65],b:[60,210,110],h:[170,245,200]},
+  supporter:{d:[25,60,160],m:[35,100,220],b:[80,155,245],h:[180,215,250]},
+  competitor:{d:[160,70,15],m:[220,95,15],b:[245,150,55],h:[250,210,160]},
+  dead_weight:{d:[60,60,65],m:[80,80,85],b:[110,110,115],h:[150,150,155]},
+};
+const BC={
+  pillar:{b:[85,60,40],d:[55,38,25]},supporter:{b:[75,55,38],d:[50,35,22]},
+  competitor:{b:[90,55,30],d:[60,38,18]},dead_weight:{b:[65,60,55],d:[45,42,38]},
+};
+
+function genTree(seed,opts){
+  const r=rng(seed);const br=[],lv=[];
+  function branch(px,py,a,len,w,d,mx){
+    if(d>mx||len<2)return;
+    const ex=px+Math.cos(a)*len,ey=py+Math.sin(a)*len;
+    br.push({x1:px,y1:py,x2:ex,y2:ey,w,d});
+    if(d>=mx-1||len<opts.lt){
+      for(let i=0;i<(4+r()*8|0);i++){
+        const la=a+(r()-.5)*Math.PI*1.1,ld=(r()*12+5)*opts.s;
+        lv.push({x:ex+Math.cos(la)*ld,y:ey+Math.sin(la)*ld,sz:(r()*5+3)*opts.s,sh:r(),a:r()*6.28});
+      }
+    }
+    const nc=d<2?(2+(r()*2|0)):(1+(r()*3|0));
+    for(let i=0;i<nc;i++){
+      const ca=a+(r()-.5)*opts.sp,cl=len*(opts.ld+(r()-.5)*.15);
+      branch(ex,ey,ca,cl,w*(.58+r()*.15),d+1,mx);
+    }
+  }
+  branch(0,0,-Math.PI/2+(r()-.5)*.12,opts.tl,opts.tw,0,opts.md);
+  return{br,lv};
+}
+
+const TOPTS={
+  pillar:{tl:55,tw:5,md:6,sp:1.1,ld:.68,lt:12,s:1},
+  supporter:{tl:28,tw:3,md:5,sp:1.3,ld:.65,lt:8,s:.72},
+  competitor:{tl:38,tw:3.5,md:5,sp:1.5,ld:.6,lt:10,s:.8},
+  dead_weight:{tl:20,tw:4,md:3,sp:.8,ld:.55,lt:20,s:.55},
+};
+
+// ──────────────────────────────────────
+// GENERATE ALL TREES (each = a blog post)
+// ──────────────────────────────────────
+let seed=100;const allTrees=[];
+CL.forEach((cl,ci)=>{
+  const mt=Math.max(...cl.posts.map(p=>p.traffic),1);
+  cl.posts.forEach((p,i)=>{
+    const a=(i/Math.max(cl.posts.length,1))*6.28+ci*.4;
+    const d=cl.rx*.2+(i%3)*cl.rx*.2;
+    const px=cl.x+Math.cos(a)*d,py=cl.y+Math.sin(a)*d*.55;
+    const ts=.45+(p.traffic/mt)*.55;
+    const o={...TOPTS[p.role]};o.tl*=ts;o.tw*=ts;o.s*=ts;
+    const{br,lv}=genTree(seed++,o);
+    allTrees.push({x:px,y:py,role:p.role,br,lv,s:ts,post:p,cluster:cl.l,clIdx:ci});
+  });
+});
+
+// Bridge trees between clusters (ambient, no post data)
+const bRng=rng(7777);
+for(let i=0;i<50;i++){
+  const wx=100+bRng()*1200,wy=200+bRng()*500;
+  // Check if near a cluster edge
+  let nearCluster=false,nearState='meadow';
+  for(const cl of CL){
+    const dx=wx-cl.x,dy=wy-cl.y;
+    const dist=Math.sqrt(dx*dx/(cl.rx*cl.rx)+dy*dy/(cl.ry*cl.ry));
+    if(dist>0.9&&dist<2.0){nearCluster=true;nearState=cl.st;break;}
+  }
+  if(!nearCluster)continue;
+  const s=.2+bRng()*.35;
+  const role=bRng()>.6?'supporter':'dead_weight';
+  const o={...TOPTS[role]};o.tl*=s;o.tw*=s;o.s*=s;
+  const{br,lv}=genTree(seed++,o);
+  allTrees.push({x:wx,y:wy,role,br,lv,s,post:null,cluster:'(ambient)',clIdx:-1});
+}
+allTrees.sort((a,b)=>a.y-b.y);
+
+// ──────────────────────────────────────
+// ANIMALS
+// ──────────────────────────────────────
+const allAnimals=[];
+CL.forEach(cl=>{
+  cl.animals.forEach(an=>{
+    for(let i=0;i<an.count;i++){
+      const ar=rng(cl.x*100+i*17+an.type.charCodeAt(0));
+      allAnimals.push({type:an.type,cx:cl.x,cy:cl.y,rx:cl.rx,ry:cl.ry,
+        phase:ar()*6.28,speed:.3+ar()*.5,meaning:an.meaning,cluster:cl.l});
+    }
+  });
+});
+
+// ──────────────────────────────────────
+// TERRAIN FEATURES
+// ──────────────────────────────────────
+const features=[];
+const fRng=rng(8888);
+// Mushrooms in swamp
+for(let i=0;i<8;i++){
+  const cl=CL[1];
+  features.push({type:'mushroom',x:cl.x+(fRng()-.5)*cl.rx*1.4,y:cl.y+(fRng()-.5)*cl.ry*1,
+    size:.5+fRng()*.5,meaning:'Near-duplicate: "Getting Started" ↔ "Quick Start Guide" (89% similarity)'});
+}
+// Boulders in desert
+for(let i=0;i<4;i++){
+  const cl=CL[3];
+  features.push({type:'boulder',x:cl.x+(fRng()-.5)*cl.rx*1.5,y:cl.y+(fRng()-.5)*cl.ry*1.2,
+    size:.4+fRng()*.6,meaning:'Broken link: /pricing/enterprise → 404 (23 clicks lost/mo)'});
+}
+features.sort((a,b)=>a.y-b.y);
+
+// Particles
+const fireflies=[],floatLeaves=[],embers=[],stars=[];
+for(let i=0;i<30;i++)fireflies.push({x:100+Math.random()*1200,y:100+Math.random()*600,vx:(Math.random()-.5)*.2,vy:(Math.random()-.5)*.12,r:1.5+Math.random()*2,ph:Math.random()*6.28,sp:.015+Math.random()*.02,c:['#4ade80','#86efac','#fbbf24','#60a5fa'][Math.random()*4|0]});
+for(let i=0;i<15;i++)floatLeaves.push({x:Math.random()*1500,y:Math.random()*800,vx:.2+Math.random()*.5,vy:.05+Math.random()*.15,rot:Math.random()*6.28,rs:(Math.random()-.5)*.03,sz:3+Math.random()*4,wp:Math.random()*6.28,c:['#22c55e','#4ade80','#86efac','#a3e635','#fbbf24'][Math.random()*5|0],op:.2+Math.random()*.3});
+for(let i=0;i<10;i++)embers.push({x:CL[1].x+(Math.random()-.5)*CL[1].rx,y:CL[1].y+(Math.random()-.5)*CL[1].ry*.5,vy:-.12-Math.random()*.35,vx:(Math.random()-.5)*.12,life:Math.random(),r:1+Math.random()*1.5});
+for(let i=0;i<80;i++)stars.push({x:Math.random()*1400,y:Math.random()*820,r:.3+Math.random()*1,ph:Math.random()*6.28,sp:.008+Math.random()*.012});
+
+const GC={forest:{i:[22,68,42],g:[34,197,94],b:[45,120,80]},swamp:{i:[45,38,15],g:[245,158,11],b:[85,65,30]},desert:{i:[58,48,38],g:[168,162,158],b:[120,100,78]},seedbed:{i:[22,58,32],g:[74,222,128],b:[55,110,55]},meadow:{i:[30,58,22],g:[163,230,53],b:[85,140,60]}};
+function hpCol(s){return s>=70?'#4ade80':s>=40?'#fbbf24':'#f87171'}
+
+// Raindrops for storm
+const raindrops=[];
+for(let i=0;i<60;i++)raindrops.push({x:Math.random()*400-200,y:Math.random()*200-150,speed:3+Math.random()*4,len:8+Math.random()*12});
+
+// ──────────────────────────────────────
+// RENDER FUNCTIONS
+// ──────────────────────────────────────
+function drawGround(cl,t){
+  const gc=GC[cl.st],cx=cl.x*P,cy=cl.y*P,rx=cl.rx*P,ry=cl.ry*P;
+  // Outer glow (soft biome bleed)
+  const og=x.createRadialGradient(cx,cy,rx*.3,cx,cy,rx*2.2);
+  og.addColorStop(0,rgba(...gc.g,.07));og.addColorStop(.6,rgba(...gc.g,.02));og.addColorStop(1,'rgba(6,10,19,0)');
+  x.fillStyle=og;x.beginPath();x.ellipse(cx,cy,rx*2.2,ry*1.8,0,0,6.28);x.fill();
+  // Main ground
+  const mg=x.createRadialGradient(cx,cy-ry*.1,0,cx,cy,rx*1.1);
+  mg.addColorStop(0,rgba(...gc.i,.75));mg.addColorStop(.7,rgba(...gc.i,.35));mg.addColorStop(1,rgba(...gc.i,0));
+  x.fillStyle=mg;x.beginPath();x.ellipse(cx,cy,rx*1.1,ry*1.1,0,0,6.28);x.fill();
+  // Border glow
+  x.strokeStyle=rgba(...gc.b,.12+Math.sin(t*.5)*.03);x.lineWidth=1.5*P;
+  x.beginPath();x.ellipse(cx,cy,rx,ry,0,0,6.28);x.stroke();
+}
+
+function drawRivers(t){
+  hitTargets=hitTargets.filter(h=>h.type!=='river');
+  RV.forEach(rv=>{
+    const a=CL[rv.a],b=CL[rv.b];
+    const mx=(a.x+b.x)/2+Math.sin(t*.15+rv.a)*15;
+    const my=(a.y+b.y)/2+Math.cos(t*.12+rv.b)*12;
+    const w=Math.max(2,Math.min(rv.links/1.8,8));
+    let wc;
+    if(rv.q==='sparkling')wc=[96,180,255];else if(rv.q==='clear')wc=[70,150,235];
+    else if(rv.q==='murky')wc=[130,95,50];else wc=[80,140,55];
+    // Glow
+    x.strokeStyle=rgba(wc[0],wc[1],wc[2],.05);x.lineWidth=(w+6)*P;x.lineCap='round';
+    x.beginPath();x.moveTo(a.x*P,a.y*P);x.quadraticCurveTo(mx*P,my*P,b.x*P,b.y*P);x.stroke();
+    // Body
+    x.strokeStyle=rgba(wc[0],wc[1],wc[2],.3+Math.sin(t+rv.a)*.06);x.lineWidth=w*P;
+    x.beginPath();x.moveTo(a.x*P,a.y*P);x.quadraticCurveTo(mx*P,my*P,b.x*P,b.y*P);x.stroke();
+    // Highlight
+    x.strokeStyle=rgba(Math.min(255,wc[0]+60),Math.min(255,wc[1]+60),Math.min(255,wc[2]+60),.12);
+    x.lineWidth=(w*.35)*P;
+    x.beginPath();x.moveTo(a.x*P,a.y*P);x.quadraticCurveTo(mx*P,my*P,b.x*P,b.y*P);x.stroke();
+    // Flow particles
+    for(let i=0;i<Math.min(rv.links*2,14);i++){
+      const pt=((t*.12+i/14)%1),ti=1-pt;
+      const px=ti*ti*a.x+2*ti*pt*mx+pt*pt*b.x;
+      const py=ti*ti*a.y+2*ti*pt*my+pt*pt*b.y;
+      const al=rv.q==='sparkling'?.5:.25;
+      x.fillStyle=rgba(Math.min(255,wc[0]+40),Math.min(255,wc[1]+40),Math.min(255,wc[2]+40),al+Math.sin(t*3+i)*.1);
+      x.beginPath();x.arc(px*P,py*P,1.5*P,0,6.28);x.fill();
+    }
+    // Hit target at midpoint
+    hitTargets.push({type:'river',sx:mx,sy:my,r:25,icon:'🌊',
+      name:`${a.l} ↔ ${b.l}`,
+      html:`<div class="tr"><span>Links</span><span class="tv">${rv.links}</span></div>
+            <div class="tr"><span>Quality</span><span class="tv">${rv.q}</span></div>
+            <div class="td">${rv.meaning}</div>`});
+  });
+}
+
+function drawTree(tr,t){
+  const{x:tx,y:ty,role,br,lv,s}=tr;
+  const lc=LC[role],bc=BC[role];
+  const wind=Math.sin(t*1+tx*.02)*2.5;
+  const isHovered=hoveredTarget&&hoveredTarget.treeRef===tr;
+  // Shadow
+  x.fillStyle='rgba(0,0,0,.18)';x.beginPath();x.ellipse(tx*P,(ty+3)*P,16*s*P,5*s*P,0,0,6.28);x.fill();
+  // Hover glow
+  if(isHovered){
+    const hg=x.createRadialGradient(tx*P,(ty-20*s)*P,0,tx*P,ty*P,35*s*P);
+    hg.addColorStop(0,rgba(255,255,255,.08));hg.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle=hg;x.beginPath();x.arc(tx*P,(ty-15*s)*P,35*s*P,0,6.28);x.fill();
+  }
+  // Branches
+  const sb=[...br].sort((a,b)=>a.d-b.d);
+  sb.forEach(b=>{
+    const ds=wind*(b.d*.4);
+    const sx1=tx*P+b.x1*P+ds*.5*P,sy1=ty*P+b.y1*P;
+    const sx2=tx*P+b.x2*P+ds*P,sy2=ty*P+b.y2*P;
+    const w=Math.max(b.w*P*.8,.5*P);
+    const dk=1-b.d*.08;
+    const col=bc.d.map((v,i)=>v+(bc.b[i]-v)*dk);
+    x.strokeStyle=rgba(...col,.9);x.lineWidth=w;x.lineCap='round';
+    x.beginPath();x.moveTo(sx1,sy1);x.quadraticCurveTo((sx1+sx2)/2+ds*.3*P,(sy1+sy2)/2,sx2,sy2);x.stroke();
+  });
+  // Leaves
+  const sl=[...lv].sort((a,b)=>a.y-b.y);
+  sl.forEach(l=>{
+    const ds=wind*1.2;
+    const lx=tx*P+l.x*P+ds*P+Math.sin(t*1.5+l.a)*1.5*P;
+    const ly=ty*P+l.y*P+Math.cos(t*.8+l.x*.1)*.8*P;
+    let col;if(l.sh<.25)col=lc.d;else if(l.sh<.5)col=lc.m;else if(l.sh<.8)col=lc.b;else col=lc.h;
+    const sz=l.sz*P;
+    x.save();x.translate(lx,ly);x.rotate(l.a+Math.sin(t+l.x)*.15);
+    if(l.sh>.7){x.globalAlpha=.1;x.fillStyle=rgba(...lc.h,1);x.beginPath();x.ellipse(0,0,sz*1.6,sz,0,0,6.28);x.fill();}
+    x.globalAlpha=isHovered?.9:.65+l.sh*.25;
+    x.fillStyle=rgba(...col,1);x.beginPath();x.ellipse(0,0,sz,sz*.65,0,0,6.28);x.fill();
+    x.restore();x.globalAlpha=1;
+  });
+}
+
+function drawAnimal(an,t){
+  const tt=t*an.speed+an.phase;
+  let sx,sy,icon='',label='';
+  if(an.type==='deer'){
+    const wx=an.cx+Math.sin(tt*.15)*an.rx*.25,wy=an.cy+Math.cos(tt*.1)*an.ry*.2;
+    const[scx,scy]=[wx,wy];sx=scx;sy=scy;icon='🦌';label='Deer';
+    const s=1,dip=Math.sin(tt*.5)>.3?2:0;
+    x.fillStyle='rgba(160,100,40,.4)';x.beginPath();x.ellipse(sx*P,sy*P,7*P,4.5*P,.1,0,6.28);x.fill();
+    x.strokeStyle='rgba(160,100,40,.35)';x.lineWidth=1.2*P;
+    x.beginPath();x.moveTo((sx-3)*P,(sy+3.5)*P);x.lineTo((sx-3)*P,(sy+8)*P);x.moveTo((sx+3)*P,(sy+3.5)*P);x.lineTo((sx+3)*P,(sy+8)*P);x.stroke();
+    x.fillStyle='rgba(180,120,55,.4)';x.beginPath();x.arc((sx+7)*P,(sy-2+dip)*P,3*P,0,6.28);x.fill();
+    x.strokeStyle='rgba(180,120,55,.3)';x.lineWidth=.8*P;
+    x.beginPath();x.moveTo((sx+8)*P,(sy-5+dip)*P);x.lineTo((sx+11)*P,(sy-10)*P);x.lineTo((sx+13)*P,(sy-8)*P);
+    x.moveTo((sx+8)*P,(sy-5+dip)*P);x.lineTo((sx+5)*P,(sy-10)*P);x.lineTo((sx+3)*P,(sy-8)*P);x.stroke();
+  }else if(an.type==='foxes'){
+    const angle=tt*.18;
+    sx=an.cx+Math.cos(angle)*an.rx*.8;sy=an.cy+Math.sin(angle)*an.ry*.65;
+    icon='🦊';label='Fox';
+    x.fillStyle='rgba(234,88,12,.4)';x.beginPath();x.ellipse(sx*P,sy*P,6*P,3.5*P,.3+Math.sin(tt*.5)*.2,0,6.28);x.fill();
+    x.beginPath();x.moveTo((sx-3)*P,(sy-2.5)*P);x.lineTo((sx-1)*P,(sy-6.5)*P);x.lineTo((sx+1)*P,(sy-2.5)*P);x.fill();
+    x.fillStyle=rgba(251,191,36,.5+Math.sin(tt*2)*.2);x.beginPath();x.arc((sx+2.5)*P,(sy-1)*P,1.2*P,0,6.28);x.fill();
+    x.strokeStyle='rgba(234,88,12,.35)';x.lineWidth=1.5*P;x.lineCap='round';
+    x.beginPath();x.moveTo((sx-5)*P,(sy+1)*P);x.quadraticCurveTo((sx-8)*P,(sy-3)*P,(sx-9)*P,(sy+1+Math.sin(tt*3))*P);x.stroke();
+  }else if(an.type==='birds'){
+    const angle=tt*.35+an.phase;const orb=an.rx*.9;
+    sx=an.cx+Math.cos(angle)*orb;sy=an.cy-an.ry*1.2+Math.sin(angle*.7)*15;
+    icon='🦅';label='Bird';
+    const wf=Math.sin(tt*4)*3.5;
+    x.strokeStyle='rgba(100,116,139,.5)';x.lineWidth=1.5*P;x.lineCap='round';
+    x.beginPath();x.moveTo((sx-7)*P,(sy+wf)*P);x.lineTo(sx*P,sy*P);x.lineTo((sx+7)*P,(sy+wf)*P);x.stroke();
+  }else if(an.type==='vultures'){
+    const angle=tt*.14;const orb=an.rx*1.1;
+    sx=an.cx+Math.cos(angle)*orb;sy=an.cy-an.ry*1.4+Math.sin(angle*.5)*18;
+    icon='🦃';label='Vulture';
+    const wf=Math.sin(tt*1.5)*5;
+    x.strokeStyle='rgba(30,30,30,.55)';x.lineWidth=2.2*P;x.lineCap='round';
+    x.beginPath();x.moveTo((sx-11)*P,(sy+wf)*P);x.quadraticCurveTo((sx-5)*P,(sy-2)*P,sx*P,sy*P);
+    x.quadraticCurveTo((sx+5)*P,(sy-2)*P,(sx+11)*P,(sy+wf)*P);x.stroke();
+  }else if(an.type==='bees'){
+    const ba=tt*3;
+    sx=an.cx+Math.cos(ba)*an.rx*.35+Math.sin(tt*5+an.phase)*6;
+    sy=an.cy-an.ry*.25+Math.sin(ba*1.3)*an.ry*.25+Math.cos(tt*4+an.phase)*5;
+    icon='🐝';label='Bee';
+    x.fillStyle='rgba(251,191,36,.15)';x.beginPath();x.arc(sx*P,sy*P,4*P,0,6.28);x.fill();
+    x.fillStyle=rgba(251,191,36,.55+Math.sin(tt*6)*.2);x.beginPath();x.arc(sx*P,sy*P,2*P,0,6.28);x.fill();
+    x.fillStyle='rgba(255,255,255,.2)';
+    x.beginPath();x.ellipse((sx-1)*P,(sy-2+Math.sin(tt*15)*1.5)*P,2.5*P,1.2*P,.3,0,6.28);x.fill();
+  }
+  if(sx!==undefined){
+    hitTargets.push({type:'animal',sx,sy,r:18,icon,
+      name:`${label} — ${an.cluster}`,
+      html:`<div class="td">${an.meaning}</div>`});
+  }
+}
+
+function drawFeature(f,t){
+  if(f.type==='mushroom'){
+    const wb=Math.sin(t*1.5+f.x*.1)*.5*f.size;
+    x.fillStyle='rgba(210,200,180,.35)';x.fillRect((f.x-1.5*f.size+wb)*P,(f.y-5*f.size)*P,3*f.size*P,5*f.size*P);
+    x.fillStyle='rgba(220,38,38,.4)';x.beginPath();x.ellipse((f.x+wb)*P,(f.y-6*f.size)*P,5.5*f.size*P,3.5*f.size*P,0,0,6.28);x.fill();
+    x.fillStyle='rgba(255,255,255,.3)';x.beginPath();x.arc((f.x-2*f.size+wb)*P,(f.y-7*f.size)*P,1.3*f.size*P,0,6.28);x.fill();
+    x.beginPath();x.arc((f.x+2*f.size+wb)*P,(f.y-5.5*f.size)*P,1*f.size*P,0,6.28);x.fill();
+    hitTargets.push({type:'feature',sx:f.x,sy:f.y-3*f.size,r:12,icon:'🍄',name:'Duplicate Content',
+      html:`<div class="td">${f.meaning}</div>`});
+  }else if(f.type==='boulder'){
+    x.fillStyle='rgba(100,95,88,.4)';x.beginPath();x.ellipse(f.x*P,f.y*P,9*f.size*P,5.5*f.size*P,.2,0,6.28);x.fill();
+    x.fillStyle='rgba(135,128,118,.25)';x.beginPath();x.ellipse((f.x-2*f.size)*P,(f.y-2*f.size)*P,4.5*f.size*P,3*f.size*P,.2,0,6.28);x.fill();
+    hitTargets.push({type:'feature',sx:f.x,sy:f.y,r:14,icon:'🪨',name:'Broken Link',
+      html:`<div class="td">${f.meaning}</div>`});
+  }
+}
+
+function drawWeather(cl,t){
+  const cx=cl.x*P,cy=cl.y*P;
+  if(cl.weather==='sunny'){
+    const sg=x.createRadialGradient(cx-cl.rx*.2*P,cy-cl.ry*1.3*P,0,cx,cy-cl.ry*P,cl.rx*1.2*P);
+    sg.addColorStop(0,rgba(251,191,36,.07+Math.sin(t*.3)*.02));sg.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=sg;x.beginPath();x.arc(cx,cy-cl.ry*.5*P,cl.rx*1.3*P,0,6.28);x.fill();
+  }else if(cl.weather==='storm'){
+    for(let i=0;i<4;i++){
+      const drift=Math.sin(t*.12+i*2)*12*P;
+      x.fillStyle=rgba(30,41,59,.1+Math.sin(t*.4+i)*.02);
+      x.beginPath();x.ellipse(cx+(-cl.rx*.3+i*cl.rx*.2)*P+drift,cy-cl.ry*1.1*P-i*6*P,28*P,11*P,.1*i,0,6.28);x.fill();
+    }
+    for(let i=0;i<18;i++){
+      const rd=raindrops[i%raindrops.length];
+      const ry2=((rd.y+t*rd.speed*30)%200)-150;
+      const rx2=rd.x+Math.sin(t+i)*.5;
+      const drx=cx+rx2*P,dry=cy+ry2*P-cl.ry*.5*P;
+      if(dry>cy-cl.ry*1.2*P&&dry<cy+cl.ry*.3*P){
+        x.strokeStyle=rgba(148,163,184,.12+Math.sin(t+i)*.04);x.lineWidth=.7*P;
+        x.beginPath();x.moveTo(drx,dry);x.lineTo(drx-P,dry+rd.len*P);x.stroke();
+      }
+    }
+    if(Math.sin(t*7)>.97){x.fillStyle='rgba(255,255,255,.06)';x.beginPath();x.ellipse(cx,cy,cl.rx*1.1*P,cl.ry*P,0,0,6.28);x.fill();}
+  }else if(cl.weather==='fog'){
+    for(let i=0;i<3;i++){
+      const drift=Math.sin(t*.07+i*1.5)*25*P;
+      const fg=x.createRadialGradient(cx+drift,cy-i*8*P,0,cx+drift,cy-i*8*P,cl.rx*.7*P);
+      fg.addColorStop(0,rgba(148,163,184,.035+Math.sin(t*.2+i)*.01));fg.addColorStop(1,'rgba(0,0,0,0)');
+      x.fillStyle=fg;x.beginPath();x.ellipse(cx+drift,cy-i*8*P,cl.rx*.7*P,cl.ry*.35*P,0,0,6.28);x.fill();
+    }
+  }
+}
+
+function drawLabels(t){
+  x.textAlign='center';x.font=`600 ${13*P}px Inter,sans-serif`;
+  CL.forEach(cl=>{
+    const em={forest:'🌲',swamp:'🪴',desert:'🏜️',seedbed:'🌱',meadow:'🌻'}[cl.st];
+    const gc=GC[cl.st];
+    x.shadowColor=rgba(...gc.g,.4);x.shadowBlur=10*P;
+    x.fillStyle='#e2e8f0';x.fillText(`${em} ${cl.l}`,cl.x*P,(cl.y-cl.ry-16)*P);x.shadowBlur=0;
+    const bx=(cl.x+cl.rx*.6)*P,by=(cl.y-cl.ry*.5)*P;
+    const sc=hpCol(cl.hp);
+    x.fillStyle='rgba(8,12,22,.85)';x.beginPath();x.roundRect(bx-17*P,by-10*P,34*P,20*P,10*P);x.fill();
+    x.strokeStyle=sc;x.lineWidth=1.5*P;x.beginPath();x.roundRect(bx-17*P,by-10*P,34*P,20*P,10*P);x.stroke();
+    x.font=`700 ${11*P}px Inter,sans-serif`;x.fillStyle=sc;x.fillText(cl.hp.toString(),bx,by+4*P);
+    x.font=`600 ${13*P}px Inter,sans-serif`;
+    // Zone hit target
+    hitTargets.push({type:'zone',sx:cl.x,sy:cl.y,r:Math.max(cl.rx,cl.ry),icon:em,
+      name:cl.l,
+      html:`<div class="tr"><span>State</span><span class="tv">${em} ${cl.st.charAt(0).toUpperCase()+cl.st.slice(1)}</span></div>
+            <div class="tr"><span>Health</span><span class="tv" style="color:${sc}">${cl.hp}/100</span></div>
+            <div class="tr"><span>Posts</span><span class="tv">${cl.posts.length}</span></div>
+            <div class="tr"><span>Traffic</span><span class="tv">${cl.posts.reduce((s,p)=>s+p.traffic,0).toLocaleString()}/mo</span></div>
+            <div class="tr"><span>Weather</span><span class="tv">${{sunny:'☀️ Growing',storm:'⛈️ Crashing',cloudy:'☁️ Flat',fog:'🌫️ New'}[cl.weather]}</span></div>
+            <div class="tb"><div class="tf" style="width:${cl.hp}%;background:${sc}"></div></div>`});
+  });
+}
+
+// ──────────────────────────────────────
+// MAIN LOOP
+// ──────────────────────────────────────
+function render(ts){
+  const t=ts*.001;
+  hitTargets=[];
+  x.clearRect(0,0,2800,1640);
+  // BG
+  const bg=x.createLinearGradient(0,0,0,1640);bg.addColorStop(0,'#060a13');bg.addColorStop(.3,'#0a1020');bg.addColorStop(1,'#060a13');
+  x.fillStyle=bg;x.fillRect(0,0,2800,1640);
+  // Stars
+  stars.forEach(s=>{const tw=.06+(Math.sin(t*s.sp*10+s.ph)+1)*.12;x.fillStyle=rgba(226,232,240,tw);x.beginPath();x.arc(s.x*P,s.y*P,s.r*P,0,6.28);x.fill()});
+  // Rivers (behind ground)
+  drawRivers(t);
+  // Grounds
+  CL.forEach(cl=>drawGround(cl,t));
+  // Weather
+  CL.forEach(cl=>drawWeather(cl,t));
+  // Depth-sorted: trees + features + animals
+  const drawList=[];
+  allTrees.forEach(tr=>{drawList.push({y:tr.y,draw:()=>{
+    drawTree(tr,t);
+    if(tr.post){
+      hitTargets.push({type:'tree',sx:tr.x,sy:tr.y-20*tr.s,r:15*tr.s+5,treeRef:tr,
+        icon:({pillar:'🌳',supporter:'🌿',competitor:'⚔️',dead_weight:'🪵'})[tr.role],
+        name:tr.post.title,
+        html:`<div class="tr"><span>Role</span><span class="tv">${tr.role.replace('_',' ')}</span></div>
+              <div class="tr"><span>Cluster</span><span class="tv">${tr.cluster}</span></div>
+              <div class="tr"><span>Traffic</span><span class="tv">${tr.post.traffic.toLocaleString()}/mo</span></div>
+              <div class="tr"><span>Health</span><span class="tv" style="color:${hpCol(tr.post.health)}">${tr.post.health}/100</span></div>
+              <div class="tr"><span>Age</span><span class="tv">${tr.post.age}</span></div>
+              <div class="tr"><span>Words</span><span class="tv">${tr.post.words.toLocaleString()}</span></div>
+              <div class="tb"><div class="tf" style="width:${tr.post.health}%;background:${hpCol(tr.post.health)}"></div></div>`});
+    }
+  }});});
+  features.forEach(f=>{drawList.push({y:f.y,draw:()=>drawFeature(f,t)});});
+  allAnimals.forEach(an=>{drawList.push({y:an.cy,draw:()=>drawAnimal(an,t)});});
+  drawList.sort((a,b)=>a.y-b.y);
+  drawList.forEach(d=>d.draw());
+  // Labels (on top)
+  drawLabels(t);
+  // Particles
+  fireflies.forEach(f=>{
+    f.x+=f.vx+Math.sin(t*.5+f.ph)*.1;f.y+=f.vy+Math.cos(t*.4+f.ph)*.07;
+    if(f.x<50)f.x=1350;if(f.x>1350)f.x=50;if(f.y<50)f.y=750;if(f.y>750)f.y=50;
+    const pulse=(Math.sin(t*f.sp*50+f.ph)+1)*.5;const op=.06+pulse*.4;const r=f.r*(.7+pulse*.3);
+    x.globalAlpha=op;x.fillStyle=f.c;x.beginPath();x.arc(f.x*P,f.y*P,r*P,0,6.28);x.fill();
+    x.globalAlpha=op*.3;x.beginPath();x.arc(f.x*P,f.y*P,r*3*P,0,6.28);x.fill();x.globalAlpha=1;
+  });
+  floatLeaves.forEach(l=>{
+    l.x+=l.vx;l.y+=l.vy+Math.sin(t*2+l.wp)*.15;l.rot+=l.rs;
+    if(l.x>1500){l.x=-20;l.y=Math.random()*600+100;}
+    x.save();x.translate(l.x*P,l.y*P);x.rotate(l.rot);x.globalAlpha=l.op;x.fillStyle=l.c;
+    x.beginPath();x.moveTo(0,-l.sz*P);x.quadraticCurveTo(l.sz*.6*P,-l.sz*.3*P,0,l.sz*.3*P);
+    x.quadraticCurveTo(-l.sz*.6*P,-l.sz*.3*P,0,-l.sz*P);x.fill();x.restore();x.globalAlpha=1;
+  });
+  embers.forEach(e=>{
+    e.y+=e.vy;e.x+=e.vx+Math.sin(t*2+e.x*.1)*.08;e.life-=.003;
+    if(e.life<=0){e.x=CL[1].x+(Math.random()-.5)*CL[1].rx;e.y=CL[1].y;e.life=1;}
+    x.fillStyle=rgba(251,191,36,e.life*.4);x.beginPath();x.arc(e.x*P,e.y*P,e.r*e.life*P,0,6.28);x.fill();
+    x.fillStyle=rgba(251,191,36,e.life*.12);x.beginPath();x.arc(e.x*P,e.y*P,e.r*e.life*3*P,0,6.28);x.fill();
+  });
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

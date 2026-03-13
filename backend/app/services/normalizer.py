@@ -5,6 +5,7 @@ which are then stored uniformly in the database.
 """
 
 import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -37,6 +38,9 @@ class NormalizedPost:
     cms_tags: list[str] = field(default_factory=list)
     word_count: int = 0
     content_hash: str = ""
+    headings: list[dict[str, str]] = field(default_factory=list)
+    meta_description: str | None = None
+    http_status: int | None = None
 
     def __post_init__(self):
         if not self.word_count and self.body_text:
@@ -65,14 +69,18 @@ async def save_normalized_posts(
 
     for post in posts:
         try:
+            # Serialize headings to JSON
+            headings_json = json.dumps(post.headings) if post.headings else None
+
             # Upsert the post
             row = await db.fetchrow(
                 """
                 INSERT INTO posts (
                     site_id, url, slug, title, body_text, body_html,
                     publish_date, modified_date, content_hash,
-                    cms_categories, cms_tags, word_count
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    cms_categories, cms_tags, word_count,
+                    headings, meta_description, http_status
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 ON CONFLICT (site_id, url) DO UPDATE SET
                     title = EXCLUDED.title,
                     body_text = EXCLUDED.body_text,
@@ -82,6 +90,9 @@ async def save_normalized_posts(
                     cms_categories = EXCLUDED.cms_categories,
                     cms_tags = EXCLUDED.cms_tags,
                     word_count = EXCLUDED.word_count,
+                    headings = EXCLUDED.headings,
+                    meta_description = EXCLUDED.meta_description,
+                    http_status = EXCLUDED.http_status,
                     updated_at = NOW()
                 RETURNING id
                 """,
@@ -91,6 +102,7 @@ async def save_normalized_posts(
                 post.content_hash,
                 post.cms_categories, post.cms_tags,
                 post.word_count,
+                headings_json, post.meta_description, post.http_status,
             )
 
             post_id = row["id"]

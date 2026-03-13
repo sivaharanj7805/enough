@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Enough — War Room + Live Attack</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#060a13;font-family:'Inter',sans-serif;color:#e2e8f0;overflow:hidden}
+  /* Tabs */
+  .tabs{position:fixed;top:0;left:0;right:0;z-index:50;background:rgba(6,10,19,.97);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 20px;height:48px}
+  .tabs .logo{font-size:14px;font-weight:700;margin-right:20px} .tabs .logo span{color:#4ade80}
+  .tab{padding:12px 18px;font-size:11px;font-weight:600;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+  .tab:hover{color:#94a3b8} .tab.active{color:#4ade80;border-bottom-color:#4ade80}
+  .tab .badge{background:rgba(248,113,113,.2);color:#f87171;font-size:8px;padding:1px 5px;border-radius:10px;margin-left:5px;font-weight:700}
+  .tabs .streak{margin-left:auto;font-size:12px;font-weight:800;color:#fbbf24}
+  /* Views */
+  .view{position:fixed;top:48px;left:0;right:0;bottom:0;display:none;overflow-y:auto}
+  .view.active{display:block}
+  /* Ecosystem canvas */
+  #eco-view canvas{width:100%;height:100%}
+  /* War Room */
+  .wr{padding:24px;max-width:1200px;margin:0 auto}
+  .wr h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  .wr .sub{color:#64748b;font-size:11px;margin-bottom:20px}
+  .wr-tabs{display:flex;gap:4px;margin-bottom:20px}
+  .wr-tab{padding:8px 16px;font-size:10px;font-weight:600;color:#64748b;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;cursor:pointer;transition:all .2s}
+  .wr-tab:hover{background:rgba(255,255,255,.06)} .wr-tab.active{background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.3);color:#4ade80}
+  .wr-panel{display:none} .wr-panel.active{display:block}
+  /* Cards */
+  .card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:18px;margin-bottom:12px;transition:border-color .2s}
+  .card:hover{border-color:rgba(255,255,255,.12)}
+  .card h3{font-size:13px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .card p{font-size:10.5px;color:#94a3b8;line-height:1.5}
+  .card .meta{font-size:9px;color:#475569;margin-top:6px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .grid4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
+  /* Campaign builder */
+  .camp-type{padding:14px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);cursor:pointer;transition:all .2s;text-align:center}
+  .camp-type:hover{border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.03)}
+  .camp-type.selected{border-color:#4ade80;background:rgba(74,222,128,.08)}
+  .camp-type .icon{font-size:24px;margin-bottom:4px}
+  .camp-type .name{font-size:10px;font-weight:700}
+  .camp-type .desc{font-size:8.5px;color:#64748b;margin-top:2px}
+  /* Buttons */
+  .btn{padding:8px 18px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;border:none;font-family:Inter,sans-serif;transition:all .2s}
+  .btn-primary{background:linear-gradient(135deg,#4ade80,#22c55e);color:#060a13}
+  .btn-primary:hover{transform:scale(1.03);box-shadow:0 4px 20px rgba(74,222,128,.3)}
+  .btn-danger{background:linear-gradient(135deg,#f87171,#ef4444);color:white}
+  .btn-ghost{background:rgba(255,255,255,.06);color:#94a3b8;border:1px solid rgba(255,255,255,.06)}
+  .btn-ghost:hover{background:rgba(255,255,255,.1);color:#e2e8f0}
+  /* Input */
+  .input{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#e2e8f0;padding:8px 14px;border-radius:8px;font-size:11px;font-family:Inter,sans-serif;outline:none;width:100%;transition:border-color .2s}
+  .input:focus{border-color:rgba(74,222,128,.4)}
+  .input::placeholder{color:#475569}
+  .label{font-size:9px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+  /* Progress */
+  .prog{height:4px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden;margin:6px 0}
+  .prog-fill{height:100%;border-radius:2px;transition:width 1s}
+  /* Battle feed */
+  .feed-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:10.5px;align-items:flex-start}
+  .feed-item .fi-icon{font-size:16px;flex-shrink:0;width:24px;text-align:center}
+  .feed-item .fi-time{color:#475569;font-size:8.5px;flex-shrink:0;width:50px}
+  .feed-item .fi-text{flex:1}
+  .feed-item .fi-text strong{color:#e2e8f0}
+  .feed-item.attack{border-left:2px solid #f87171;padding-left:10px;margin-left:-2px}
+  .feed-item.defend{border-left:2px solid #4ade80;padding-left:10px;margin-left:-2px}
+  .feed-item.info{border-left:2px solid #60a5fa;padding-left:10px;margin-left:-2px}
+  /* Attack canvas */
+  #atk-canvas{width:100%;height:400px;border-radius:12px;border:1px solid rgba(255,255,255,.06);margin-bottom:16px}
+  /* Notification bar */
+  .notif{background:linear-gradient(90deg,rgba(248,113,113,.1),rgba(248,113,113,.02));border:1px solid rgba(248,113,113,.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+  .notif .ni{font-size:20px} .notif .nt{font-size:11px;flex:1} .notif .nt strong{color:#f87171}
+  /* Defense structures */
+  .defense-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+  .def-struct{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px;text-align:center}
+  .def-struct .ds-icon{font-size:28px;margin-bottom:4px}
+  .def-struct .ds-name{font-size:10px;font-weight:700}
+  .def-struct .ds-level{font-size:8.5px;color:#fbbf24;font-weight:600}
+  .def-struct .ds-desc{font-size:8px;color:#64748b;margin-top:3px}
+  /* Troop selector */
+  .troop{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);margin:4px 0}
+  .troop .tr-icon{font-size:18px;width:28px;text-align:center}
+  .troop .tr-info{flex:1} .troop .tr-name{font-size:10px;font-weight:600} .troop .tr-desc{font-size:8.5px;color:#64748b}
+  .troop .tr-count{display:flex;align-items:center;gap:4px}
+  .troop .tr-count button{width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.06);border:none;color:#e2e8f0;cursor:pointer;font-size:12px;font-weight:700}
+  .troop .tr-count span{font-size:12px;font-weight:700;width:24px;text-align:center}
+  /* War history */
+  .war-card{display:flex;gap:14px;padding:14px;align-items:center}
+  .war-card .wc-result{font-size:28px;width:40px;text-align:center}
+  .war-card .wc-info{flex:1}
+  .war-card .wc-info h4{font-size:12px;font-weight:700}
+  .war-card .wc-info .wc-meta{font-size:9px;color:#64748b;margin-top:2px}
+  .war-card .wc-stats{display:flex;gap:14px;font-size:9px;color:#94a3b8;margin-top:4px}
+  .war-card .wc-stats span{display:flex;align-items:center;gap:3px}
+  /* Experiment */
+  .exp-result{background:rgba(74,222,128,.03);border:1px solid rgba(74,222,128,.15);border-radius:12px;padding:18px;margin-top:14px}
+  .exp-result h3{font-size:14px;font-weight:700;color:#4ade80;margin-bottom:8px}
+  .exp-row{display:flex;justify-content:space-between;padding:4px 0;font-size:10.5px;border-bottom:1px solid rgba(255,255,255,.03)}
+  .exp-row .ek{color:#94a3b8} .exp-row .ev{font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="logo">🌿 <span>Enough</span></div>
+  <div class="tab active" onclick="showView('eco')">🗺️ Ecosystem</div>
+  <div class="tab" onclick="showView('attack')" id="tab-attack">⚔️ Live Battle <span class="badge">!</span></div>
+  <div class="tab" onclick="showView('warroom')">🏰 War Room</div>
+  <div class="tab" onclick="showView('lab')">🧪 Strategy Lab</div>
+  <div class="streak">🔥 12-day streak</div>
+</div>
+
+<!-- VIEW: ECOSYSTEM -->
+<div class="view active" id="eco-view">
+  <canvas id="eco-c"></canvas>
+</div>
+
+<!-- VIEW: LIVE BATTLE -->
+<div class="view" id="attack-view" style="padding:20px;max-width:1200px;margin:0 auto">
+  <div class="notif">
+    <div class="ni">⚔️</div>
+    <div class="nt"><strong>UNDER ATTACK!</strong> hubspot.com deployed 3 new posts targeting your "API Authentication" keywords. Rankings shifting.</div>
+    <button class="btn btn-danger" onclick="simulateAttack()">Watch Battle →</button>
+  </div>
+
+  <canvas id="atk-canvas" width="2200" height="800"></canvas>
+
+  <div class="grid2">
+    <div>
+      <h3 style="font-size:13px;font-weight:700;margin-bottom:10px">📡 Battle Feed</h3>
+      <div id="battle-feed">
+        <div class="feed-item attack"><div class="fi-icon">⚔️</div><div class="fi-time">2h ago</div><div class="fi-text"><strong>hubspot.com</strong> published "The Ultimate API Authentication Guide" (4,200 words). Targeting your #2 keyword.</div></div>
+        <div class="feed-item attack"><div class="fi-icon">🏹</div><div class="fi-time">1h ago</div><div class="fi-text"><strong>hubspot.com</strong> earned 6 backlinks to their new post from dev.to, medium.com, and 4 others.</div></div>
+        <div class="feed-item info"><div class="fi-icon">📊</div><div class="fi-time">45m ago</div><div class="fi-text">Your ranking for "api authentication best practices" dropped <strong>#2 → #4</strong>. Two positions lost.</div></div>
+        <div class="feed-item defend"><div class="fi-icon">🛡️</div><div class="fi-time">30m ago</div><div class="fi-text">Your <strong>backlink towers</strong> (23 links) are holding on "oauth 2.0 guide". Position maintained at #3.</div></div>
+        <div class="feed-item info"><div class="fi-icon">🧱</div><div class="fi-time">20m ago</div><div class="fi-text">Your <strong>content walls</strong> on "API Auth" pillar (2,400 words) are being tested. Recommend upgrading to 3,500+ words.</div></div>
+        <div class="feed-item defend"><div class="fi-icon">✅</div><div class="fi-time">10m ago</div><div class="fi-text"><strong>Shield held!</strong> "Rate Limiting Best Practices" freshness shield (updated 2 weeks ago) deflected attack. Position #5 stable.</div></div>
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:13px;font-weight:700;margin-bottom:10px">🛡️ Your Defenses</h3>
+      <div class="defense-grid">
+        <div class="def-struct"><div class="ds-icon">🧱</div><div class="ds-name">Content Walls</div><div class="ds-level">Level 3 (2,400 words)</div><div class="ds-desc">Stone walls. Upgrade to 3,500+ for fortress.</div></div>
+        <div class="def-struct"><div class="ds-icon">🏹</div><div class="ds-name">Backlink Tower</div><div class="ds-level">Level 4 (23 links)</div><div class="ds-desc">Wizard tower. Strong defense.</div></div>
+        <div class="def-struct"><div class="ds-icon">🛡️</div><div class="ds-name">Freshness Shield</div><div class="ds-level">Active (2 weeks)</div><div class="ds-desc">Full shield. Updated recently.</div></div>
+        <div class="def-struct"><div class="ds-icon">⚡</div><div class="ds-name">Internal Links</div><div class="ds-level">12 connections</div><div class="ds-desc">Strong network. Hard to breach.</div></div>
+      </div>
+
+      <h3 style="font-size:13px;font-weight:700;margin:16px 0 10px">⚔️ Quick Response</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="deployTroops('knights')">🛡️ Deploy Knights (Update Content)</button>
+        <button class="btn btn-danger" onclick="deployTroops('siege')">💣 Counter-Attack (New Pillar)</button>
+        <button class="btn btn-ghost" onclick="deployTroops('archers')">🏹 Launch Link Campaign</button>
+      </div>
+
+      <h3 style="font-size:13px;font-weight:700;margin:16px 0 10px">📈 Battle Stats</h3>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px"><span>Keywords Defended</span><span style="color:#4ade80;font-weight:700">4/6</span></div>
+        <div class="prog"><div class="prog-fill" style="width:67%;background:#4ade80"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px;margin-top:8px"><span>Keywords Under Siege</span><span style="color:#f87171;font-weight:700">2</span></div>
+        <div class="prog"><div class="prog-fill" style="width:33%;background:#f87171"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px;margin-top:8px"><span>Estimated Traffic at Risk</span><span style="color:#fbbf24;font-weight:700">3,200/mo</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW: WAR ROOM -->
+<div class="view" id="warroom-view">
+  <div class="wr">
+    <h1>🏰 War Room</h1>
+    <div class="sub">Plan your attacks. Build your army. Conquer keyword territory.</div>
+
+    <div class="wr-tabs">
+      <div class="wr-tab active" onclick="showWRTab('scout')">🔬 Scout</div>
+      <div class="wr-tab" onclick="showWRTab('build')">⚔️ Build Campaign</div>
+      <div class="wr-tab" onclick="showWRTab('active')">📋 Active Campaigns <span class="badge" style="background:rgba(74,222,128,.2);color:#4ade80">2</span></div>
+      <div class="wr-tab" onclick="showWRTab('history')">📊 War History</div>
+    </div>
+
+    <!-- SCOUT -->
+    <div class="wr-panel active" id="wrp-scout">
+      <div class="card">
+        <h3>🔬 Competitor Intelligence</h3>
+        <p>Enter a competitor URL to scan their content ecosystem and find weaknesses.</p>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input class="input" placeholder="https://competitor.com/blog" style="flex:1" id="scout-url">
+          <button class="btn btn-primary" onclick="runScout()">Scan →</button>
+        </div>
+      </div>
+
+      <div id="scout-results" style="display:none">
+        <div class="grid2" style="margin-top:16px">
+          <div class="card">
+            <h3>🎯 hubspot.com — Content Map</h3>
+            <table style="width:100%;font-size:10px;border-collapse:collapse">
+              <tr><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);color:#94a3b8">Total Posts</td><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);font-weight:700">342</td></tr>
+              <tr><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);color:#94a3b8">Topic Clusters</td><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);font-weight:700">18</td></tr>
+              <tr><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);color:#94a3b8">Estimated Health</td><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);font-weight:700;color:#4ade80">78/100</td></tr>
+              <tr><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);color:#94a3b8">Cannibalization</td><td style="padding:5px;border-bottom:1px solid rgba(255,255,255,.04);font-weight:700;color:#fbbf24">24 pairs detected</td></tr>
+              <tr><td style="padding:5px;color:#94a3b8">Avg Content Depth</td><td style="padding:5px;font-weight:700">2,100 words</td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <h3>💀 Their Weak Spots</h3>
+            <div style="margin-top:8px">
+              <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px">
+                <span style="color:#f87171;font-weight:700">🏜️ DESERT:</span> API Rate Limiting <span style="color:#64748b">(1 thin post, 340 words)</span>
+                <div style="color:#4ade80;font-size:8.5px;font-weight:600;margin-top:2px">→ ATTACKABLE: You have a 1,600-word post. Easy win.</div>
+              </div>
+              <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px">
+                <span style="color:#f87171;font-weight:700">🏜️ DESERT:</span> Webhook Security <span style="color:#64748b">(no content)</span>
+                <div style="color:#4ade80;font-size:8.5px;font-weight:600;margin-top:2px">→ UNDEFENDED: No content at all. Free territory.</div>
+              </div>
+              <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px">
+                <span style="color:#fbbf24;font-weight:700">🪴 SWAMP:</span> Getting Started Guides <span style="color:#64748b">(6 posts cannibalizing)</span>
+                <div style="color:#4ade80;font-size:8.5px;font-weight:600;margin-top:2px">→ VULNERABLE: Internal confusion. Your consolidated pillar beats them.</div>
+              </div>
+              <div style="padding:6px 0;font-size:10px">
+                <span style="color:#4ade80;font-weight:700">🌲 STRONG:</span> OAuth / Authentication <span style="color:#64748b">(12 posts, 78 backlinks)</span>
+                <div style="color:#f87171;font-size:8.5px;font-weight:600;margin-top:2px">→ FORTIFIED: Avoid direct assault. Flank with niche subtopics.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUILD CAMPAIGN -->
+    <div class="wr-panel" id="wrp-build">
+      <div class="card">
+        <h3>⚔️ Choose Campaign Type</h3>
+      </div>
+      <div class="grid4" style="margin-bottom:16px">
+        <div class="camp-type" onclick="selectCamp(this,'blitz')"><div class="icon">🗡️</div><div class="name">Content Blitz</div><div class="desc">Publish a cluster of posts to dominate a topic</div></div>
+        <div class="camp-type" onclick="selectCamp(this,'links')"><div class="icon">🏹</div><div class="name">Link Campaign</div><div class="desc">Outreach to earn backlinks to key posts</div></div>
+        <div class="camp-type" onclick="selectCamp(this,'refresh')"><div class="icon">🧙</div><div class="name">Refresh Wave</div><div class="desc">Update 5-10 stale posts at once</div></div>
+        <div class="camp-type" onclick="selectCamp(this,'expand')"><div class="icon">🌊</div><div class="name">New Territory</div><div class="desc">Enter a new topic / keyword space</div></div>
+        <div class="camp-type" onclick="selectCamp(this,'pillar')"><div class="icon">💣</div><div class="name">Pillar Assault</div><div class="desc">One massive definitive guide (3000+)</div></div>
+        <div class="camp-type" onclick="selectCamp(this,'defend')"><div class="icon">🛡️</div><div class="name">Fortification</div><div class="desc">Strengthen existing content against attacks</div></div>
+        <div class="camp-type" onclick="selectCamp(this,'sniper')"><div class="icon">🎯</div><div class="name">Sniper Strike</div><div class="desc">Target one specific competitor keyword</div></div>
+        <div class="camp-type" onclick="selectCamp(this,'channel')"><div class="icon">🌐</div><div class="name">Channel Expansion</div><div class="desc">Try a new channel (video, podcast, social)</div></div>
+      </div>
+
+      <div id="camp-builder" style="display:none">
+        <div class="grid2">
+          <div>
+            <div class="card">
+              <h3>🎯 Target</h3>
+              <div class="label" style="margin-top:8px">Target Keyword / Topic</div>
+              <input class="input" placeholder="e.g., API authentication best practices" id="camp-target">
+              <div class="label" style="margin-top:10px">Target Competitor (optional)</div>
+              <input class="input" placeholder="e.g., hubspot.com">
+              <div class="label" style="margin-top:10px">Timeline</div>
+              <div style="display:flex;gap:6px;margin-top:4px">
+                <button class="btn btn-ghost" style="flex:1;font-size:9px" onclick="this.classList.add('selected')">1 Week Sprint</button>
+                <button class="btn btn-ghost" style="flex:1;font-size:9px;background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.3);color:#4ade80">1 Month Campaign</button>
+                <button class="btn btn-ghost" style="flex:1;font-size:9px">3 Month Siege</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="card">
+              <h3>🪖 Troop Deployment</h3>
+              <div class="troop"><div class="tr-icon">🗡️</div><div class="tr-info"><div class="tr-name">Infantry (New Posts)</div><div class="tr-desc">Each = 1 new blog post</div></div><div class="tr-count"><button onclick="adjTroop(this,-1)">−</button><span>3</span><button onclick="adjTroop(this,1)">+</button></div></div>
+              <div class="troop"><div class="tr-icon">💣</div><div class="tr-info"><div class="tr-name">Siege Engine (Pillar Post)</div><div class="tr-desc">One 3000+ word definitive guide</div></div><div class="tr-count"><button onclick="adjTroop(this,-1)">−</button><span>1</span><button onclick="adjTroop(this,1)">+</button></div></div>
+              <div class="troop"><div class="tr-icon">🏹</div><div class="tr-info"><div class="tr-name">Archers (Link Outreach)</div><div class="tr-desc">Each = 5 outreach emails</div></div><div class="tr-count"><button onclick="adjTroop(this,-1)">−</button><span>4</span><button onclick="adjTroop(this,1)">+</button></div></div>
+              <div class="troop"><div class="tr-icon">🧱</div><div class="tr-info"><div class="tr-name">Builders (Internal Links)</div><div class="tr-desc">Each = 3 new internal links</div></div><div class="tr-count"><button onclick="adjTroop(this,-1)">−</button><span>2</span><button onclick="adjTroop(this,1)">+</button></div></div>
+              <div class="troop"><div class="tr-icon">🧙</div><div class="tr-info"><div class="tr-name">Wizards (AI Optimization)</div><div class="tr-desc">AI-powered content enhancement</div></div><div class="tr-count"><button onclick="adjTroop(this,-1)">−</button><span>1</span><button onclick="adjTroop(this,1)">+</button></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="background:rgba(74,222,128,.03);border-color:rgba(74,222,128,.15);margin-top:12px">
+          <h3 style="color:#4ade80">🤖 AI Battle Prediction</h3>
+          <div class="grid3" style="margin-top:10px">
+            <div style="text-align:center"><div style="font-size:28px;font-weight:900;color:#4ade80">72%</div><div style="font-size:9px;color:#94a3b8">Win Probability</div></div>
+            <div style="text-align:center"><div style="font-size:28px;font-weight:900">+3,200</div><div style="font-size:9px;color:#94a3b8">Est. Traffic Gain/mo</div></div>
+            <div style="text-align:center"><div style="font-size:28px;font-weight:900;color:#fbbf24">45d</div><div style="font-size:9px;color:#94a3b8">Time to Page 1</div></div>
+          </div>
+          <p style="margin-top:10px;font-size:9.5px;color:#94a3b8;line-height:1.5">Deploying <strong>3 supporter posts + 1 pillar + link campaign</strong> targeting "API authentication" has a <strong>72% chance of reaching page 1</strong> within 45 days. HubSpot's current #1 post has 4,200 words and 34 backlinks. Your siege engine (3,500 words) + archer support (20 outreach targets) should be sufficient to breach their defenses. <span style="color:#fbbf24">Risk: if they counter-publish within 2 weeks, probability drops to 58%.</span></p>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="launchCampaign()">🚀 Launch Campaign</button>
+            <button class="btn btn-ghost">📋 Save as Template</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACTIVE CAMPAIGNS -->
+    <div class="wr-panel" id="wrp-active">
+      <div class="card" style="border-color:rgba(74,222,128,.2)">
+        <div class="war-card">
+          <div class="wc-result" style="color:#4ade80">⚔️</div>
+          <div class="wc-info">
+            <h4>Sniper Strike: "OAuth 2.0 Implementation Guide"</h4>
+            <div class="wc-meta">Targeting auth0.com • Started 8 days ago • 22 days remaining</div>
+            <div class="wc-stats"><span>🗡️ 2/3 posts published</span><span>🏹 8/15 links earned</span><span>📈 Ranking: #11 → #7</span></div>
+          </div>
+        </div>
+        <div class="prog"><div class="prog-fill" style="width:40%;background:linear-gradient(90deg,#4ade80,#22c55e)"></div></div>
+        <div style="font-size:9px;color:#94a3b8;margin-top:4px">Day 8 of 30 — <strong>On track.</strong> Projected to reach #4 by day 20.</div>
+      </div>
+
+      <div class="card" style="border-color:rgba(251,191,36,.2)">
+        <div class="war-card">
+          <div class="wc-result" style="color:#fbbf24">🛡️</div>
+          <div class="wc-info">
+            <h4>Defensive Fortification: API Integration Cluster</h4>
+            <div class="wc-meta">Defending against semrush.com • Started 3 days ago • 11 days remaining</div>
+            <div class="wc-stats"><span>🛡️ 2/4 posts updated</span><span>🧱 6/10 links added</span><span>📈 Positions: all held</span></div>
+          </div>
+        </div>
+        <div class="prog"><div class="prog-fill" style="width:25%;background:linear-gradient(90deg,#fbbf24,#f59e0b)"></div></div>
+        <div style="font-size:9px;color:#94a3b8;margin-top:4px">Day 3 of 14 — <strong>Holding ground.</strong> Update "API Versioning" next for maximum defense boost.</div>
+      </div>
+    </div>
+
+    <!-- WAR HISTORY -->
+    <div class="wr-panel" id="wrp-history">
+      <div class="card" style="border-left:3px solid #4ade80">
+        <div class="war-card">
+          <div class="wc-result">🏆</div>
+          <div class="wc-info">
+            <h4>Content Blitz: "Rate Limiting" Territory</h4>
+            <div class="wc-meta">vs. stripe.com/docs • Completed Feb 28 • 21 days</div>
+            <div class="wc-stats"><span style="color:#4ade80">✅ VICTORY</span><span>+2,400/mo traffic</span><span>Rank: #12 → #3</span><span>ROI: 640%</span></div>
+          </div>
+        </div>
+        <p style="font-size:9px;color:#94a3b8;margin-top:6px;line-height:1.4"><strong>AI Lesson:</strong> "Your pillar content (2,800 words) outperformed Stripe's docs-style page. Key factor: you included real-world code examples and a comparison table. Stripe's page was purely technical. <span style="color:#4ade80">Recommendation: use this 'practical examples' strategy for future pillar assaults.</span>"</p>
+      </div>
+
+      <div class="card" style="border-left:3px solid #f87171">
+        <div class="war-card">
+          <div class="wc-result">💀</div>
+          <div class="wc-info">
+            <h4>Sniper Strike: "GraphQL Best Practices"</h4>
+            <div class="wc-meta">vs. apollographql.com • Completed Feb 15 • 30 days</div>
+            <div class="wc-stats"><span style="color:#f87171">❌ DEFEAT</span><span>+200/mo traffic (target was 1,500)</span><span>Rank: #18 → #9</span></div>
+          </div>
+        </div>
+        <p style="font-size:9px;color:#94a3b8;margin-top:6px;line-height:1.4"><strong>AI Lesson:</strong> "Apollo's domain authority (DA 82) was too strong for a direct assault. Your content quality matched theirs, but their backlink fortress (134 links) was unbreachable with 12 outreach archers. <span style="color:#fbbf24">Recommendation: next time, flank with long-tail variants instead of attacking their main keyword directly.</span>"</p>
+      </div>
+
+      <div class="card" style="border-left:3px solid #4ade80">
+        <div class="war-card">
+          <div class="wc-result">🏆</div>
+          <div class="wc-info">
+            <h4>New Territory: "API Error Handling" Cluster</h4>
+            <div class="wc-meta">Uncontested territory • Completed Jan 30 • 14 days</div>
+            <div class="wc-stats"><span style="color:#4ade80">✅ CONQUERED</span><span>+1,800/mo traffic</span><span>3 keywords on page 1</span><span>New forest growing</span></div>
+          </div>
+        </div>
+        <p style="font-size:9px;color:#94a3b8;margin-top:6px;line-height:1.4"><strong>AI Lesson:</strong> "Uncontested territory is the highest ROI campaign type. No competitors to fight, just plant and grow. <span style="color:#4ade80">Scout identified 4 more uncontested territories — prioritize these over head-to-head battles.</span>"</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW: STRATEGY LAB -->
+<div class="view" id="lab-view" style="padding:24px;max-width:900px;margin:0 auto">
+  <h1 style="font-size:22px;font-weight:800;margin-bottom:4px">🧪 Strategy Lab</h1>
+  <div class="sub" style="color:#64748b;font-size:11px;margin-bottom:20px">Explore new routes. Experiment safely. Expand your kingdom.</div>
+
+  <div class="card">
+    <h3>💡 What if...?</h3>
+    <p>Describe any new strategy, channel, or idea you want to explore. AI will analyze feasibility, competition, projected impact, and risk.</p>
+    <input class="input" placeholder='e.g., "What if we started a YouTube channel about API security?"' style="margin-top:10px" id="lab-input">
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="font-size:9px" onclick="setLabQ('YouTube channel about API tutorials')">🎥 YouTube Channel</button>
+      <button class="btn btn-ghost" style="font-size:9px" onclick="setLabQ('Podcast interviewing CTOs about security')">🎙️ Podcast</button>
+      <button class="btn btn-ghost" style="font-size:9px" onclick="setLabQ('Free API testing tool to generate leads')">🛠️ Free Tool</button>
+      <button class="btn btn-ghost" style="font-size:9px" onclick="setLabQ('Expand into enterprise market segment')">🏢 Enterprise Market</button>
+      <button class="btn btn-ghost" style="font-size:9px" onclick="setLabQ('TikTok / short-form content about developer tips')">📱 TikTok / Shorts</button>
+      <button class="btn btn-ghost" style="font-size:9px" onclick="setLabQ('Newsletter with weekly API security roundup')">📧 Newsletter</button>
+    </div>
+    <button class="btn btn-primary" style="margin-top:10px" onclick="runExperiment()">🔬 Analyze Strategy →</button>
+  </div>
+
+  <div id="lab-result" style="display:none">
+    <div class="exp-result">
+      <h3>🧪 Experiment: YouTube Channel — API Tutorials</h3>
+      <div class="grid2" style="margin-top:12px">
+        <div>
+          <div class="exp-row"><span class="ek">Verdict</span><span class="ev" style="color:#4ade80">✅ LAUNCH (90-day trial)</span></div>
+          <div class="exp-row"><span class="ek">Competition Level</span><span class="ev" style="color:#fbbf24">MEDIUM (14 channels)</span></div>
+          <div class="exp-row"><span class="ek">Avg Views in Niche</span><span class="ev">2,400/video</span></div>
+          <div class="exp-row"><span class="ek">Content Gap Found</span><span class="ev" style="color:#4ade80">"API security for fintech" — 0 videos</span></div>
+          <div class="exp-row"><span class="ek">Estimated Effort</span><span class="ev">4 hrs/week</span></div>
+          <div class="exp-row"><span class="ek">Cross-pollination</span><span class="ev">Links back to blog pillars = SEO boost</span></div>
+        </div>
+        <div>
+          <div class="exp-row"><span class="ek">Month 1-3</span><span class="ev">500-1,500 views/video (building)</span></div>
+          <div class="exp-row"><span class="ek">Month 3-6</span><span class="ev">Backlinks from video desc → blog traffic +8%</span></div>
+          <div class="exp-row"><span class="ek">Month 6-12</span><span class="ev">Brand authority + 2,000 subscribers</span></div>
+          <div class="exp-row"><span class="ek">Traffic Impact</span><span class="ev" style="color:#4ade80">+1,200/mo referral traffic by month 6</span></div>
+          <div class="exp-row"><span class="ek">Risk Level</span><span class="ev" style="color:#4ade80">LOW</span></div>
+          <div class="exp-row"><span class="ek">Kill Criteria</span><span class="ev">&lt;200 views/video after 90 days</span></div>
+        </div>
+      </div>
+      <div style="margin-top:14px;padding:12px;background:rgba(0,0,0,.2);border-radius:8px">
+        <div style="font-size:10px;font-weight:700;margin-bottom:6px">🗺️ On Your Ecosystem Map:</div>
+        <p style="font-size:9.5px;color:#94a3b8;line-height:1.5">A new <strong>"Expedition Camp" 🏕️</strong> appears at the eastern edge of your landscape. Scout troops (🔭) venture into unexplored "YouTube Territory." If the experiment succeeds after 90 days, the camp grows into a new zone with <strong>🎥 Video Trees</strong> — a new tree type unique to video content. Each video = a tree with a play button icon.</p>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn btn-primary">🚀 Launch 90-Day Experiment</button>
+        <button class="btn btn-ghost">📋 Save Analysis</button>
+        <button class="btn btn-ghost">🔄 Try Different Idea</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── VIEW SWITCHING ───
+function showView(v){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById(v+'-view').classList.add('active');
+  event.target.classList.add('active');
+  if(v==='eco')initEco();
+  if(v==='attack')initAttack();
+}
+function showWRTab(t){
+  document.querySelectorAll('.wr-tab').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.wr-panel').forEach(el=>el.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('wrp-'+t).classList.add('active');
+}
+
+// ─── SCOUT ───
+function runScout(){
+  document.getElementById('scout-results').style.display='block';
+  document.getElementById('scout-results').scrollIntoView({behavior:'smooth'});
+}
+
+// ─── CAMPAIGN BUILDER ───
+function selectCamp(el,type){
+  document.querySelectorAll('.camp-type').forEach(e=>e.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('camp-builder').style.display='block';
+}
+function adjTroop(btn,delta){
+  const span=btn.parentElement.querySelector('span');
+  const v=Math.max(0,parseInt(span.textContent)+delta);
+  span.textContent=v;
+}
+function launchCampaign(){
+  showWRTab('active');
+  document.querySelector('[onclick="showWRTab(\'active\')"]').classList.add('active');
+}
+function deployTroops(type){
+  const feed=document.getElementById('battle-feed');
+  const msgs={
+    knights:{icon:'🛡️',cls:'defend',text:'<strong>Knights deployed!</strong> Updating "API Auth" pillar — adding 1,100 words + new code examples. ETA: 24 hours.'},
+    siege:{icon:'💣',cls:'attack',text:'<strong>COUNTER-ATTACK LAUNCHED!</strong> Siege engine deployed — writing "The Definitive API Authentication Guide" (target: 5,000 words). ETA: 3 days.'},
+    archers:{icon:'🏹',cls:'info',text:'<strong>Archers deployed!</strong> Link outreach campaign started — targeting 25 sites for backlinks to your API Auth content. ETA: 2 weeks.'}
+  };
+  const m=msgs[type];
+  const item=document.createElement('div');
+  item.className='feed-item '+m.cls;
+  item.innerHTML=`<div class="fi-icon">${m.icon}</div><div class="fi-time">Now</div><div class="fi-text">${m.text}</div>`;
+  feed.insertBefore(item,feed.firstChild);
+  item.style.animation='fadeIn .3s';
+}
+
+// ─── STRATEGY LAB ───
+function setLabQ(q){document.getElementById('lab-input').value=q;}
+function runExperiment(){document.getElementById('lab-result').style.display='block';document.getElementById('lab-result').scrollIntoView({behavior:'smooth'});}
+
+// ─── ECOSYSTEM MINI (simplified for this demo) ───
+function initEco(){
+  const c=document.getElementById('eco-c');
+  c.width=window.innerWidth*2;c.height=(window.innerHeight-48)*2;
+  c.style.width='100%';c.style.height='100%';
+  const x=c.getContext('2d');
+  function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  const rgba=(r,g,b,a)=>`rgba(${r},${g},${b},${a})`;
+  const CL=[
+    {l:'API Integration',st:'forest',hp:82,x:c.width*.22,y:c.height*.35,rx:180,ry:120,col:[34,197,94]},
+    {l:'Getting Started',st:'swamp',hp:31,x:c.width*.45,y:c.height*.5,rx:200,ry:130,col:[245,158,11]},
+    {l:'Security',st:'forest',hp:78,x:c.width*.72,y:c.height*.32,rx:170,ry:110,col:[34,197,94]},
+    {l:'Pricing',st:'desert',hp:22,x:c.width*.18,y:c.height*.72,rx:100,ry:70,col:[168,162,158]},
+    {l:'Release Notes',st:'meadow',hp:65,x:c.width*.45,y:c.height*.78,rx:140,ry:90,col:[163,230,53]},
+    {l:'Dev Tools',st:'seedbed',hp:55,x:c.width*.75,y:c.height*.68,rx:130,ry:80,col:[74,222,128]},
+  ];
+  // Attackers approaching from right side
+  const attackers=[];
+  for(let i=0;i<12;i++){
+    attackers.push({x:c.width+100+Math.random()*200,y:c.height*.2+Math.random()*c.height*.4,
+      speed:.3+Math.random()*.4,size:3+Math.random()*4,target:2});
+  }
+  // Defense particles around Security cluster
+  const defParts=[];
+  for(let i=0;i<8;i++){
+    defParts.push({angle:i/8*Math.PI*2,dist:CL[2].rx+20+Math.random()*15,speed:.02+Math.random()*.01});
+  }
+  let t=0;
+  function draw(){
+    t+=.016;
+    x.fillStyle='#060a13';x.fillRect(0,0,c.width,c.height);
+    // Stars
+    const sr=rng(42);for(let i=0;i<60;i++){
+      x.fillStyle=rgba(226,232,240,.03+Math.sin(t*sr())*0.03);
+      x.beginPath();x.arc(sr()*c.width,sr()*c.height,sr()*2,0,6.28);x.fill();
+    }
+    // Ground zones
+    CL.forEach(cl=>{
+      const g=x.createRadialGradient(cl.x,cl.y,0,cl.x,cl.y,cl.rx*1.3);
+      g.addColorStop(0,rgba(...cl.col,.12));g.addColorStop(.7,rgba(...cl.col,.04));g.addColorStop(1,'rgba(0,0,0,0)');
+      x.fillStyle=g;x.beginPath();x.ellipse(cl.x,cl.y,cl.rx*1.3,cl.ry*1.3,0,0,6.28);x.fill();
+      // Border
+      x.strokeStyle=rgba(...cl.col,.15);x.lineWidth=2;
+      x.beginPath();x.ellipse(cl.x,cl.y,cl.rx,cl.ry,0,0,6.28);x.stroke();
+      // Walls (visible defense)
+      if(cl.st==='forest'){
+        x.strokeStyle=rgba(120,90,60,.3);x.lineWidth=4;
+        x.beginPath();x.ellipse(cl.x,cl.y,cl.rx+10,cl.ry+10,0,0,6.28);x.stroke();
+        // Wall segments
+        for(let i=0;i<12;i++){
+          const a=i/12*6.28;
+          const wx=cl.x+Math.cos(a)*(cl.rx+10),wy=cl.y+Math.sin(a)*(cl.ry+10);
+          x.fillStyle=rgba(120,90,60,.2);
+          x.fillRect(wx-4,wy-6,8,12);
+        }
+      }
+      // Towers (backlinks)
+      if(cl.hp>60){
+        for(let i=0;i<3;i++){
+          const a=(i/3)*6.28+t*.1;
+          const tx=cl.x+Math.cos(a)*(cl.rx+25),ty=cl.y+Math.sin(a)*(cl.ry+25);
+          // Tower base
+          x.fillStyle=rgba(100,80,60,.4);x.fillRect(tx-5,ty-12,10,14);
+          x.fillStyle=rgba(140,110,80,.3);x.beginPath();x.moveTo(tx-7,ty-12);x.lineTo(tx,ty-20);x.lineTo(tx+7,ty-12);x.fill();
+          // Tower firing (glow)
+          if(attackers.length>0&&cl.hp>60){
+            x.strokeStyle=rgba(96,165,250,.2+Math.sin(t*5+i)*.1);x.lineWidth=1;
+            x.beginPath();x.moveTo(tx,ty-16);x.lineTo(tx+Math.cos(t*3+i)*80,ty-16+Math.sin(t*3+i)*80);x.stroke();
+          }
+        }
+      }
+      // Shield dome
+      if(cl.hp>50){
+        const shieldAlpha=.03+Math.sin(t*.5)*.01;
+        x.strokeStyle=rgba(96,165,250,shieldAlpha+.05);x.lineWidth=1.5;
+        x.beginPath();x.ellipse(cl.x,cl.y-cl.ry*.2,cl.rx*1.15,cl.ry*1.4,0,Math.PI,0);x.stroke();
+        x.fillStyle=rgba(96,165,250,shieldAlpha);
+        x.beginPath();x.ellipse(cl.x,cl.y-cl.ry*.2,cl.rx*1.15,cl.ry*1.4,0,Math.PI,0);x.fill();
+      }
+      // Label
+      x.font='600 16px Inter,sans-serif';x.textAlign='center';
+      x.fillStyle='#e2e8f0';x.fillText(cl.l,cl.x,cl.y-cl.ry-20);
+      // Health
+      const sc=cl.hp>=70?'#4ade80':cl.hp>=40?'#fbbf24':'#f87171';
+      x.font='700 14px Inter,sans-serif';x.fillStyle=sc;
+      x.fillText(cl.hp.toString(),cl.x+cl.rx*.7,cl.y-cl.ry*.4);
+    });
+    // Simple trees
+    const tr=rng(100);
+    CL.forEach(cl=>{
+      const n=Math.max(3,Math.min(8,cl.hp/10));
+      for(let i=0;i<n;i++){
+        const a=tr()*6.28,d=tr()*cl.rx*.7;
+        const tx=cl.x+Math.cos(a)*d,ty=cl.y+Math.sin(a)*d*.6;
+        const h=10+tr()*25;const w=h*.4;
+        // Trunk
+        x.fillStyle=rgba(100,70,40,.4);x.fillRect(tx-2,ty-h,4,h);
+        // Canopy
+        const cc=cl.col;
+        x.fillStyle=rgba(cc[0],cc[1],cc[2],.3+tr()*.2);
+        x.beginPath();x.ellipse(tx,ty-h-w/2,w,w*.7,0,0,6.28);x.fill();
+      }
+    });
+    // Rivers
+    const rvs=[[0,2],[0,1],[2,5],[4,5]];
+    rvs.forEach(([ai,bi])=>{
+      const a=CL[ai],b=CL[bi];
+      x.strokeStyle='rgba(96,165,250,.12)';x.lineWidth=3;x.lineCap='round';
+      const mx=(a.x+b.x)/2+Math.sin(t*.2)*20,my=(a.y+b.y)/2+Math.cos(t*.15)*15;
+      x.beginPath();x.moveTo(a.x,a.y);x.quadraticCurveTo(mx,my,b.x,b.y);x.stroke();
+    });
+    // ATTACKERS (red troops approaching from right)
+    attackers.forEach(a=>{
+      a.x-=a.speed;
+      if(a.x<CL[a.target].x+CL[a.target].rx+30){
+        // Hit the wall — bounce/flash
+        a.x=CL[a.target].x+CL[a.target].rx+30+Math.random()*20;
+        // Wall hit flash
+        x.fillStyle='rgba(248,113,113,.15)';
+        x.beginPath();x.arc(a.x,a.y,15,0,6.28);x.fill();
+      }
+      // Red troop glow
+      x.fillStyle='rgba(248,113,113,.15)';x.beginPath();x.arc(a.x,a.y,a.size*3,0,6.28);x.fill();
+      // Troop body
+      x.fillStyle='rgba(248,113,113,.5)';x.beginPath();x.arc(a.x,a.y,a.size,0,6.28);x.fill();
+      // Sword
+      x.strokeStyle='rgba(248,113,113,.4)';x.lineWidth=1.5;
+      x.beginPath();x.moveTo(a.x-a.size,a.y);x.lineTo(a.x-a.size-8,a.y-4);x.stroke();
+    });
+    // Defense particles firing back
+    defParts.forEach(d=>{
+      d.angle+=d.speed;
+      const dx=CL[2].x+Math.cos(d.angle)*d.dist;
+      const dy=CL[2].y+Math.sin(d.angle)*d.dist*.65;
+      x.fillStyle=rgba(96,165,250,.3+Math.sin(t*3+d.angle)*.15);
+      x.beginPath();x.arc(dx,dy,3,0,6.28);x.fill();
+      // Projectile toward nearest attacker
+      if(Math.sin(t*5+d.angle)>.8){
+        x.strokeStyle=rgba(96,165,250,.15);x.lineWidth=1;
+        x.beginPath();x.moveTo(dx,dy);x.lineTo(dx+Math.cos(d.angle+Math.PI)*60,dy+Math.sin(d.angle+Math.PI)*60);x.stroke();
+      }
+    });
+    // "UNDER ATTACK" banner
+    if(Math.sin(t*2)>.3){
+      x.font='900 18px Inter,sans-serif';x.textAlign='center';
+      x.fillStyle=rgba(248,113,113,.5+Math.sin(t*4)*.2);
+      x.fillText('⚔️ SECURITY CLUSTER UNDER ATTACK — hubspot.com',c.width/2,40);
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ─── ATTACK VISUALIZATION ───
+function initAttack(){}
+function simulateAttack(){
+  const c=document.getElementById('atk-canvas');
+  c.height=800;
+  const x=c.getContext('2d');
+  const P=2;c.style.height='400px';
+  // Your base (left) vs attacker (right)
+  const yourBase={x:300,y:400,label:'Your API Integration Forest'};
+  const enemyBase={x:1900,y:400,label:'hubspot.com'};
+  // Enemy troops
+  const eTroops=[];
+  for(let i=0;i<15;i++)eTroops.push({x:1700+Math.random()*200,y:200+Math.random()*400,speed:.4+Math.random()*.3,hp:1,size:4+Math.random()*3,hit:false});
+  // Your defenses
+  const walls=[{x:600,y:200,h:400}];
+  const towers=[{x:500,y:250,range:150},{x:500,y:400,range:150},{x:500,y:550,range:150}];
+  let t=0,score={defended:0,breached:0};
+  function draw(){
+    t+=.02;x.fillStyle='#0a0f1a';x.fillRect(0,0,2200,800);
+    // YOUR SIDE (green)
+    x.fillStyle='rgba(34,197,94,.05)';x.fillRect(0,0,600,800);
+    x.font='600 14px Inter,sans-serif';x.fillStyle='#4ade80';x.textAlign='center';
+    x.fillText('🛡️ YOUR TERRITORY',300,30);
+    // Base cluster
+    const bg=x.createRadialGradient(300,400,0,300,400,200);
+    bg.addColorStop(0,'rgba(34,197,94,.12)');bg.addColorStop(1,'rgba(34,197,94,0)');
+    x.fillStyle=bg;x.beginPath();x.arc(300,400,200,0,6.28);x.fill();
+    // Trees
+    for(let i=0;i<8;i++){const a=i/8*6.28;const tx=300+Math.cos(a)*80,ty=400+Math.sin(a)*60;
+      x.fillStyle='rgba(80,50,30,.5)';x.fillRect(tx-2,ty-20,4,20);
+      x.fillStyle='rgba(34,197,94,.35)';x.beginPath();x.arc(tx,ty-25,12+Math.sin(t+i)*2,0,6.28);x.fill();}
+    // WALLS
+    x.fillStyle='rgba(120,90,60,.4)';x.fillRect(595,180,10,440);
+    for(let i=0;i<12;i++){x.fillStyle='rgba(140,110,80,.3)';x.fillRect(590,180+i*37,20,30);}
+    x.font='500 10px Inter,sans-serif';x.fillStyle='rgba(120,90,60,.5)';x.textAlign='center';
+    x.fillText('CONTENT WALL (2,400 words)',600,170);
+    // TOWERS
+    towers.forEach((tw,i)=>{
+      x.fillStyle='rgba(96,165,250,.3)';x.fillRect(tw.x-6,tw.y-15,12,20);
+      x.fillStyle='rgba(96,165,250,.2)';x.beginPath();x.moveTo(tw.x-8,tw.y-15);x.lineTo(tw.x,tw.y-25);x.lineTo(tw.x+8,tw.y-15);x.fill();
+      // Range circle
+      x.strokeStyle='rgba(96,165,250,.05)';x.lineWidth=1;
+      x.beginPath();x.arc(tw.x,tw.y,tw.range,0,6.28);x.stroke();
+      // Fire at nearest troop
+      let nearest=null,nd=Infinity;
+      eTroops.forEach(e=>{if(e.hp<=0)return;const d=Math.hypot(e.x-tw.x,e.y-tw.y);if(d<tw.range&&d<nd){nearest=e;nd=d;}});
+      if(nearest&&Math.sin(t*8+i*2)>.5){
+        x.strokeStyle='rgba(96,165,250,.4)';x.lineWidth=2;
+        x.beginPath();x.moveTo(tw.x,tw.y-10);x.lineTo(nearest.x,nearest.y);x.stroke();
+        x.fillStyle='rgba(96,165,250,.3)';x.beginPath();x.arc(nearest.x,nearest.y,8,0,6.28);x.fill();
+      }
+    });
+    x.font='500 10px Inter,sans-serif';x.fillStyle='rgba(96,165,250,.5)';
+    x.fillText('BACKLINK TOWERS (23 links)',500,230);
+    // ENEMY SIDE (red)
+    x.fillStyle='rgba(248,113,113,.03)';x.fillRect(1600,0,600,800);
+    x.font='600 14px Inter,sans-serif';x.fillStyle='#f87171';x.textAlign='center';
+    x.fillText('⚔️ ATTACKER: hubspot.com',1900,30);
+    const er=x.createRadialGradient(1900,400,0,1900,400,150);
+    er.addColorStop(0,'rgba(248,113,113,.1)');er.addColorStop(1,'rgba(248,113,113,0)');
+    x.fillStyle=er;x.beginPath();x.arc(1900,400,150,0,6.28);x.fill();
+    // Enemy troops advancing
+    eTroops.forEach(e=>{
+      if(e.hp<=0)return;
+      e.x-=e.speed;
+      // Hit wall?
+      if(e.x<=610&&!e.hit){
+        e.hit=true;e.hp-=.5;score.defended++;
+        // Impact flash
+        x.fillStyle='rgba(248,113,113,.3)';x.beginPath();x.arc(e.x,e.y,20,0,6.28);x.fill();
+        e.x=620+Math.random()*30;e.speed*=.3;
+      }
+      // Red glow
+      x.fillStyle='rgba(248,113,113,.1)';x.beginPath();x.arc(e.x,e.y,e.size*3,0,6.28);x.fill();
+      // Body
+      x.fillStyle=`rgba(248,113,113,${e.hp*.6})`;x.beginPath();x.arc(e.x,e.y,e.size,0,6.28);x.fill();
+      // HP bar
+      x.fillStyle='rgba(0,0,0,.3)';x.fillRect(e.x-8,e.y-e.size-6,16,3);
+      x.fillStyle=`rgba(248,113,113,${e.hp})`;x.fillRect(e.x-8,e.y-e.size-6,16*e.hp,3);
+      // Drain HP from tower fire
+      towers.forEach(tw=>{const d=Math.hypot(e.x-tw.x,e.y-tw.y);if(d<tw.range)e.hp-=.001;});
+      if(e.hp<=0){score.defended++;}
+    });
+    // Battle zone label
+    x.font='700 12px Inter,sans-serif';x.fillStyle='rgba(255,255,255,.3)';x.textAlign='center';
+    x.fillText('⚡ BATTLE ZONE ⚡',1100,400);
+    // Score
+    x.font='700 14px Inter,sans-serif';
+    x.fillStyle='#4ade80';x.textAlign='left';x.fillText(`Defended: ${score.defended}`,30,780);
+    x.fillStyle='#f87171';x.fillText(`Breached: ${score.breached}`,200,780);
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ─── INIT ───
+initEco();
+</script>
+</body>
+</html>

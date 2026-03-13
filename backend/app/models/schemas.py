@@ -143,7 +143,7 @@ class CrawlStatusResponse(BaseModel):
 
 class TaskTriggerResponse(BaseModel):
     message: str
-    site_id: UUID
+    site_id: UUID | None = None
 
 
 # Rebuild forward refs

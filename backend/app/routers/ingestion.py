@@ -23,6 +23,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _update_crawl_progress(site_id: UUID, processed: int, total: int) -> None:
+    """Update crawl progress in DB (called from crawler callback)."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            await db.execute(
+                """
+                UPDATE crawl_jobs SET
+                    posts_found = $1,
+                    posts_processed = $2,
+                    updated_at = NOW()
+                WHERE site_id = $3
+                """,
+                total, processed, site_id,
+            )
+    except Exception:
+        pass  # Progress updates are best-effort
+
+
 async def _run_crawl(site_id: UUID, site: dict) -> None:
     """Background task: crawl content from WordPress or sitemap."""
     pool = await get_pool()
@@ -31,15 +50,16 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
     async with pool.acquire() as db:
         await db.execute(
             """
-            INSERT INTO crawl_jobs (site_id, status, started_at)
-            VALUES ($1, 'crawling', $2)
+            INSERT INTO crawl_jobs (site_id, status, started_at, updated_at)
+            VALUES ($1, 'crawling', $2, $2)
             ON CONFLICT (site_id) DO UPDATE SET
                 status = 'crawling',
                 started_at = $2,
                 completed_at = NULL,
                 error = NULL,
                 posts_found = 0,
-                posts_processed = 0
+                posts_processed = 0,
+                updated_at = $2
             """,
             site_id, datetime.now(timezone.utc),
         )
@@ -47,6 +67,15 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
     try:
         cms_type = site["cms_type"]
         normalized_posts = []
+
+        def on_progress(processed: int, total: int) -> None:
+            """Non-blocking progress callback."""
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_update_crawl_progress(site_id, processed, total))
+            except RuntimeError:
+                pass
 
         if cms_type == "wordpress" and site.get("wordpress_url"):
             # Decrypt the app password
@@ -57,23 +86,29 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
                 domain=site["domain"],
             )
             normalized_posts = await connector.fetch_all_posts()
-        elif site.get("sitemap_url"):
+        elif site.get("sitemap_url") or site.get("domain"):
+            # Use sitemap URL if available, otherwise auto-discover from domain
+            sitemap_url = site.get("sitemap_url") or f"https://{site['domain']}/sitemap.xml"
             crawler = SitemapCrawler(
-                sitemap_url=site["sitemap_url"],
+                sitemap_url=sitemap_url,
                 domain=site["domain"],
+                concurrency=10,
+                max_retries=3,
+                timeout_seconds=30.0,
+                on_progress=on_progress,
             )
             normalized_posts = await crawler.crawl()
         else:
             async with pool.acquire() as db:
                 await db.execute(
-                    "UPDATE crawl_jobs SET status = 'failed', error = $1 WHERE site_id = $2",
-                    "No WordPress URL or sitemap URL configured", site_id,
+                    "UPDATE crawl_jobs SET status = 'failed', error = $1, updated_at = NOW() WHERE site_id = $2",
+                    "No WordPress URL, sitemap URL, or domain configured", site_id,
                 )
             return
 
         async with pool.acquire() as db:
             await db.execute(
-                "UPDATE crawl_jobs SET posts_found = $1 WHERE site_id = $2",
+                "UPDATE crawl_jobs SET posts_found = $1, updated_at = NOW() WHERE site_id = $2",
                 len(normalized_posts), site_id,
             )
 
@@ -88,7 +123,8 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
                 UPDATE crawl_jobs SET
                     status = 'completed',
                     posts_processed = $1,
-                    completed_at = $2
+                    completed_at = $2,
+                    updated_at = $2
                 WHERE site_id = $3
                 """,
                 saved, datetime.now(timezone.utc), site_id,
@@ -101,7 +137,7 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
         try:
             async with pool.acquire() as db:
                 await db.execute(
-                    "UPDATE crawl_jobs SET status = 'failed', error = $1 WHERE site_id = $2",
+                    "UPDATE crawl_jobs SET status = 'failed', error = $1, updated_at = NOW() WHERE site_id = $2",
                     str(e)[:500], site_id,
                 )
         except Exception:
@@ -218,6 +254,40 @@ async def trigger_embeddings(
     await _verify_ownership(site_id, user_id, db)
     background_tasks.add_task(_run_embeddings, site_id)
     return TaskTriggerResponse(message="Embedding generation started", site_id=site_id)
+
+
+@router.post("/cron/daily-refresh", response_model=TaskTriggerResponse)
+async def trigger_daily_refresh(
+    background_tasks: BackgroundTasks,
+):
+    """Trigger daily analytics refresh for all eligible sites.
+
+    Should be called by a cron job scheduler. No auth required for internal crons
+    (protect via network policy or cron secret in production).
+    """
+    from app.services.recrawl import run_daily_refresh
+    background_tasks.add_task(run_daily_refresh)
+    return TaskTriggerResponse(message="Daily analytics refresh started", site_id=None)
+
+
+@router.post("/cron/weekly-recrawl", response_model=TaskTriggerResponse)
+async def trigger_weekly_recrawl(
+    background_tasks: BackgroundTasks,
+):
+    """Trigger weekly re-crawl for all eligible sites."""
+    from app.services.recrawl import run_weekly_recrawl
+    background_tasks.add_task(run_weekly_recrawl)
+    return TaskTriggerResponse(message="Weekly re-crawl started", site_id=None)
+
+
+@router.post("/cron/monthly-reembed", response_model=TaskTriggerResponse)
+async def trigger_monthly_reembed(
+    background_tasks: BackgroundTasks,
+):
+    """Trigger monthly re-embedding for all sites with changed content."""
+    from app.services.recrawl import run_monthly_reembed
+    background_tasks.add_task(run_monthly_reembed)
+    return TaskTriggerResponse(message="Monthly re-embed started", site_id=None)
 
 
 async def _verify_ownership(site_id: UUID, user_id: str, db: asyncpg.Connection) -> None:
