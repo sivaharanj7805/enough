@@ -26,10 +26,18 @@ from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
-# Cosine similarity thresholds (using similarity = 1 - distance)
-COSINE_THRESHOLD_FLAG = 0.85
-COSINE_THRESHOLD_HIGH = 0.90
-COSINE_THRESHOLD_CRITICAL = 0.95
+# Cosine similarity thresholds for text-embedding-3-small
+# CRITICAL: This model produces LOWER similarity scores than ada-002.
+# Research (OpenAI community, 2024): content that scored 0.70+ with ada-002
+# scores ~0.40 with text-embedding-3-small. Thresholds must be calibrated
+# accordingly. Same-topic content typically scores 0.45-0.55.
+#
+# These defaults should be tuned per-site after initial embedding generation.
+# Run: SELECT 1 - (a.embedding <=> b.embedding) FROM post_embeddings a, b
+# on known-cannibalized pairs to calibrate.
+COSINE_THRESHOLD_FLAG = 0.40    # Flag for review (was 0.85 — too high for v3-small)
+COSINE_THRESHOLD_HIGH = 0.50    # High confidence cannibalization
+COSINE_THRESHOLD_CRITICAL = 0.60  # Near-duplicate content
 
 # Min shared queries for query-only cannibalization
 MIN_SHARED_QUERIES = 1

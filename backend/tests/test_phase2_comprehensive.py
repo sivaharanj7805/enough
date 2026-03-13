@@ -345,23 +345,23 @@ class TestCannibalizationSeverityExhaustive:
         assert sev == "low"
 
     def test_cosine_just_below_threshold(self):
-        sev = CannibalizationDetector._compute_severity(0.849, 0)
+        sev = CannibalizationDetector._compute_severity(0.39, 0)
         assert sev == "low"
 
     def test_cosine_exactly_at_threshold(self):
-        sev = CannibalizationDetector._compute_severity(0.85, 0)
+        sev = CannibalizationDetector._compute_severity(0.40, 0)
         assert sev == "medium"
 
     def test_cosine_between_high_and_critical(self):
-        sev = CannibalizationDetector._compute_severity(0.93, 0)
+        sev = CannibalizationDetector._compute_severity(0.55, 0)
         assert sev == "high"
 
-    def test_cosine_exactly_0_95_no_queries(self):
-        sev = CannibalizationDetector._compute_severity(0.95, 0)
+    def test_cosine_exactly_0_60_no_queries(self):
+        sev = CannibalizationDetector._compute_severity(0.60, 0)
         assert sev == "high"
 
-    def test_cosine_0_95_with_queries(self):
-        sev = CannibalizationDetector._compute_severity(0.95, 1)
+    def test_cosine_0_60_with_queries(self):
+        sev = CannibalizationDetector._compute_severity(0.60, 1)
         assert sev == "critical"
 
     def test_only_1_shared_query(self):
@@ -376,8 +376,8 @@ class TestCannibalizationSeverityExhaustive:
 class TestOverlapScoreEdgeCases:
 
     def test_empty_query_sets(self):
-        score = CannibalizationDetector._compute_overlap_score(0.90, 0, set(), set())
-        assert score == 0.90
+        score = CannibalizationDetector._compute_overlap_score(0.50, 0, set(), set())
+        assert score == 0.50
 
     def test_identical_query_sets(self):
         qa = {"seo", "content", "blog"}
@@ -393,8 +393,8 @@ class TestOverlapScoreEdgeCases:
     def test_weighted_combination(self):
         qa = {"a", "b", "c", "d"}
         qb = {"a", "b", "e", "f"}
-        score = CannibalizationDetector._compute_overlap_score(0.90, 2, qa, qb)
-        expected = 0.7 * 0.90 + 0.3 * (2/6)
+        score = CannibalizationDetector._compute_overlap_score(0.50, 2, qa, qb)
+        expected = 0.7 * 0.50 + 0.3 * (2/6)
         assert abs(score - expected) < 0.01
 
 

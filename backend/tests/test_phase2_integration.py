@@ -286,27 +286,27 @@ class TestCannibalizationIntegration:
         assert result == 0
 
     def test_severity_matrix(self):
-        """Test all severity combinations systematically."""
+        """Test all severity combinations (calibrated for text-embedding-3-small)."""
         from app.services.cannibalization import CannibalizationDetector
 
-        # Critical: very high cosine + shared queries
-        assert CannibalizationDetector._compute_severity(0.96, 2) == "critical"
+        # Critical: cosine >= 0.60 + shared queries
+        assert CannibalizationDetector._compute_severity(0.65, 2) == "critical"
 
-        # High: high cosine
-        assert CannibalizationDetector._compute_severity(0.92, 0) == "high"
+        # High: cosine >= 0.50
+        assert CannibalizationDetector._compute_severity(0.52, 0) == "high"
 
         # High: moderate cosine + shared
-        assert CannibalizationDetector._compute_severity(0.86, 1) == "high"
+        assert CannibalizationDetector._compute_severity(0.42, 1) == "high"
 
         # Medium: cosine at threshold
-        assert CannibalizationDetector._compute_severity(0.85, 0) == "medium"
+        assert CannibalizationDetector._compute_severity(0.40, 0) == "medium"
 
         # Medium: many shared queries
         assert CannibalizationDetector._compute_severity(None, 4) == "medium"
 
         # Low: few shared only
         assert CannibalizationDetector._compute_severity(None, 1) == "low"
-        assert CannibalizationDetector._compute_severity(0.5, 2) == "low"
+        assert CannibalizationDetector._compute_severity(0.2, 2) == "low"
 
 
 # ═══════════════════════════════════════════════
