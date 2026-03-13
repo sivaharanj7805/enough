@@ -372,7 +372,9 @@ def _compute_trend(
     if prev_pv == 0:
         if recent_pv > 0:
             return "growing", 100.0
-        return "dead", 0.0
+        # Both zero but total_60d >= 5 → traffic is from overlap period
+        # Treat as stable (neither growing nor declining)
+        return "stable", 30.0
 
     pct_change = (recent_pv - prev_pv) / prev_pv
 
