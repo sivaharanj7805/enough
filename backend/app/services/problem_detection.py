@@ -1,0 +1,474 @@
+"""Content problem detection — decay, thin content, SEO issues, orphans.
+
+Scans all posts for a site and stores detected problems in the
+content_problems table. Designed to run after health scoring completes.
+
+Problems are idempotent — re-running clears and re-detects.
+"""
+
+import json
+import logging
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+import asyncpg
+
+logger = logging.getLogger(__name__)
+
+
+class ProblemDetector:
+    """Detect content problems across a site."""
+
+    async def detect_all(self, db: asyncpg.Connection, site_id: UUID) -> dict[str, int]:
+        """Run all problem detection scans for a site.
+
+        Returns a dict of problem_type → count.
+        """
+        logger.info("Starting problem detection for site %s", site_id)
+
+        # Clear old problems (idempotent)
+        await db.execute(
+            "DELETE FROM content_problems WHERE site_id = $1", site_id,
+        )
+
+        counts: dict[str, int] = {}
+
+        # Run each detector
+        counts["decay"] = await self._detect_content_decay(db, site_id)
+        counts["thin"] = await self._detect_thin_content(db, site_id)
+        counts["seo"] = await self._detect_seo_issues(db, site_id)
+        counts["orphan"] = await self._detect_orphans(db, site_id)
+
+        total = sum(counts.values())
+        logger.info(
+            "Problem detection complete for site %s — %d total problems "
+            "(decay=%d, thin=%d, seo=%d, orphan=%d)",
+            site_id, total, counts["decay"], counts["thin"],
+            counts["seo"], counts["orphan"],
+        )
+        return counts
+
+    # ═══════════════════════════════════════════════
+    # 2.9: Content decay detection
+    # ═══════════════════════════════════════════════
+
+    async def _detect_content_decay(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Detect decaying content.
+
+        Flags posts where:
+        1. Clicks dropped >30% in last 90 days vs previous 90 days
+        2. Post not updated in 12+ months AND ranking page 2+ (position >10)
+        3. Post once ranked top 5 and now ranks 10+
+
+        Severity:
+        - severe: >60% drop OR (was top 3, now 20+)
+        - moderate: >30% drop OR (was top 5, now 10+)
+        - mild: 12+ months old on page 2+
+        """
+        now = datetime.now(timezone.utc)
+        ninety_days_ago = now - timedelta(days=90)
+        one_eighty_days_ago = now - timedelta(days=180)
+        twelve_months_ago = now - timedelta(days=365)
+
+        found = 0
+
+        # ── Signal 1: Traffic/click decline (90d vs previous 90d) ──
+        decline_rows = await db.fetch(
+            """
+            WITH recent AS (
+                SELECT post_id, COALESCE(SUM(clicks), 0) AS clicks
+                FROM gsc_metrics
+                WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+                  AND date >= $2
+                GROUP BY post_id
+            ),
+            previous AS (
+                SELECT post_id, COALESCE(SUM(clicks), 0) AS clicks
+                FROM gsc_metrics
+                WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+                  AND date >= $3 AND date < $2
+                GROUP BY post_id
+            )
+            SELECT p.id, p.title,
+                   COALESCE(r.clicks, 0) AS recent_clicks,
+                   COALESCE(prev.clicks, 0) AS prev_clicks
+            FROM posts p
+            LEFT JOIN recent r ON r.post_id = p.id
+            LEFT JOIN previous prev ON prev.post_id = p.id
+            WHERE p.site_id = $1
+              AND COALESCE(prev.clicks, 0) > 10
+              AND COALESCE(r.clicks, 0) < COALESCE(prev.clicks, 0) * 0.7
+            """,
+            site_id, ninety_days_ago.date(), one_eighty_days_ago.date(),
+        )
+
+        for r in decline_rows:
+            prev_c = r["prev_clicks"]
+            recent_c = r["recent_clicks"]
+            pct_drop = (prev_c - recent_c) / max(prev_c, 1) * 100
+
+            severity = "severe" if pct_drop > 60 else "moderate"
+            problem_type = f"decay_{severity}"
+
+            await db.execute(
+                """
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                    severity = $4, details = $5, detected_at = NOW()
+                """,
+                r["id"], site_id, problem_type, severity,
+                json.dumps({
+                    "signal": "click_decline_90d",
+                    "recent_clicks": recent_c,
+                    "previous_clicks": prev_c,
+                    "drop_percent": round(pct_drop, 1),
+                }),
+            )
+            found += 1
+
+        # ── Signal 2: Old + page 2+ ──
+        stale_rows = await db.fetch(
+            """
+            SELECT p.id, p.title,
+                   p.modified_date, p.publish_date,
+                   AVG(g.avg_position) AS avg_pos
+            FROM posts p
+            JOIN gsc_metrics g ON g.post_id = p.id
+            WHERE p.site_id = $1
+              AND g.date >= $2
+              AND COALESCE(p.modified_date, p.publish_date) < $3
+            GROUP BY p.id
+            HAVING AVG(g.avg_position) > 10
+            """,
+            site_id, ninety_days_ago.date(), twelve_months_ago,
+        )
+
+        for r in stale_rows:
+            last_update = r["modified_date"] or r["publish_date"]
+            months_old = (now - last_update.replace(tzinfo=timezone.utc)).days / 30.44
+
+            await db.execute(
+                """
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                    severity = $4, details = $5, detected_at = NOW()
+                """,
+                r["id"], site_id, "decay_mild", "medium",
+                json.dumps({
+                    "signal": "stale_plus_low_ranking",
+                    "months_since_update": round(months_old, 1),
+                    "avg_position": round(float(r["avg_pos"]), 1),
+                }),
+            )
+            found += 1
+
+        # ── Signal 3: Was top 5, now 10+ ──
+        position_drop_rows = await db.fetch(
+            """
+            WITH historical AS (
+                SELECT post_id, MIN(avg_position) AS best_position
+                FROM gsc_metrics
+                WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+                  AND date < $2
+                GROUP BY post_id
+                HAVING MIN(avg_position) <= 5
+            ),
+            current AS (
+                SELECT post_id, AVG(avg_position) AS current_position
+                FROM gsc_metrics
+                WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+                  AND date >= $2
+                GROUP BY post_id
+                HAVING AVG(avg_position) > 10
+            )
+            SELECT h.post_id AS id, h.best_position, c.current_position
+            FROM historical h
+            JOIN current c ON c.post_id = h.post_id
+            """,
+            site_id, ninety_days_ago.date(),
+        )
+
+        for r in position_drop_rows:
+            best_pos = float(r["best_position"])
+            cur_pos = float(r["current_position"])
+            severity = "severe" if best_pos <= 3 and cur_pos > 20 else "moderate"
+
+            await db.execute(
+                """
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                    severity = $4, details = $5, detected_at = NOW()
+                """,
+                r["id"], site_id, f"decay_{severity}", severity,
+                json.dumps({
+                    "signal": "position_drop",
+                    "best_historic_position": round(best_pos, 1),
+                    "current_position": round(cur_pos, 1),
+                }),
+            )
+            found += 1
+
+        return found
+
+    # ═══════════════════════════════════════════════
+    # 2.10: Thin content detection
+    # ═══════════════════════════════════════════════
+
+    async def _detect_thin_content(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Detect thin content.
+
+        Flags posts with:
+        1. word_count < 500
+        2. word_count < 50% of cluster average
+        3. High bounce rate (>80%) + low time on page (<30s)
+        """
+        found = 0
+        now = datetime.now(timezone.utc)
+        ninety_days_ago = now - timedelta(days=90)
+
+        # ── 1. Absolute thin content (<500 words) ──
+        thin_rows = await db.fetch(
+            """
+            SELECT id, title, word_count
+            FROM posts
+            WHERE site_id = $1 AND word_count < 500 AND word_count > 0
+            """,
+            site_id,
+        )
+        for r in thin_rows:
+            await db.execute(
+                """
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                    severity = $4, details = $5, detected_at = NOW()
+                """,
+                r["id"], site_id, "thin_content",
+                "high" if r["word_count"] < 300 else "medium",
+                json.dumps({"word_count": r["word_count"]}),
+            )
+            found += 1
+
+        # ── 2. Below cluster average (<50%) ──
+        below_avg_rows = await db.fetch(
+            """
+            WITH cluster_avgs AS (
+                SELECT pc.cluster_id, AVG(p.word_count) AS avg_wc
+                FROM post_clusters pc
+                JOIN posts p ON p.id = pc.post_id
+                WHERE p.site_id = $1 AND p.word_count IS NOT NULL
+                GROUP BY pc.cluster_id
+            )
+            SELECT p.id, p.title, p.word_count, ca.avg_wc AS cluster_avg
+            FROM posts p
+            JOIN post_clusters pc ON pc.post_id = p.id
+            JOIN cluster_avgs ca ON ca.cluster_id = pc.cluster_id
+            WHERE p.site_id = $1
+              AND p.word_count IS NOT NULL
+              AND p.word_count < ca.avg_wc * 0.5
+              AND ca.avg_wc > 500
+            """,
+            site_id,
+        )
+        for r in below_avg_rows:
+            await db.execute(
+                """
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                    severity = $4, details = $5, detected_at = NOW()
+                """,
+                r["id"], site_id, "thin_below_cluster_avg", "medium",
+                json.dumps({
+                    "word_count": r["word_count"],
+                    "cluster_avg": round(float(r["cluster_avg"]), 0),
+                    "ratio": round(r["word_count"] / float(r["cluster_avg"]), 2),
+                }),
+            )
+            found += 1
+
+        # ── 3. High bounce + low time ──
+        bounce_rows = await db.fetch(
+            """
+            SELECT p.id, p.title,
+                   AVG(g.bounce_rate) AS avg_bounce,
+                   AVG(g.avg_engagement_time_seconds) AS avg_time
+            FROM posts p
+            JOIN ga4_metrics g ON g.post_id = p.id
+            WHERE p.site_id = $1 AND g.date >= $2
+            GROUP BY p.id, p.title
+            HAVING AVG(g.bounce_rate) > 0.8
+               AND AVG(g.avg_engagement_time_seconds) < 30
+            """,
+            site_id, ninety_days_ago.date(),
+        )
+        for r in bounce_rows:
+            await db.execute(
+                """
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                    severity = $4, details = $5, detected_at = NOW()
+                """,
+                r["id"], site_id, "thin_high_bounce", "high",
+                json.dumps({
+                    "avg_bounce_rate": round(float(r["avg_bounce"]), 2),
+                    "avg_time_seconds": round(float(r["avg_time"]), 1),
+                }),
+            )
+            found += 1
+
+        return found
+
+    # ═══════════════════════════════════════════════
+    # 2.11: SEO issue detection
+    # ═══════════════════════════════════════════════
+
+    async def _detect_seo_issues(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Detect per-post SEO issues.
+
+        Checks:
+        1. Missing meta description
+        2. Title too short (<30) or too long (>60)
+        3. No H2+ headings
+        4. No internal links to/from the post
+        5. No images (check body_html for <img>)
+        """
+        found = 0
+
+        posts = await db.fetch(
+            """
+            SELECT p.id, p.title, p.meta_description, p.headings, p.body_html,
+                   (SELECT COUNT(*) FROM internal_links il
+                    WHERE il.source_post_id = p.id OR il.target_post_id = p.id) AS link_count
+            FROM posts p
+            WHERE p.site_id = $1
+            """,
+            site_id,
+        )
+
+        for r in posts:
+            # 1. Missing meta description
+            if not r["meta_description"] or len(r["meta_description"].strip()) < 10:
+                await self._insert_problem(
+                    db, r["id"], site_id, "seo_missing_meta", "medium",
+                    {"issue": "No meta description or too short"},
+                )
+                found += 1
+
+            # 2. Title length
+            title = r["title"] or ""
+            title_len = len(title.strip())
+            if title_len < 30 or title_len > 60:
+                await self._insert_problem(
+                    db, r["id"], site_id, "seo_title_length", "low",
+                    {
+                        "issue": f"Title is {title_len} chars (ideal: 30-60)",
+                        "title_length": title_len,
+                    },
+                )
+                found += 1
+
+            # 3. No H2+ headings
+            headings = r["headings"]
+            if headings and isinstance(headings, str):
+                try:
+                    headings = json.loads(headings)
+                except (json.JSONDecodeError, TypeError):
+                    headings = []
+
+            has_h2_plus = False
+            if headings and isinstance(headings, list):
+                has_h2_plus = any(
+                    h.get("level") in ("h2", "h3", "h4")
+                    for h in headings
+                    if isinstance(h, dict)
+                )
+
+            if not has_h2_plus:
+                await self._insert_problem(
+                    db, r["id"], site_id, "seo_no_headings", "medium",
+                    {"issue": "No H2 or H3 headings found"},
+                )
+                found += 1
+
+            # 4. No internal links
+            if r["link_count"] == 0:
+                await self._insert_problem(
+                    db, r["id"], site_id, "seo_no_internal_links", "high",
+                    {"issue": "No internal links to or from this post"},
+                )
+                found += 1
+
+            # 5. No images
+            body_html = r["body_html"] or ""
+            has_images = "<img" in body_html.lower()
+            if not has_images:
+                await self._insert_problem(
+                    db, r["id"], site_id, "seo_no_images", "low",
+                    {"issue": "No images found in content"},
+                )
+                found += 1
+
+        return found
+
+    # ═══════════════════════════════════════════════
+    # 2.12: Orphan content detection
+    # ═══════════════════════════════════════════════
+
+    async def _detect_orphans(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Detect orphan content — posts with zero inbound internal links.
+
+        These are invisible to both users and search engines.
+        """
+        orphans = await db.fetch(
+            """
+            SELECT p.id, p.title
+            FROM posts p
+            WHERE p.site_id = $1
+              AND NOT EXISTS (
+                  SELECT 1 FROM internal_links il
+                  WHERE il.target_post_id = p.id
+              )
+            """,
+            site_id,
+        )
+
+        for r in orphans:
+            await self._insert_problem(
+                db, r["id"], site_id, "orphan", "high",
+                {"issue": "No inbound internal links — this post is an orphan"},
+            )
+
+        return len(orphans)
+
+    @staticmethod
+    async def _insert_problem(
+        db: asyncpg.Connection,
+        post_id: UUID,
+        site_id: UUID,
+        problem_type: str,
+        severity: str,
+        details: dict,
+    ) -> None:
+        """Insert or update a content problem."""
+        await db.execute(
+            """
+            INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                severity = $4, details = $5, detected_at = NOW()
+            """,
+            post_id, site_id, problem_type, severity, json.dumps(details),
+        )

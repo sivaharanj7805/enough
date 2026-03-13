@@ -1,51 +1,73 @@
-"""Cannibalization detection between posts within topic clusters.
+"""Cannibalization detection via embedding cosine similarity + GSC query overlap.
 
-Detects keyword overlap using Jaccard similarity on GSC query sets,
-scores severity based on position proximity and traffic split factors.
+Research-informed approach (two-signal detection):
+1. Embedding cosine similarity > 0.85 between posts in the same cluster
+2. GSC query overlap — posts ranking for the same search queries
+
+A pair is flagged as cannibalization when EITHER condition is met,
+with higher severity when BOTH signals are present.
+
+Severity levels:
+- critical: cosine > 0.95 AND shared queries
+- high: cosine > 0.90 OR (cosine > 0.85 AND shared queries)
+- medium: cosine > 0.85 OR 3+ shared queries
+- low: 1-2 shared queries only
+
+The "stronger post" is determined by composite health score + traffic.
 """
 
 import logging
+from itertools import combinations
 from uuid import UUID
 
 import asyncpg
 
+from app.utils.rate_limiter import RateLimiter
+
 logger = logging.getLogger(__name__)
 
-OVERLAP_THRESHOLD = 0.30  # Minimum Jaccard similarity to flag as cannibalizing
-MAX_QUERIES_PER_POST = 50  # Limit queries to avoid O(n²) explosion
+# Cosine similarity thresholds (using similarity = 1 - distance)
+COSINE_THRESHOLD_FLAG = 0.85
+COSINE_THRESHOLD_HIGH = 0.90
+COSINE_THRESHOLD_CRITICAL = 0.95
+
+# Min shared queries for query-only cannibalization
+MIN_SHARED_QUERIES = 1
 
 
 class CannibalizationDetector:
-    """Detect keyword cannibalization within topic clusters."""
+    """Detect cannibalization within topic clusters using embeddings + GSC."""
 
-    async def detect_for_site(self, db: asyncpg.Connection, site_id: UUID) -> int:
+    async def detect_for_site(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
         """Run cannibalization detection across all clusters for a site.
 
-        Requires clusters to exist (run clustering first).
         Returns the number of cannibalization pairs found.
         """
         logger.info("Starting cannibalization detection for site %s", site_id)
 
-        # Clear old cannibalization data for this site
-        await db.execute(
-            """
-            DELETE FROM cannibalization_pairs
-            WHERE cluster_id IN (SELECT id FROM clusters WHERE site_id = $1)
-            """,
+        clusters = await db.fetch(
+            "SELECT id, post_count FROM clusters WHERE site_id = $1",
             site_id,
         )
 
-        clusters = await db.fetch(
-            "SELECT id FROM clusters WHERE site_id = $1", site_id,
-        )
         if not clusters:
-            logger.warning("No clusters found for site %s — run clustering first", site_id)
+            logger.warning("No clusters for site %s — run clustering first", site_id)
             return 0
+
+        # Clear old pairs
+        cluster_ids = [r["id"] for r in clusters]
+        await db.execute(
+            "DELETE FROM cannibalization_pairs WHERE cluster_id = ANY($1::uuid[])",
+            cluster_ids,
+        )
 
         total_pairs = 0
         for cluster_row in clusters:
-            cluster_id = cluster_row["id"]
-            pairs = await self._detect_in_cluster(db, cluster_id)
+            if cluster_row["post_count"] < 2:
+                continue
+            pairs = await self._detect_in_cluster(db, cluster_row["id"], site_id)
             total_pairs += pairs
 
         logger.info(
@@ -55,144 +77,192 @@ class CannibalizationDetector:
         return total_pairs
 
     async def _detect_in_cluster(
-        self, db: asyncpg.Connection, cluster_id: UUID,
+        self, db: asyncpg.Connection, cluster_id: UUID, site_id: UUID,
     ) -> int:
-        """Detect cannibalization pairs within a single cluster."""
-        # Get all posts in this cluster
-        post_rows = await db.fetch(
+        """Detect cannibalization pairs within a single cluster.
+
+        Uses:
+        1. pgvector cosine distance between all post pairs (via embedding)
+        2. GSC query overlap between post pairs
+
+        Returns the number of pairs found.
+        """
+        # Get posts with their embeddings (using pgvector for cosine distance)
+        posts = await db.fetch(
             """
-            SELECT p.id, p.title
+            SELECT p.id, p.title, p.url, p.word_count,
+                   pe.embedding::text AS embedding_text
             FROM post_clusters pc
             JOIN posts p ON p.id = pc.post_id
+            LEFT JOIN post_embeddings pe ON pe.post_id = p.id
             WHERE pc.cluster_id = $1
+            ORDER BY p.id
             """,
             cluster_id,
         )
 
-        if len(post_rows) < 2:
+        if len(posts) < 2:
             return 0
 
-        # Build query sets and metrics for each post
-        post_data: dict[UUID, dict] = {}
-        for row in post_rows:
-            post_id = row["id"]
-            # Fetch top queries with aggregated metrics
-            query_rows = await db.fetch(
-                """
-                SELECT query,
-                       SUM(clicks) AS total_clicks,
-                       AVG(avg_position) AS avg_pos
-                FROM gsc_metrics
-                WHERE post_id = $1
-                GROUP BY query
-                ORDER BY SUM(clicks) DESC
-                LIMIT $2
-                """,
-                post_id, MAX_QUERIES_PER_POST,
-            )
-            post_data[post_id] = {
-                "title": row["title"],
-                "queries": {r["query"] for r in query_rows},
-                "query_clicks": {r["query"]: r["total_clicks"] for r in query_rows},
-                "avg_position": (
-                    sum(r["avg_pos"] for r in query_rows) / len(query_rows)
-                    if query_rows else 100.0
-                ),
-                "total_clicks": sum(r["total_clicks"] for r in query_rows),
+        # Get health scores for "stronger post" determination
+        health_rows = await db.fetch(
+            """
+            SELECT post_id, composite_score, traffic_contribution
+            FROM post_health_scores
+            WHERE post_id = ANY($1::uuid[])
+            """,
+            [p["id"] for p in posts],
+        )
+        health_map: dict[UUID, dict] = {
+            r["post_id"]: {
+                "score": r["composite_score"] or 0.0,
+                "traffic": r["traffic_contribution"] or 0.0,
             }
+            for r in health_rows
+        }
 
-        # Compare all pairs
-        post_ids = list(post_data.keys())
+        # Get GSC queries per post (recent 90 days)
+        query_rows = await db.fetch(
+            """
+            SELECT post_id, query
+            FROM gsc_metrics
+            WHERE post_id = ANY($1::uuid[])
+              AND date >= CURRENT_DATE - INTERVAL '90 days'
+            GROUP BY post_id, query
+            """,
+            [p["id"] for p in posts],
+        )
+        queries_by_post: dict[UUID, set[str]] = {}
+        for r in query_rows:
+            queries_by_post.setdefault(r["post_id"], set()).add(r["query"].lower())
+
+        # Calculate cosine similarity between all pairs using pgvector
         pairs_found = 0
+        post_list = list(posts)
 
-        for i in range(len(post_ids)):
-            for j in range(i + 1, len(post_ids)):
-                pid_a = post_ids[i]
-                pid_b = post_ids[j]
-                data_a = post_data[pid_a]
-                data_b = post_data[pid_b]
+        for i, j in combinations(range(len(post_list)), 2):
+            post_a = post_list[i]
+            post_b = post_list[j]
 
-                queries_a = data_a["queries"]
-                queries_b = data_b["queries"]
-
-                if not queries_a or not queries_b:
-                    continue
-
-                # Jaccard similarity
-                intersection = queries_a & queries_b
-                union = queries_a | queries_b
-                jaccard = len(intersection) / len(union) if union else 0.0
-
-                if jaccard < OVERLAP_THRESHOLD:
-                    continue
-
-                # Calculate severity factors
-                pos_a = data_a["avg_position"]
-                pos_b = data_b["avg_position"]
-                pos_factor = _position_proximity_factor(pos_a, pos_b)
-
-                clicks_a = data_a["total_clicks"]
-                clicks_b = data_b["total_clicks"]
-                split_factor = _traffic_split_factor(clicks_a, clicks_b)
-
-                severity_score = jaccard * pos_factor * split_factor
-                severity_label = _severity_label(severity_score)
-
-                overlapping = sorted(intersection)[:50]  # Cap stored queries
-
-                await db.execute(
+            # ── Signal 1: Embedding cosine similarity ──
+            cosine_sim = None
+            if post_a["embedding_text"] and post_b["embedding_text"]:
+                # Use pgvector's cosine distance operator
+                row = await db.fetchrow(
                     """
-                    INSERT INTO cannibalization_pairs
-                        (cluster_id, post_a_id, post_b_id, overlap_score,
-                         severity, overlapping_queries)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    SELECT 1 - (a.embedding <=> b.embedding) AS similarity
+                    FROM post_embeddings a, post_embeddings b
+                    WHERE a.post_id = $1 AND b.post_id = $2
                     """,
-                    cluster_id, pid_a, pid_b, severity_score,
-                    severity_label, overlapping,
+                    post_a["id"], post_b["id"],
                 )
-                pairs_found += 1
+                if row:
+                    cosine_sim = float(row["similarity"])
+
+            # ── Signal 2: GSC query overlap ──
+            queries_a = queries_by_post.get(post_a["id"], set())
+            queries_b = queries_by_post.get(post_b["id"], set())
+            shared_queries = queries_a & queries_b
+            n_shared = len(shared_queries)
+
+            # ── Determine if this is a cannibalization pair ──
+            is_cannibal = False
+            if cosine_sim is not None and cosine_sim >= COSINE_THRESHOLD_FLAG:
+                is_cannibal = True
+            if n_shared >= MIN_SHARED_QUERIES:
+                is_cannibal = True
+
+            if not is_cannibal:
+                continue
+
+            # ── Determine severity ──
+            severity = self._compute_severity(cosine_sim, n_shared)
+
+            # ── Determine stronger post ──
+            health_a = health_map.get(post_a["id"], {"score": 0, "traffic": 0})
+            health_b = health_map.get(post_b["id"], {"score": 0, "traffic": 0})
+
+            # Stronger = higher composite score; tie-break by traffic
+            strength_a = health_a["score"] + health_a["traffic"] * 10
+            strength_b = health_b["score"] + health_b["traffic"] * 10
+            stronger_id = post_a["id"] if strength_a >= strength_b else post_b["id"]
+
+            # ── Calculate combined overlap score ──
+            overlap_score = self._compute_overlap_score(cosine_sim, n_shared, queries_a, queries_b)
+
+            # ── Insert pair ──
+            await db.execute(
+                """
+                INSERT INTO cannibalization_pairs
+                    (cluster_id, post_a_id, post_b_id, overlap_score, severity,
+                     overlapping_queries, cosine_similarity, stronger_post_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                """,
+                cluster_id,
+                post_a["id"],
+                post_b["id"],
+                overlap_score,
+                severity,
+                list(shared_queries)[:50] if shared_queries else None,
+                cosine_sim,
+                stronger_id,
+            )
+
+            pairs_found += 1
 
         return pairs_found
 
+    @staticmethod
+    def _compute_severity(cosine_sim: float | None, n_shared: int) -> str:
+        """Determine cannibalization severity from both signals."""
+        has_cosine = cosine_sim is not None
 
-def _position_proximity_factor(pos_a: float, pos_b: float) -> float:
-    """Calculate position proximity factor for severity scoring."""
-    if pos_a <= 5 and pos_b <= 5:
-        return 0.8
-    if pos_a <= 20 and pos_b <= 20:
-        return 1.0
-    low = min(pos_a, pos_b)
-    high = max(pos_a, pos_b)
-    if low <= 10 and high <= 50:
-        return 0.5
-    if low <= 10 and high > 50:
-        return 0.2
-    return 0.3  # Default moderate
+        # Critical: very high cosine + shared queries
+        if has_cosine and cosine_sim >= COSINE_THRESHOLD_CRITICAL and n_shared > 0:
+            return "critical"
 
+        # High: high cosine, or moderate cosine + shared queries
+        if has_cosine and cosine_sim >= COSINE_THRESHOLD_HIGH:
+            return "high"
+        if has_cosine and cosine_sim >= COSINE_THRESHOLD_FLAG and n_shared > 0:
+            return "high"
 
-def _traffic_split_factor(clicks_a: int, clicks_b: int) -> float:
-    """Calculate traffic split factor based on click distribution."""
-    total = clicks_a + clicks_b
-    if total == 0:
-        return 0.5  # No data — assume moderate
+        # Medium: cosine above threshold, or many shared queries
+        if has_cosine and cosine_sim >= COSINE_THRESHOLD_FLAG:
+            return "medium"
+        if n_shared >= 3:
+            return "medium"
 
-    ratio = min(clicks_a, clicks_b) / total  # 0.0 = 100/0, 0.5 = 50/50
+        # Low: few shared queries only
+        return "low"
 
-    if ratio >= 0.45:
-        return 1.0  # ~50/50
-    if ratio >= 0.25:
-        return 0.7  # ~70/30
-    if ratio >= 0.08:
-        return 0.3  # ~90/10
-    return 0.1  # ~95/5
+    @staticmethod
+    def _compute_overlap_score(
+        cosine_sim: float | None,
+        n_shared: int,
+        queries_a: set[str],
+        queries_b: set[str],
+    ) -> float:
+        """Compute combined overlap score (0.0-1.0) from both signals.
 
+        Weighted average of cosine similarity and Jaccard similarity on queries.
+        """
+        scores = []
 
-def _severity_label(score: float) -> str:
-    """Map severity score to label."""
-    if score > 0.7:
-        return "critical"
-    if score > 0.5:
-        return "high"
-    if score > 0.3:
-        return "medium"
-    return "low"
+        if cosine_sim is not None:
+            scores.append(cosine_sim)
+
+        if queries_a or queries_b:
+            union_size = len(queries_a | queries_b)
+            if union_size > 0:
+                jaccard = n_shared / union_size
+                scores.append(jaccard)
+
+        if not scores:
+            return 0.0
+
+        # If both signals present, weight cosine higher (70/30)
+        if len(scores) == 2:
+            return 0.7 * scores[0] + 0.3 * scores[1]
+
+        return scores[0]

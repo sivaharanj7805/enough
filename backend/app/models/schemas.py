@@ -460,6 +460,72 @@ class PortalResponse(BaseModel):
 
 # ──────────────────────────── Phase 6: Living Ecosystem ────────────────────────────
 
+# ──────────────────────────── Phase 2: Problem Detection ────────────────────────────
+
+class ContentProblemResponse(BaseModel):
+    """A detected content problem."""
+    id: UUID
+    post_id: UUID
+    problem_type: str
+    severity: str
+    details: dict | None = None
+    detected_at: datetime
+    resolved_at: datetime | None = None
+
+
+class ContentProblemSummary(BaseModel):
+    """Summary of problems for a post."""
+    post_id: UUID
+    title: str
+    url: str
+    problems: list[ContentProblemResponse]
+
+
+class ProblemDetectionResponse(BaseModel):
+    """Result of running problem detection."""
+    decay: int
+    thin: int
+    seo: int
+    orphan: int
+    total: int
+
+
+class RecommendationResponse(BaseModel):
+    """An AI-generated recommendation."""
+    id: UUID
+    post_id: UUID
+    problem_id: UUID | None = None
+    recommendation_type: str
+    priority: str
+    estimated_effort_hours: float | None = None
+    estimated_impact: str | None = None
+    title: str
+    summary: str
+    specific_actions: list[str] = []
+    ai_generated_content: dict | None = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class RecommendationListResponse(BaseModel):
+    """List of recommendations with counts."""
+    recommendations: list[RecommendationResponse]
+    total: int
+    by_type: dict[str, int]
+    by_priority: dict[str, int]
+
+
+class RecommendationStatusUpdate(BaseModel):
+    """Update recommendation status."""
+    status: str = Field(..., pattern=r"^(pending|in_progress|completed|dismissed)$")
+
+
+class CannibalizationRecommendationRequest(BaseModel):
+    """Request to generate a detailed cannibalization recommendation."""
+    pair_id: UUID
+
+
 class RiverData(BaseModel):
     """Internal link flow between two clusters."""
     from_cluster_id: str

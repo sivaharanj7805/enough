@@ -32,6 +32,13 @@ from app.models.schemas import (
     MergeCandidateInfo,
     PipelineStatusResponse,
     EcosystemVisualsResponse,
+    ContentProblemResponse,
+    ContentProblemSummary,
+    ProblemDetectionResponse,
+    RecommendationResponse,
+    RecommendationListResponse,
+    RecommendationStatusUpdate,
+    CannibalizationRecommendationRequest,
 )
 
 from app.utils.task_retry import with_retry
@@ -165,20 +172,29 @@ async def _update_pipeline_status(
 
 
 async def _run_full_pipeline(site_id: UUID) -> None:
-    """Background: run full intelligence pipeline in sequence with status tracking."""
+    """Background: run full intelligence pipeline in sequence with status tracking.
+
+    Pipeline steps:
+    1. Clustering (UMAP + HDBSCAN + 2D positions + labels)
+    2. Cannibalization (cosine similarity + GSC overlap)
+    3. Health scoring (7-factor model)
+    4. Problem detection (decay, thin, SEO, orphans)
+    5. Recommendations (AI-generated for all problems + growth)
+    """
     from app.services.clustering import TopicClusterer
     from app.services.cannibalization import CannibalizationDetector
     from app.services.health_scoring import HealthScorer
+    from app.services.problem_detection import ProblemDetector
+    from app.services.recommendations import RecommendationEngine
 
     logger.info("BG task: full intelligence pipeline started for site %s", site_id)
     pool = await get_pool()
 
-    # Initialize pipeline status
     await _update_pipeline_status(pool, site_id, started=True, current_step="clustering")
 
     try:
+        # Step 1: Clustering + 2D positions
         async with pool.acquire() as conn:
-            # Step 1: Clustering
             clusterer = TopicClusterer()
             clusters = await clusterer.cluster_site(conn, site_id)
             logger.info("Pipeline step 1 complete: %d clusters", clusters)
@@ -189,8 +205,8 @@ async def _run_full_pipeline(site_id: UUID) -> None:
             step_completed="clustering",
         )
 
+        # Step 2: Cannibalization
         async with pool.acquire() as conn:
-            # Step 2: Cannibalization
             detector = CannibalizationDetector()
             pairs = await detector.detect_for_site(conn, site_id)
             logger.info("Pipeline step 2 complete: %d cannibalization pairs", pairs)
@@ -201,17 +217,42 @@ async def _run_full_pipeline(site_id: UUID) -> None:
             step_completed="cannibalization",
         )
 
+        # Step 3: Health scoring
         async with pool.acquire() as conn:
-            # Step 3: Health scoring
             scorer = HealthScorer()
             scored = await scorer.score_site(conn, site_id)
             logger.info("Pipeline step 3 complete: %d posts scored", scored)
 
         await _update_pipeline_status(
             pool, site_id,
+            current_step="problem_detection",
+            step_completed="health_scoring",
+        )
+
+        # Step 4: Problem detection
+        async with pool.acquire() as conn:
+            detector = ProblemDetector()
+            problems = await detector.detect_all(conn, site_id)
+            total_problems = sum(problems.values())
+            logger.info("Pipeline step 4 complete: %d problems detected", total_problems)
+
+        await _update_pipeline_status(
+            pool, site_id,
+            current_step="recommendations",
+            step_completed="problem_detection",
+        )
+
+        # Step 5: AI Recommendations
+        async with pool.acquire() as conn:
+            engine = RecommendationEngine()
+            recs = await engine.generate_for_site(conn, site_id)
+            logger.info("Pipeline step 5 complete: %d recommendations generated", recs)
+
+        await _update_pipeline_status(
+            pool, site_id,
             status="completed",
             current_step=None,
-            step_completed="health_scoring",
+            step_completed="recommendations",
             completed=True,
         )
         logger.info("BG task: full pipeline complete for site %s", site_id)
@@ -644,6 +685,388 @@ async def get_pipeline_status(
         completed_at=row["completed_at"],
         error=row["error"],
     )
+
+
+# ──────────────── Problem Detection ────────────────
+
+
+@router.post(
+    "/{site_id}/intelligence/detect-problems",
+    response_model=ProblemDetectionResponse,
+)
+async def trigger_problem_detection(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Run all problem detectors (decay, thin, SEO, orphans)."""
+    await _verify_site(site_id, user_id, db)
+
+    from app.services.problem_detection import ProblemDetector
+
+    detector = ProblemDetector()
+    counts = await detector.detect_all(db, site_id)
+    return ProblemDetectionResponse(
+        decay=counts.get("decay", 0),
+        thin=counts.get("thin", 0),
+        seo=counts.get("seo", 0),
+        orphan=counts.get("orphan", 0),
+        total=sum(counts.values()),
+    )
+
+
+@router.get(
+    "/{site_id}/intelligence/problems",
+    response_model=list[ContentProblemResponse],
+)
+async def list_problems(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    problem_type: str | None = None,
+    severity: str | None = None,
+):
+    """List all detected content problems for a site."""
+    await _verify_site(site_id, user_id, db)
+
+    query = """
+        SELECT cp.* FROM content_problems cp
+        WHERE cp.site_id = $1 AND cp.resolved_at IS NULL
+    """
+    params: list = [site_id]
+    idx = 2
+
+    if problem_type:
+        query += f" AND cp.problem_type = ${idx}"
+        params.append(problem_type)
+        idx += 1
+    if severity:
+        query += f" AND cp.severity = ${idx}"
+        params.append(severity)
+        idx += 1
+
+    query += " ORDER BY CASE cp.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
+
+    rows = await db.fetch(query, *params)
+    import json
+    results = []
+    for r in rows:
+        details = r["details"]
+        if isinstance(details, str):
+            try:
+                details = json.loads(details)
+            except (json.JSONDecodeError, TypeError):
+                details = {}
+        results.append(ContentProblemResponse(
+            id=r["id"],
+            post_id=r["post_id"],
+            problem_type=r["problem_type"],
+            severity=r["severity"],
+            details=details,
+            detected_at=r["detected_at"],
+            resolved_at=r["resolved_at"],
+        ))
+    return results
+
+
+@router.get(
+    "/{site_id}/intelligence/problems/{post_id}",
+    response_model=ContentProblemSummary,
+)
+async def get_post_problems(
+    site_id: UUID,
+    post_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get all problems for a specific post."""
+    await _verify_site(site_id, user_id, db)
+
+    post = await db.fetchrow(
+        "SELECT id, title, url FROM posts WHERE id = $1 AND site_id = $2",
+        post_id, site_id,
+    )
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    rows = await db.fetch(
+        "SELECT * FROM content_problems WHERE post_id = $1 AND resolved_at IS NULL",
+        post_id,
+    )
+
+    import json
+    problems = []
+    for r in rows:
+        details = r["details"]
+        if isinstance(details, str):
+            try:
+                details = json.loads(details)
+            except (json.JSONDecodeError, TypeError):
+                details = {}
+        problems.append(ContentProblemResponse(
+            id=r["id"], post_id=r["post_id"],
+            problem_type=r["problem_type"], severity=r["severity"],
+            details=details, detected_at=r["detected_at"],
+            resolved_at=r["resolved_at"],
+        ))
+
+    return ContentProblemSummary(
+        post_id=post["id"], title=post["title"], url=post["url"],
+        problems=problems,
+    )
+
+
+# ──────────────── Recommendations ────────────────
+
+
+@router.post(
+    "/{site_id}/intelligence/generate-recommendations",
+    response_model=TaskTriggerResponse,
+)
+async def trigger_recommendations(
+    site_id: UUID,
+    background_tasks: BackgroundTasks,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Generate AI recommendations for all detected problems (background)."""
+    await _verify_site(site_id, user_id, db)
+
+    async def _run_recommendations(sid: UUID) -> None:
+        from app.services.recommendations import RecommendationEngine
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            engine = RecommendationEngine()
+            count = await engine.generate_for_site(conn, sid)
+            logger.info("Generated %d recommendations for site %s", count, sid)
+
+    background_tasks.add_task(_run_recommendations, site_id)
+    return TaskTriggerResponse(
+        message="Recommendation generation started", site_id=site_id,
+    )
+
+
+@router.get(
+    "/{site_id}/intelligence/recommendations",
+    response_model=RecommendationListResponse,
+)
+async def list_recommendations(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    recommendation_type: str | None = None,
+    priority: str | None = None,
+    status: str | None = None,
+):
+    """List all recommendations for a site with optional filters."""
+    await _verify_site(site_id, user_id, db)
+
+    query = "SELECT * FROM recommendations WHERE site_id = $1"
+    params: list = [site_id]
+    idx = 2
+
+    if recommendation_type:
+        query += f" AND recommendation_type = ${idx}"
+        params.append(recommendation_type)
+        idx += 1
+    if priority:
+        query += f" AND priority = ${idx}"
+        params.append(priority)
+        idx += 1
+    if status:
+        query += f" AND status = ${idx}"
+        params.append(status)
+        idx += 1
+
+    query += " ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, created_at DESC"
+
+    rows = await db.fetch(query, *params)
+
+    import json
+    recs = []
+    by_type: dict[str, int] = {}
+    by_priority: dict[str, int] = {}
+
+    for r in rows:
+        actions = r["specific_actions"]
+        if isinstance(actions, str):
+            try:
+                actions = json.loads(actions)
+            except (json.JSONDecodeError, TypeError):
+                actions = []
+
+        ai_content = r["ai_generated_content"]
+        if isinstance(ai_content, str):
+            try:
+                ai_content = json.loads(ai_content)
+            except (json.JSONDecodeError, TypeError):
+                ai_content = {}
+
+        rec = RecommendationResponse(
+            id=r["id"], post_id=r["post_id"],
+            problem_id=r["problem_id"],
+            recommendation_type=r["recommendation_type"],
+            priority=r["priority"],
+            estimated_effort_hours=r["estimated_effort_hours"],
+            estimated_impact=r["estimated_impact"],
+            title=r["title"], summary=r["summary"],
+            specific_actions=actions if isinstance(actions, list) else [],
+            ai_generated_content=ai_content if isinstance(ai_content, dict) else {},
+            status=r["status"],
+            created_at=r["created_at"], updated_at=r["updated_at"],
+        )
+        recs.append(rec)
+
+        by_type[r["recommendation_type"]] = by_type.get(r["recommendation_type"], 0) + 1
+        by_priority[r["priority"]] = by_priority.get(r["priority"], 0) + 1
+
+    return RecommendationListResponse(
+        recommendations=recs, total=len(recs),
+        by_type=by_type, by_priority=by_priority,
+    )
+
+
+@router.get(
+    "/{site_id}/intelligence/recommendations/{post_id}",
+    response_model=list[RecommendationResponse],
+)
+async def get_post_recommendations(
+    site_id: UUID,
+    post_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get all recommendations for a specific post."""
+    await _verify_site(site_id, user_id, db)
+
+    rows = await db.fetch(
+        """
+        SELECT * FROM recommendations
+        WHERE post_id = $1 AND site_id = $2
+        ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+                 WHEN 'medium' THEN 3 ELSE 4 END
+        """,
+        post_id, site_id,
+    )
+
+    import json
+    results = []
+    for r in rows:
+        actions = r["specific_actions"]
+        if isinstance(actions, str):
+            try:
+                actions = json.loads(actions)
+            except (json.JSONDecodeError, TypeError):
+                actions = []
+
+        ai_content = r["ai_generated_content"]
+        if isinstance(ai_content, str):
+            try:
+                ai_content = json.loads(ai_content)
+            except (json.JSONDecodeError, TypeError):
+                ai_content = {}
+
+        results.append(RecommendationResponse(
+            id=r["id"], post_id=r["post_id"],
+            problem_id=r["problem_id"],
+            recommendation_type=r["recommendation_type"],
+            priority=r["priority"],
+            estimated_effort_hours=r["estimated_effort_hours"],
+            estimated_impact=r["estimated_impact"],
+            title=r["title"], summary=r["summary"],
+            specific_actions=actions if isinstance(actions, list) else [],
+            ai_generated_content=ai_content if isinstance(ai_content, dict) else {},
+            status=r["status"],
+            created_at=r["created_at"], updated_at=r["updated_at"],
+        ))
+    return results
+
+
+@router.patch(
+    "/{site_id}/intelligence/recommendations/{recommendation_id}/status",
+    response_model=RecommendationResponse,
+)
+async def update_recommendation_status(
+    site_id: UUID,
+    recommendation_id: UUID,
+    body: RecommendationStatusUpdate,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Update the status of a recommendation (pending → in_progress → completed/dismissed)."""
+    await _verify_site(site_id, user_id, db)
+
+    row = await db.fetchrow(
+        """
+        UPDATE recommendations SET status = $1, updated_at = NOW()
+        WHERE id = $2 AND site_id = $3
+        RETURNING *
+        """,
+        body.status, recommendation_id, site_id,
+    )
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+
+    import json
+    actions = row["specific_actions"]
+    if isinstance(actions, str):
+        try:
+            actions = json.loads(actions)
+        except (json.JSONDecodeError, TypeError):
+            actions = []
+
+    ai_content = row["ai_generated_content"]
+    if isinstance(ai_content, str):
+        try:
+            ai_content = json.loads(ai_content)
+        except (json.JSONDecodeError, TypeError):
+            ai_content = {}
+
+    return RecommendationResponse(
+        id=row["id"], post_id=row["post_id"],
+        problem_id=row["problem_id"],
+        recommendation_type=row["recommendation_type"],
+        priority=row["priority"],
+        estimated_effort_hours=row["estimated_effort_hours"],
+        estimated_impact=row["estimated_impact"],
+        title=row["title"], summary=row["summary"],
+        specific_actions=actions if isinstance(actions, list) else [],
+        ai_generated_content=ai_content if isinstance(ai_content, dict) else {},
+        status=row["status"],
+        created_at=row["created_at"], updated_at=row["updated_at"],
+    )
+
+
+@router.post(
+    "/{site_id}/intelligence/cannibalization/{pair_id}/recommend",
+)
+@limiter.limit("5/minute")
+async def get_cannibalization_recommendation(
+    request: Request,
+    site_id: UUID,
+    pair_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Generate detailed AI recommendation for a cannibalization pair.
+
+    Called when user clicks on a cannibalization pair for specifics.
+    """
+    await _verify_site(site_id, user_id, db)
+
+    from app.services.recommendations import RecommendationEngine
+
+    engine = RecommendationEngine()
+    try:
+        result = await engine.generate_cannibalization_recommendation(db, site_id, pair_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Cannibalization recommendation failed: %s", e)
+        raise HTTPException(status_code=500, detail="Recommendation generation failed")
+
+    return result
 
 
 # ──────────────── Phase 6: Ecosystem Visuals ────────────────
