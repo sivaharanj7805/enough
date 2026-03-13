@@ -1,0 +1,117 @@
+"""Internal PageRank — link authority flow analysis.
+
+Runs Google's PageRank algorithm on the site's internal link graph
+using networkx. Every post gets an Internal Authority Score showing
+how much link juice flows to it from the rest of the site.
+
+This goes beyond binary "has links / doesn't have links" to show
+WHICH posts are distributing authority and which are hoarding it.
+
+A pillar post with 50 inbound links from dead-weight pages is
+different from one with 5 inbound links from other pillars.
+"""
+
+import asyncio
+import logging
+from uuid import UUID
+
+import asyncpg
+
+logger = logging.getLogger(__name__)
+
+
+class InternalPageRank:
+    """Compute PageRank on internal link graph."""
+
+    async def compute_for_site(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Compute internal PageRank for all posts in a site.
+
+        Uses networkx.pagerank() on the directed graph of internal links.
+        Stores normalized scores (0-1) on post_health_scores.
+
+        Returns the number of posts scored.
+        """
+        logger.info("Computing internal PageRank for site %s", site_id)
+
+        # Get all internal links for this site
+        links = await db.fetch(
+            """
+            SELECT il.source_post_id, il.target_post_id
+            FROM internal_links il
+            JOIN posts ps ON ps.id = il.source_post_id
+            JOIN posts pt ON pt.id = il.target_post_id
+            WHERE ps.site_id = $1 AND pt.site_id = $1
+            """,
+            site_id,
+        )
+
+        # Get all post IDs (including those with no links)
+        all_posts = await db.fetch(
+            "SELECT id FROM posts WHERE site_id = $1", site_id,
+        )
+        all_post_ids = {r["id"] for r in all_posts}
+
+        if not all_post_ids:
+            return 0
+
+        if not links:
+            # No internal links — give everyone equal PageRank
+            equal_rank = 1.0 / len(all_post_ids)
+            await self._store_pageranks(db, {pid: equal_rank for pid in all_post_ids})
+            logger.info("No internal links for site %s — equal PageRank assigned", site_id)
+            return len(all_post_ids)
+
+        # Build graph and compute PageRank in thread (CPU-bound)
+        edges = [(r["source_post_id"], r["target_post_id"]) for r in links]
+        pageranks = await asyncio.to_thread(
+            self._compute_pagerank, edges, all_post_ids,
+        )
+
+        # Store results
+        await self._store_pageranks(db, pageranks)
+
+        logger.info(
+            "Internal PageRank computed for %d posts in site %s",
+            len(pageranks), site_id,
+        )
+        return len(pageranks)
+
+    @staticmethod
+    def _compute_pagerank(
+        edges: list[tuple], all_nodes: set,
+    ) -> dict:
+        """Build directed graph and compute PageRank.
+
+        Uses networkx — offloaded to thread.
+        """
+        import networkx as nx
+
+        G = nx.DiGraph()
+        G.add_nodes_from(all_nodes)
+        G.add_edges_from(edges)
+
+        # Compute PageRank (alpha=0.85 is the standard damping factor)
+        try:
+            pr = nx.pagerank(G, alpha=0.85, max_iter=100, tol=1e-6)
+        except nx.PowerIterationFailedConvergence:
+            # Fallback: use simpler computation
+            pr = nx.pagerank(G, alpha=0.85, max_iter=200, tol=1e-4)
+
+        return pr
+
+    @staticmethod
+    async def _store_pageranks(
+        db: asyncpg.Connection, pageranks: dict,
+    ) -> None:
+        """Store PageRank scores on post_health_scores."""
+        for post_id, rank in pageranks.items():
+            await db.execute(
+                """
+                UPDATE post_health_scores
+                SET internal_pagerank = $1
+                WHERE post_id = $2
+                """,
+                float(rank), post_id,
+            )

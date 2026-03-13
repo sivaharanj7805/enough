@@ -331,7 +331,7 @@ class TestProblemDetectionIntegration:
 
         detector = ProblemDetector()
         result = await detector.detect_all(db, SITE_ID)
-        assert result == {"decay": 0, "thin": 0, "seo": 0, "orphan": 0}
+        assert result == {"decay": 0, "thin": 0, "seo": 0, "orphan": 0, "readability": 0, "velocity": 0}
 
     @pytest.mark.asyncio
     async def test_detect_thin_content(self):
