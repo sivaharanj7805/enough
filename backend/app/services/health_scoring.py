@@ -25,7 +25,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# 7-factor weights per spec
+# 7-factor weights per spec (full-data mode)
 W_TRAFFIC_TREND = 0.25
 W_RANKING = 0.20
 W_ENGAGEMENT = 0.15
@@ -34,6 +34,49 @@ W_CONTENT_DEPTH = 0.10
 W_INTERNAL_LINKS = 0.10
 W_TECHNICAL_SEO = 0.05
 
+# Factors that require GA4/GSC external data
+EXTERNAL_DATA_FACTORS = {"traffic_trend", "ranking", "engagement"}
+# Factors that work from crawl-only data
+CRAWL_ONLY_FACTORS = {"freshness", "content_depth", "internal_links", "technical_seo"}
+
+
+def compute_dynamic_weights(
+    has_ga4: bool, has_gsc: bool,
+) -> dict[str, float]:
+    """Compute dynamically rebalanced weights based on available data.
+
+    When GA4/GSC data is missing, redistribute those weights proportionally
+    to crawl-only factors so scores still sum to 100.
+
+    Returns dict mapping factor name → weight (all sum to 1.0).
+    """
+    weights = {
+        "traffic_trend": W_TRAFFIC_TREND,
+        "ranking": W_RANKING,
+        "engagement": W_ENGAGEMENT,
+        "freshness": W_FRESHNESS,
+        "content_depth": W_CONTENT_DEPTH,
+        "internal_links": W_INTERNAL_LINKS,
+        "technical_seo": W_TECHNICAL_SEO,
+    }
+
+    # Zero out unavailable factors
+    if not has_ga4:
+        weights["traffic_trend"] = 0.0
+        weights["engagement"] = 0.0
+    if not has_gsc:
+        weights["ranking"] = 0.0
+        # Traffic trend needs GA4 pageviews (already zeroed if no GA4)
+        # but if we have GA4 but no GSC, traffic trend still works
+
+    # Redistribute: scale remaining weights to sum to 1.0
+    total = sum(weights.values())
+    if total > 0 and total < 1.0:
+        scale = 1.0 / total
+        weights = {k: v * scale for k, v in weights.items()}
+
+    return weights
+
 
 class HealthScorer:
     """Calculate health scores at post and cluster levels."""
@@ -41,9 +84,42 @@ class HealthScorer:
     async def score_site(self, db: asyncpg.Connection, site_id: UUID) -> int:
         """Run full health scoring for all clusters in a site.
 
+        Automatically detects whether GA4/GSC data exists and adjusts
+        scoring weights accordingly (graceful degradation).
+
         Returns the number of posts scored.
         """
         logger.info("Starting health scoring for site %s", site_id)
+
+        # Detect data availability (graceful degradation)
+        ga4_count = await db.fetchval(
+            """
+            SELECT COUNT(*) FROM ga4_metrics
+            WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+            LIMIT 1
+            """,
+            site_id,
+        )
+        gsc_count = await db.fetchval(
+            """
+            SELECT COUNT(*) FROM gsc_metrics
+            WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+            LIMIT 1
+            """,
+            site_id,
+        )
+        has_ga4 = (ga4_count or 0) > 0
+        has_gsc = (gsc_count or 0) > 0
+
+        if not has_ga4 and not has_gsc:
+            logger.info(
+                "No GA4/GSC data for site %s — using crawl-only scoring (40%% of factors)",
+                site_id,
+            )
+        elif not has_ga4:
+            logger.info("No GA4 data for site %s — excluding traffic/engagement factors", site_id)
+        elif not has_gsc:
+            logger.info("No GSC data for site %s — excluding ranking factor", site_id)
 
         # Clear old health scores
         await db.execute(
@@ -63,22 +139,34 @@ class HealthScorer:
 
         total_scored = 0
         for cluster_row in clusters:
-            scored = await self._score_cluster(db, cluster_row["id"], site_id)
+            scored = await self._score_cluster(
+                db, cluster_row["id"], site_id,
+                has_ga4=has_ga4, has_gsc=has_gsc,
+            )
             total_scored += scored
 
         logger.info(
-            "Health scoring complete for site %s — %d posts scored", site_id, total_scored,
+            "Health scoring complete for site %s — %d posts scored (ga4=%s, gsc=%s)",
+            site_id, total_scored, has_ga4, has_gsc,
         )
         return total_scored
 
     async def _score_cluster(
         self, db: asyncpg.Connection, cluster_id: UUID, site_id: UUID,
+        has_ga4: bool = True, has_gsc: bool = True,
     ) -> int:
-        """Score all posts in a cluster and assign ecosystem state."""
+        """Score all posts in a cluster and assign ecosystem state.
+
+        When has_ga4/has_gsc are False, dynamically rebalances weights
+        to use only crawl-derived factors (graceful degradation).
+        """
         now = datetime.now(timezone.utc)
         ninety_days_ago = now - timedelta(days=90)
         sixty_days_ago = now - timedelta(days=60)
         thirty_days_ago = now - timedelta(days=30)
+
+        # Get dynamic weights based on data availability
+        weights = compute_dynamic_weights(has_ga4, has_gsc)
 
         # ── Batch 1: Posts in cluster ──
         post_rows = await db.fetch(
@@ -97,8 +185,14 @@ class HealthScorer:
         post_ids = [r["id"] for r in post_rows]
 
         # Cluster average word count (for content depth comparison)
+        # For very small clusters (< 3 posts), cluster average is unreliable
+        # Use absolute thresholds instead
         word_counts = [r["word_count"] or 0 for r in post_rows]
-        cluster_avg_word_count = sum(word_counts) / len(word_counts) if word_counts else 500
+        if len(word_counts) >= 3:
+            cluster_avg_word_count = sum(word_counts) / len(word_counts)
+        else:
+            # Use industry average (~1000 words) for small clusters
+            cluster_avg_word_count = 1000.0
 
         # ── Batch 2: Traffic (recent 30d vs previous 30d) ──
         traffic_recent = await db.fetch(
@@ -261,15 +355,15 @@ class HealthScorer:
                 has_inbound=inbound > 0,
             )
 
-            # Composite (0-100)
+            # Composite (0-100) — dynamically weighted
             composite = (
-                W_TRAFFIC_TREND * trend_score
-                + W_RANKING * ranking_score
-                + W_ENGAGEMENT * engagement_score
-                + W_FRESHNESS * freshness_score
-                + W_CONTENT_DEPTH * depth_score
-                + W_INTERNAL_LINKS * link_score
-                + W_TECHNICAL_SEO * tech_score
+                weights["traffic_trend"] * trend_score
+                + weights["ranking"] * ranking_score
+                + weights["engagement"] * engagement_score
+                + weights["freshness"] * freshness_score
+                + weights["content_depth"] * depth_score
+                + weights["internal_links"] * link_score
+                + weights["technical_seo"] * tech_score
             )
 
             # Traffic contribution (for cluster weighting)

@@ -22,9 +22,32 @@ class ProblemDetector:
     async def detect_all(self, db: asyncpg.Connection, site_id: UUID) -> dict[str, int]:
         """Run all problem detection scans for a site.
 
+        Automatically detects data availability and skips checks that
+        require missing data sources (graceful degradation).
+
         Returns a dict of problem_type → count.
         """
         logger.info("Starting problem detection for site %s", site_id)
+
+        # Detect data availability
+        ga4_count = await db.fetchval(
+            """
+            SELECT COUNT(*) FROM ga4_metrics
+            WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+            LIMIT 1
+            """,
+            site_id,
+        )
+        gsc_count = await db.fetchval(
+            """
+            SELECT COUNT(*) FROM gsc_metrics
+            WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+            LIMIT 1
+            """,
+            site_id,
+        )
+        has_ga4 = (ga4_count or 0) > 0
+        has_gsc = (gsc_count or 0) > 0
 
         # Clear old problems (idempotent)
         await db.execute(
@@ -33,18 +56,29 @@ class ProblemDetector:
 
         counts: dict[str, int] = {}
 
-        # Run each detector
-        counts["decay"] = await self._detect_content_decay(db, site_id)
-        counts["thin"] = await self._detect_thin_content(db, site_id)
+        # Decay detection requires GSC data (click/position trends)
+        if has_gsc:
+            counts["decay"] = await self._detect_content_decay(db, site_id)
+        else:
+            counts["decay"] = 0
+            logger.info("Skipping decay detection — no GSC data for site %s", site_id)
+
+        # Thin content: absolute word count works without external data,
+        # but bounce/engagement check needs GA4
+        counts["thin"] = await self._detect_thin_content(db, site_id, has_ga4=has_ga4)
+
+        # SEO issues: fully crawl-based, always runs
         counts["seo"] = await self._detect_seo_issues(db, site_id)
+
+        # Orphans: fully crawl-based, always runs
         counts["orphan"] = await self._detect_orphans(db, site_id)
 
         total = sum(counts.values())
         logger.info(
             "Problem detection complete for site %s — %d total problems "
-            "(decay=%d, thin=%d, seo=%d, orphan=%d)",
+            "(decay=%d, thin=%d, seo=%d, orphan=%d) [ga4=%s, gsc=%s]",
             site_id, total, counts["decay"], counts["thin"],
-            counts["seo"], counts["orphan"],
+            counts["seo"], counts["orphan"], has_ga4, has_gsc,
         )
         return counts
 
@@ -220,14 +254,14 @@ class ProblemDetector:
     # ═══════════════════════════════════════════════
 
     async def _detect_thin_content(
-        self, db: asyncpg.Connection, site_id: UUID,
+        self, db: asyncpg.Connection, site_id: UUID, has_ga4: bool = True,
     ) -> int:
         """Detect thin content.
 
         Flags posts with:
-        1. word_count < 500
-        2. word_count < 50% of cluster average
-        3. High bounce rate (>80%) + low time on page (<30s)
+        1. word_count < 500 (crawl-only — always runs)
+        2. word_count < 50% of cluster average (crawl-only — always runs)
+        3. High bounce rate (>80%) + low time on page (<30s) (needs GA4)
         """
         found = 0
         now = datetime.now(timezone.utc)
@@ -294,7 +328,10 @@ class ProblemDetector:
             )
             found += 1
 
-        # ── 3. High bounce + low time ──
+        # ── 3. High bounce + low time (requires GA4) ──
+        if not has_ga4:
+            return found
+
         bounce_rows = await db.fetch(
             """
             SELECT p.id, p.title,

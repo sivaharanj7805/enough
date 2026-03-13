@@ -163,7 +163,23 @@ class RecommendationEngine:
         body_a = truncate_for_api(pair["body_a"] or "", max_chars=4000, label="cannibal_post_a")
         body_b = truncate_for_api(pair["body_b"] or "", max_chars=4000, label="cannibal_post_b")
 
-        prompt = f"""You are an SEO content strategist. Two posts on the same site are cannibalizing each other — competing for the same search queries and splitting ranking signals.
+        prompt = f"""Two posts on the same site are cannibalizing each other — competing for the same search queries and splitting ranking signals.
+
+EXAMPLE (for format reference):
+Given two posts about "React State Management" and "React useState Guide" with cosine similarity 0.52, you might respond:
+{{
+  "primary_post": "A",
+  "primary_reason": "Post A covers state management comprehensively (2400 words, 45 clicks/month) while Post B is a narrow subset (800 words, 12 clicks). Merging B's unique useState examples into A creates a definitive guide.",
+  "merge_sections": ["Move Post B's 'Common useState Pitfalls' section with code examples into Post A under a new H2"],
+  "new_sections_to_add": ["Add 'useState vs useReducer Decision Framework' — neither post covers when to choose which"],
+  "redirect_strategy": "301 redirect /react-usestate-guide → /react-state-management#usestate",
+  "estimated_effort_hours": 3,
+  "estimated_impact": "high",
+  "priority": "high",
+  "confidence": 0.85
+}}
+
+NOW ANALYZE THESE POSTS:
 
 POST A:
 - Title: {pair['title_a']}
@@ -200,7 +216,9 @@ Respond in this exact JSON format:
   "redirect_strategy": "Specific redirect instructions",
   "estimated_effort_hours": number,
   "estimated_impact": "high" or "medium" or "low",
-  "priority": "critical" or "high" or "medium" or "low"
+  "priority": "critical" or "high" or "medium" or "low",
+  "confidence": 0.0-1.0,
+  "confidence_note": "Any caveats about this recommendation (omit if confident)"
 }}"""
 
         result = await self._call_claude(prompt)
@@ -288,16 +306,20 @@ DECAY SIGNAL: {context}
 CONTENT EXCERPT:
 {body}
 
-Generate a specific content refresh brief. Respond in JSON:
+Generate a specific content refresh brief. Only reference sections and facts you can actually see in the excerpt — do not make up content that might be there.
+
+Respond in JSON:
 {{
   "outdated_sections": ["Specific sections/paragraphs that need updating"],
   "new_sections_to_add": ["Sections to add based on current search intent"],
-  "facts_to_update": ["Specific outdated facts, stats, or references found"],
+  "facts_to_update": ["Specific outdated facts, stats, or references found in the excerpt"],
   "target_keywords": ["Keywords to optimize for based on current GSC data"],
   "suggested_new_title": "An optimized title if the current one is weak",
   "estimated_effort_hours": number,
   "estimated_impact": "high" or "medium" or "low",
-  "priority": "critical" or "high" or "medium" or "low"
+  "priority": "critical" or "high" or "medium" or "low",
+  "confidence": 0.0-1.0,
+  "confidence_note": "Any caveats (e.g. 'Only saw excerpt, full post may differ')"
 }}"""
 
         result = await self._call_claude(prompt)
@@ -371,7 +393,7 @@ POST:
 CONTENT:
 {body}
 
-Should this post be EXPANDED with new sections, or CONSOLIDATED into the related post?
+Should this post be EXPANDED with new sections, or CONSOLIDATED into the related post? Base your decision only on what you can see.
 
 Respond in JSON:
 {{
@@ -381,7 +403,8 @@ Respond in JSON:
   "consolidation_target": "If consolidating: which post to merge into and why",
   "target_word_count": number,
   "estimated_effort_hours": number,
-  "estimated_impact": "high" or "medium" or "low"
+  "estimated_impact": "high" or "medium" or "low",
+  "confidence": 0.0-1.0
 }}"""
 
         result = await self._call_claude(prompt)
@@ -448,7 +471,8 @@ Respond in JSON:
 {{
   "meta_description": "The actual meta description to use",
   "primary_keyword": "The keyword it targets",
-  "character_count": number
+  "character_count": number,
+  "confidence": 0.0-1.0
 }}"""
 
         result = await self._call_claude(prompt)
@@ -488,7 +512,8 @@ Respond in JSON:
 {{
   "new_title": "The optimized title (30-60 chars)",
   "character_count": number,
-  "reason": "Why this title is better"
+  "reason": "Why this title is better",
+  "confidence": 0.0-1.0
 }}"""
 
         result = await self._call_claude(prompt)
@@ -526,7 +551,8 @@ Respond in JSON:
     {{"level": "h2", "text": "Heading text"}},
     {{"level": "h3", "text": "Sub-heading text"}}
   ],
-  "reason": "Why this structure works"
+  "reason": "Why this structure works",
+  "confidence": 0.0-1.0
 }}"""
 
         result = await self._call_claude(prompt)
@@ -709,7 +735,8 @@ Respond in JSON:
     }}
   ],
   "estimated_effort_hours": number,
-  "estimated_impact": "high" or "medium" or "low"
+  "estimated_impact": "high" or "medium" or "low",
+  "confidence": 0.0-1.0
 }}"""
 
             result = await self._call_claude(prompt)
@@ -789,20 +816,34 @@ Respond in JSON:
                 parts.append(f"{h.get('level', '?')}: {h.get('text', '')}")
         return "; ".join(parts) if parts else "None"
 
-    async def _call_claude(self, prompt: str) -> dict:
-        """Call Claude API and parse JSON response."""
+    async def _call_claude(self, prompt: str, temperature: float = 0.2) -> dict:
+        """Call Claude API and parse JSON response.
+
+        Uses temperature=0.2 by default for factual/analytical tasks.
+        Lower temperature reduces hallucination and improves consistency.
+        """
         await self.rate_limiter.wait()
         try:
             response = await self.anthropic.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=2048,
+                temperature=temperature,
+                system=(
+                    "You are an SEO content strategist. You give specific, actionable "
+                    "recommendations grounded in the data provided. "
+                    "IMPORTANT: If you don't have enough information to make a confident "
+                    "recommendation, say so explicitly in a 'confidence_note' field. "
+                    "Never fabricate data, statistics, or facts. "
+                    "Always include a 'confidence' field (0.0-1.0) indicating how "
+                    "confident you are in this recommendation based on the data available."
+                ),
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip()
             return self._parse_json(raw)
         except Exception as e:
             logger.error("Claude API call failed: %s", e)
-            return {"error": str(e)}
+            return {"error": str(e), "confidence": 0.0}
 
     @staticmethod
     def _parse_json(raw: str) -> dict:

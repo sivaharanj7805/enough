@@ -276,7 +276,11 @@ class TestCannibalizationIntegration:
         from app.services.cannibalization import CannibalizationDetector
 
         db = _make_mock_db()
+        # fetchval: site metadata (no calibrated thresholds)
+        db.fetchval.side_effect = [None]
         db.fetch.side_effect = [
+            # Calibration: pairwise similarities (too few to calibrate)
+            [],
             # Clusters
             [{"id": CLUSTER_IDS[0], "post_count": 1}],
         ]

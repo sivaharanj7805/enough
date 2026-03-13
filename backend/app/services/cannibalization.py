@@ -1,17 +1,22 @@
 """Cannibalization detection via embedding cosine similarity + GSC query overlap.
 
 Research-informed approach (two-signal detection):
-1. Embedding cosine similarity > 0.85 between posts in the same cluster
+1. Embedding cosine similarity between posts in the same cluster
 2. GSC query overlap — posts ranking for the same search queries
 
-A pair is flagged as cannibalization when EITHER condition is met,
-with higher severity when BOTH signals are present.
+THRESHOLD CALIBRATION:
+Thresholds are auto-calibrated per site using the pairwise similarity
+distribution. This handles niche sites (higher baseline similarity)
+vs general blogs (lower baseline). Calibration uses 85th/92nd/97th
+percentiles with absolute floors of 0.30/0.40/0.50.
 
-Severity levels:
-- critical: cosine > 0.95 AND shared queries
-- high: cosine > 0.90 OR (cosine > 0.85 AND shared queries)
-- medium: cosine > 0.85 OR 3+ shared queries
-- low: 1-2 shared queries only
+Default thresholds (text-embedding-3-small):
+- flag: 0.40 (review), high: 0.50 (action needed), critical: 0.60 (near-duplicate)
+
+PERFORMANCE:
+For clusters with 20+ posts, uses HNSW index pre-filtering to avoid
+O(n²) pair scans. Finds top-10 nearest neighbors per post via pgvector's
+HNSW index, then only evaluates those candidate pairs.
 
 The "stronger post" is determined by composite health score + traffic.
 """
@@ -46,14 +51,104 @@ MIN_SHARED_QUERIES = 1
 class CannibalizationDetector:
     """Detect cannibalization within topic clusters using embeddings + GSC."""
 
+    async def calibrate_thresholds(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> dict[str, float]:
+        """Auto-calibrate cosine similarity thresholds for a specific site.
+
+        Computes the pairwise cosine similarity distribution across all posts
+        and sets thresholds at the 85th and 95th percentiles. This adapts to
+        the site's content: a niche site about "React hooks" will have higher
+        baseline similarity than a general tech blog.
+
+        Stores calibrated thresholds in the sites table and returns them.
+        """
+        logger.info("Calibrating cosine thresholds for site %s", site_id)
+
+        # Get a sample of pairwise similarities (cap at 500 pairs for perf)
+        similarities = await db.fetch(
+            """
+            SELECT 1 - (a.embedding <=> b.embedding) AS similarity
+            FROM post_embeddings a
+            JOIN posts pa ON pa.id = a.post_id
+            JOIN post_embeddings b ON b.post_id > a.post_id
+            JOIN posts pb ON pb.id = b.post_id
+            WHERE pa.site_id = $1 AND pb.site_id = $1
+            ORDER BY RANDOM()
+            LIMIT 500
+            """,
+            site_id,
+        )
+
+        if len(similarities) < 10:
+            logger.info(
+                "Too few pairs (%d) to calibrate — using defaults", len(similarities),
+            )
+            return {
+                "flag": COSINE_THRESHOLD_FLAG,
+                "high": COSINE_THRESHOLD_HIGH,
+                "critical": COSINE_THRESHOLD_CRITICAL,
+            }
+
+        import numpy as np
+        sims = np.array([float(r["similarity"]) for r in similarities])
+
+        # Use percentiles: flag=85th, high=92nd, critical=97th
+        p85 = float(np.percentile(sims, 85))
+        p92 = float(np.percentile(sims, 92))
+        p97 = float(np.percentile(sims, 97))
+
+        # Floor: don't go below absolute minimums
+        flag = max(p85, 0.30)
+        high = max(p92, 0.40)
+        critical = max(p97, 0.50)
+
+        logger.info(
+            "Calibrated thresholds for site %s: flag=%.3f (p85), high=%.3f (p92), "
+            "critical=%.3f (p97) | distribution: min=%.3f, median=%.3f, max=%.3f",
+            site_id, flag, high, critical,
+            float(np.min(sims)), float(np.median(sims)), float(np.max(sims)),
+        )
+
+        # Store in sites table metadata
+        await db.execute(
+            """
+            UPDATE sites SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb
+            WHERE id = $2
+            """,
+            f'{{"cosine_threshold_flag": {flag:.4f}, "cosine_threshold_high": {high:.4f}, "cosine_threshold_critical": {critical:.4f}}}',
+            site_id,
+        )
+
+        return {"flag": flag, "high": high, "critical": critical}
+
     async def detect_for_site(
         self, db: asyncpg.Connection, site_id: UUID,
     ) -> int:
         """Run cannibalization detection across all clusters for a site.
 
+        Auto-calibrates thresholds on first run, then uses site-specific
+        thresholds stored in the sites table.
+
         Returns the number of cannibalization pairs found.
         """
         logger.info("Starting cannibalization detection for site %s", site_id)
+
+        # Load site-specific calibrated thresholds (or calibrate now)
+        site_meta = await db.fetchval(
+            "SELECT metadata FROM sites WHERE id = $1", site_id,
+        )
+        if site_meta and isinstance(site_meta, dict) and "cosine_threshold_flag" in site_meta:
+            thresholds = {
+                "flag": site_meta["cosine_threshold_flag"],
+                "high": site_meta["cosine_threshold_high"],
+                "critical": site_meta["cosine_threshold_critical"],
+            }
+            logger.info(
+                "Using calibrated thresholds for site %s: %s", site_id, thresholds,
+            )
+        else:
+            thresholds = await self.calibrate_thresholds(db, site_id)
 
         clusters = await db.fetch(
             "SELECT id, post_count FROM clusters WHERE site_id = $1",
@@ -75,7 +170,9 @@ class CannibalizationDetector:
         for cluster_row in clusters:
             if cluster_row["post_count"] < 2:
                 continue
-            pairs = await self._detect_in_cluster(db, cluster_row["id"], site_id)
+            pairs = await self._detect_in_cluster(
+                db, cluster_row["id"], site_id, thresholds=thresholds,
+            )
             total_pairs += pairs
 
         logger.info(
@@ -86,6 +183,7 @@ class CannibalizationDetector:
 
     async def _detect_in_cluster(
         self, db: asyncpg.Connection, cluster_id: UUID, site_id: UUID,
+        thresholds: dict[str, float] | None = None,
     ) -> int:
         """Detect cannibalization pairs within a single cluster.
 
@@ -93,8 +191,13 @@ class CannibalizationDetector:
         1. pgvector cosine distance between all post pairs (via embedding)
         2. GSC query overlap between post pairs
 
+        thresholds: site-specific calibrated thresholds (flag/high/critical)
+
         Returns the number of pairs found.
         """
+        t_flag = thresholds["flag"] if thresholds else COSINE_THRESHOLD_FLAG
+        t_high = thresholds["high"] if thresholds else COSINE_THRESHOLD_HIGH
+        t_critical = thresholds["critical"] if thresholds else COSINE_THRESHOLD_CRITICAL
         # Get posts with their embeddings (using pgvector for cosine distance)
         posts = await db.fetch(
             """
@@ -144,18 +247,76 @@ class CannibalizationDetector:
         for r in query_rows:
             queries_by_post.setdefault(r["post_id"], set()).add(r["query"].lower())
 
-        # Calculate cosine similarity between all pairs using pgvector
         pairs_found = 0
         post_list = list(posts)
+        post_id_set = {p["id"] for p in post_list}
 
-        for i, j in combinations(range(len(post_list)), 2):
-            post_a = post_list[i]
-            post_b = post_list[j]
+        # ── HNSW pre-filter: only compare posts above similarity threshold ──
+        # Instead of O(n²) pair scan, use pgvector's HNSW index to find
+        # nearest neighbors for each post. Much faster for large clusters.
+        # For small clusters (< 20 posts), full scan is fine.
+        use_hnsw = len(post_list) >= 20
+
+        # Build pre-filtered candidate pairs via HNSW
+        hnsw_candidates: dict[tuple[UUID, UUID], float] = {}
+        if use_hnsw:
+            for post in post_list:
+                if not post["embedding_text"]:
+                    continue
+                # Use HNSW index to find nearest neighbors within threshold
+                neighbors = await db.fetch(
+                    """
+                    SELECT pe2.post_id,
+                           1 - (pe1.embedding <=> pe2.embedding) AS similarity
+                    FROM post_embeddings pe1, post_embeddings pe2
+                    WHERE pe1.post_id = $1
+                      AND pe2.post_id != $1
+                      AND pe2.post_id = ANY($2::uuid[])
+                    ORDER BY pe1.embedding <=> pe2.embedding
+                    LIMIT 10
+                    """,
+                    post["id"], list(post_id_set),
+                )
+                for n in neighbors:
+                    sim = float(n["similarity"])
+                    if sim >= t_flag:
+                        pair_key = tuple(sorted([post["id"], n["post_id"]]))
+                        hnsw_candidates[pair_key] = max(
+                            hnsw_candidates.get(pair_key, 0), sim,
+                        )
+            logger.info(
+                "HNSW pre-filter: %d candidate pairs from %d posts in cluster %s",
+                len(hnsw_candidates), len(post_list), cluster_id,
+            )
+
+        # Build post lookup for iteration
+        post_by_id = {p["id"]: p for p in post_list}
+
+        # Determine which pairs to evaluate
+        if use_hnsw:
+            # Only evaluate HNSW candidates + all query-overlap pairs
+            pair_iter = set(hnsw_candidates.keys())
+            # Also add all pairs where posts share GSC queries
+            for i, j in combinations(range(len(post_list)), 2):
+                pa, pb = post_list[i], post_list[j]
+                qa = queries_by_post.get(pa["id"], set())
+                qb = queries_by_post.get(pb["id"], set())
+                if qa & qb:
+                    pair_iter.add(tuple(sorted([pa["id"], pb["id"]])))
+        else:
+            # Small cluster: full scan
+            pair_iter = set()
+            for i, j in combinations(range(len(post_list)), 2):
+                pair_iter.add(tuple(sorted([post_list[i]["id"], post_list[j]["id"]])))
+
+        for pair_key in pair_iter:
+            pid_a, pid_b = pair_key
+            post_a = post_by_id[pid_a]
+            post_b = post_by_id[pid_b]
 
             # ── Signal 1: Embedding cosine similarity ──
-            cosine_sim = None
-            if post_a["embedding_text"] and post_b["embedding_text"]:
-                # Use pgvector's cosine distance operator
+            cosine_sim = hnsw_candidates.get(pair_key) if use_hnsw else None
+            if cosine_sim is None and post_a["embedding_text"] and post_b["embedding_text"]:
                 row = await db.fetchrow(
                     """
                     SELECT 1 - (a.embedding <=> b.embedding) AS similarity
@@ -175,7 +336,7 @@ class CannibalizationDetector:
 
             # ── Determine if this is a cannibalization pair ──
             is_cannibal = False
-            if cosine_sim is not None and cosine_sim >= COSINE_THRESHOLD_FLAG:
+            if cosine_sim is not None and cosine_sim >= t_flag:
                 is_cannibal = True
             if n_shared >= MIN_SHARED_QUERIES:
                 is_cannibal = True
@@ -183,8 +344,11 @@ class CannibalizationDetector:
             if not is_cannibal:
                 continue
 
-            # ── Determine severity ──
-            severity = self._compute_severity(cosine_sim, n_shared)
+            # ── Determine severity (uses site-specific thresholds) ──
+            severity = self._compute_severity(
+                cosine_sim, n_shared,
+                t_flag=t_flag, t_high=t_high, t_critical=t_critical,
+            )
 
             # ── Determine stronger post ──
             health_a = health_map.get(post_a["id"], {"score": 0, "traffic": 0})
@@ -221,22 +385,32 @@ class CannibalizationDetector:
         return pairs_found
 
     @staticmethod
-    def _compute_severity(cosine_sim: float | None, n_shared: int) -> str:
-        """Determine cannibalization severity from both signals."""
+    def _compute_severity(
+        cosine_sim: float | None,
+        n_shared: int,
+        t_flag: float = COSINE_THRESHOLD_FLAG,
+        t_high: float = COSINE_THRESHOLD_HIGH,
+        t_critical: float = COSINE_THRESHOLD_CRITICAL,
+    ) -> str:
+        """Determine cannibalization severity from both signals.
+
+        Accepts site-specific thresholds for calibrated detection.
+        Falls back to module-level defaults if not provided.
+        """
         has_cosine = cosine_sim is not None
 
         # Critical: very high cosine + shared queries
-        if has_cosine and cosine_sim >= COSINE_THRESHOLD_CRITICAL and n_shared > 0:
+        if has_cosine and cosine_sim >= t_critical and n_shared > 0:
             return "critical"
 
         # High: high cosine, or moderate cosine + shared queries
-        if has_cosine and cosine_sim >= COSINE_THRESHOLD_HIGH:
+        if has_cosine and cosine_sim >= t_high:
             return "high"
-        if has_cosine and cosine_sim >= COSINE_THRESHOLD_FLAG and n_shared > 0:
+        if has_cosine and cosine_sim >= t_flag and n_shared > 0:
             return "high"
 
         # Medium: cosine above threshold, or many shared queries
-        if has_cosine and cosine_sim >= COSINE_THRESHOLD_FLAG:
+        if has_cosine and cosine_sim >= t_flag:
             return "medium"
         if n_shared >= 3:
             return "medium"
