@@ -13,6 +13,8 @@ from uuid import UUID
 
 import asyncpg
 
+from app.utils.url_normalize import normalize_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,7 +69,23 @@ async def save_normalized_posts(
     """
     saved = 0
 
+    # Deduplicate by normalized URL (handles www, trailing slash, http/https)
+    seen_urls: set[str] = set()
+    deduped_posts: list[NormalizedPost] = []
     for post in posts:
+        norm = normalize_url(post.url)
+        if norm not in seen_urls:
+            seen_urls.add(norm)
+            post.url = norm  # Store the normalized URL
+            deduped_posts.append(post)
+
+    if len(deduped_posts) < len(posts):
+        logger.info(
+            "URL normalization deduped %d → %d posts",
+            len(posts), len(deduped_posts),
+        )
+
+    for post in deduped_posts:
         try:
             # Serialize headings to JSON
             headings_json = json.dumps(post.headings) if post.headings else None
@@ -115,7 +133,7 @@ async def save_normalized_posts(
 
             if post.internal_links:
                 link_records = [
-                    (site_id, post_id, link.target_url, link.anchor_text)
+                    (site_id, post_id, normalize_url(link.target_url), link.anchor_text)
                     for link in post.internal_links
                 ]
                 await db.executemany(

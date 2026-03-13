@@ -38,6 +38,22 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     cors_origins: str = "http://localhost:3000"
 
+    # Cron / internal endpoint auth
+    cron_secret: str = ""
+
+    # Security
+    allowed_hosts: str = ""  # comma-separated, empty = allow all
+    rate_limit_auth: str = "10/minute"  # stricter limit for auth endpoints
+    rate_limit_oracle: str = "10/minute"
+    rate_limit_draft: str = "5/minute"
+    session_max_age_seconds: int = 86400  # 24h
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        if not self.allowed_hosts:
+            return []
+        return [h.strip() for h in self.allowed_hosts.split(",")]
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]

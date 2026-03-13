@@ -35,16 +35,38 @@ app = FastAPI(
     description="Content Ecosystem Intelligence Platform — Phase 1 API",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if get_settings().secret_key == "change-me-in-production" else None,
+    redoc_url="/redoc" if get_settings().secret_key == "change-me-in-production" else None,
 )
 
-# CORS
+# ── Security Middleware (order matters — outermost first) ──
 settings = get_settings()
+
+from app.middleware.security import (
+    SecurityHeadersMiddleware,
+    RequestSizeLimitMiddleware,
+    HostValidationMiddleware,
+)
+
+# Security headers on every response
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Request size limit (10MB)
+app.add_middleware(RequestSizeLimitMiddleware, max_bytes=10 * 1024 * 1024)
+
+# Host header validation (if configured)
+if settings.allowed_host_list:
+    app.add_middleware(HostValidationMiddleware, allowed_hosts=settings.allowed_host_list)
+
+# CORS (must be added after other middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Cron-Secret", "X-Request-Id"],
+    expose_headers=["X-Request-Id", "X-Response-Time"],
+    max_age=86400,
 )
 
 # ── API Rate Limiting (slowapi) ──

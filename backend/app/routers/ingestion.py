@@ -9,7 +9,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id, get_verified_site
+from app.dependencies import get_current_user_id, get_verified_site, verify_cron_secret
 from app.models.schemas import CrawlStatusResponse, TaskTriggerResponse
 from app.services.wordpress import WordPressConnector
 from app.services.sitemap import SitemapCrawler
@@ -259,12 +259,9 @@ async def trigger_embeddings(
 @router.post("/cron/daily-refresh", response_model=TaskTriggerResponse)
 async def trigger_daily_refresh(
     background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
 ):
-    """Trigger daily analytics refresh for all eligible sites.
-
-    Should be called by a cron job scheduler. No auth required for internal crons
-    (protect via network policy or cron secret in production).
-    """
+    """Trigger daily analytics refresh. Requires X-Cron-Secret header."""
     from app.services.recrawl import run_daily_refresh
     background_tasks.add_task(run_daily_refresh)
     return TaskTriggerResponse(message="Daily analytics refresh started", site_id=None)
@@ -273,8 +270,9 @@ async def trigger_daily_refresh(
 @router.post("/cron/weekly-recrawl", response_model=TaskTriggerResponse)
 async def trigger_weekly_recrawl(
     background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
 ):
-    """Trigger weekly re-crawl for all eligible sites."""
+    """Trigger weekly re-crawl. Requires X-Cron-Secret header."""
     from app.services.recrawl import run_weekly_recrawl
     background_tasks.add_task(run_weekly_recrawl)
     return TaskTriggerResponse(message="Weekly re-crawl started", site_id=None)
@@ -283,8 +281,9 @@ async def trigger_weekly_recrawl(
 @router.post("/cron/monthly-reembed", response_model=TaskTriggerResponse)
 async def trigger_monthly_reembed(
     background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
 ):
-    """Trigger monthly re-embedding for all sites with changed content."""
+    """Trigger monthly re-embedding. Requires X-Cron-Secret header."""
     from app.services.recrawl import run_monthly_reembed
     background_tasks.add_task(run_monthly_reembed)
     return TaskTriggerResponse(message="Monthly re-embed started", site_id=None)

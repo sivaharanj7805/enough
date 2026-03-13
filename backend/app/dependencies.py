@@ -1,11 +1,13 @@
 """Shared dependencies used across routers."""
 
+import hmac
 import logging
+import secrets
 from uuid import UUID
 from typing import Annotated
 
 import asyncpg
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 
 from app.database import get_db
 
@@ -56,6 +58,30 @@ async def get_current_user_id(authorization: Annotated[str, Header()]) -> str:
         return token
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid authorization token")
+
+
+async def verify_cron_secret(
+    x_cron_secret: Annotated[str | None, Header(alias="X-Cron-Secret")] = None,
+) -> None:
+    """Verify the cron secret header for internal/scheduled endpoints.
+
+    Rejects requests if:
+    - CRON_SECRET is configured and header is missing or wrong
+    - Uses constant-time comparison to prevent timing attacks
+    """
+    from app.config import get_settings
+    settings = get_settings()
+
+    if not settings.cron_secret:
+        # No cron secret configured — allow in dev mode but log warning
+        logger.warning("CRON_SECRET not set — cron endpoints are unprotected")
+        return
+
+    if not x_cron_secret:
+        raise HTTPException(status_code=401, detail="Missing X-Cron-Secret header")
+
+    if not hmac.compare_digest(x_cron_secret, settings.cron_secret):
+        raise HTTPException(status_code=403, detail="Invalid cron secret")
 
 
 async def get_verified_site(

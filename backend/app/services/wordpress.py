@@ -5,6 +5,7 @@ extracts internal links, and normalizes to the standard schema.
 """
 
 import logging
+import re
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -149,6 +150,16 @@ class WordPressConnector:
         publish_date = _parse_wp_date(wp_post.get("date"))
         modified_date = _parse_wp_date(wp_post.get("modified"))
 
+        # Extract headings structure
+        headings = self._extract_headings(soup)
+
+        # Extract meta description (WP REST API excerpt as fallback)
+        excerpt_html = wp_post.get("excerpt", {}).get("rendered", "")
+        meta_description = None
+        if excerpt_html:
+            excerpt_soup = BeautifulSoup(excerpt_html, "lxml")
+            meta_description = excerpt_soup.get_text(strip=True)[:320] or None
+
         return NormalizedPost(
             url=link,
             slug=slug,
@@ -162,7 +173,20 @@ class WordPressConnector:
             cms_tags=tags,
             word_count=len(body_text.split()),
             content_hash=compute_content_hash(body_text),
+            headings=headings,
+            meta_description=meta_description,
+            http_status=200,
         )
+
+    @staticmethod
+    def _extract_headings(soup: BeautifulSoup) -> list[dict[str, str]]:
+        """Extract heading structure from HTML content."""
+        headings: list[dict[str, str]] = []
+        for tag in soup.find_all(re.compile(r"^h[1-6]$")):
+            text = tag.get_text(strip=True)
+            if text:
+                headings.append({"level": tag.name, "text": text})
+        return headings
 
     def _extract_internal_links(self, soup: BeautifulSoup, current_url: str) -> list[InternalLink]:
         """Extract links pointing to the same domain."""
