@@ -637,24 +637,52 @@ Respond in JSON:
         self, db: asyncpg.Connection, site_id: UUID,
         problem: asyncpg.Record,
     ) -> bool:
+        # Get body text for context-aware image suggestions
+        body = await db.fetchval(
+            "SELECT body_text FROM posts WHERE id = $1",
+            problem["post_id"],
+        )
+        body_excerpt = truncate_for_api(body or "", max_chars=800, label="image_post")
+
+        prompt = f"""This blog post has NO images. Suggest 3-4 SPECIFIC images that would improve this particular post. Don't be generic — reference actual content from the post.
+
+Title: {problem['title']}
+Content: {body_excerpt}
+
+Respond in JSON:
+{{
+  "suggestions": [
+    "Specific image suggestion referencing actual post content"
+  ],
+  "most_impactful": "Which single image would help SEO the most and why",
+  "confidence": 0.0-1.0
+}}"""
+
+        try:
+            result = await self._call_claude(prompt)
+            suggestions = result.get("suggestions", [])
+            most_impactful = result.get("most_impactful", "")
+            summary = f"Add visuals: {most_impactful[:150]}" if most_impactful else "Add relevant images to improve engagement."
+        except Exception:
+            # Fallback to basic recommendation if Claude fails
+            suggestions = ["Add a relevant visual that illustrates the main concept"]
+            summary = "This post has no images. Adding relevant visuals improves engagement."
+            result = {}
+
         await db.execute(
             """
             INSERT INTO recommendations
                 (post_id, site_id, problem_id, recommendation_type, priority,
                  estimated_effort_hours, estimated_impact, title, summary,
-                 specific_actions)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 specific_actions, ai_generated_content)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             """,
             problem["post_id"], site_id, problem["id"], "optimize",
             "low", 0.5, "low",
             f"Add images: {problem['title']}",
-            "This post has no images. Adding relevant visuals improves engagement and SEO.",
-            json.dumps([
-                "Add a hero/featured image at the top",
-                "Add diagrams or screenshots for complex concepts",
-                "Add alt text to all images with target keywords",
-                "Compress images to < 200KB for page speed",
-            ]),
+            summary,
+            json.dumps(suggestions),
+            json.dumps(result),
         )
         return True
 
@@ -831,11 +859,14 @@ Respond in JSON:
                 system=(
                     "You are an SEO content strategist. You give specific, actionable "
                     "recommendations grounded in the data provided. "
-                    "IMPORTANT: If you don't have enough information to make a confident "
-                    "recommendation, say so explicitly in a 'confidence_note' field. "
                     "Never fabricate data, statistics, or facts. "
                     "Always include a 'confidence' field (0.0-1.0) indicating how "
-                    "confident you are in this recommendation based on the data available."
+                    "confident you are in this recommendation based on the data available. "
+                    "Include a 'confidence_note' ONLY if there is a recommendation-specific "
+                    "caveat (e.g. 'content may have changed since crawl', 'topic overlap is "
+                    "borderline'). Do NOT repeat generic data availability caveats like "
+                    "'without GSC data' or 'without traffic data' — the system already "
+                    "accounts for missing data sources at the site level."
                 ),
                 messages=[{"role": "user", "content": prompt}],
             )

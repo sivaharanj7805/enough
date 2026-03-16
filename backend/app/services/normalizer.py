@@ -7,6 +7,8 @@ which are then stored uniformly in the database.
 import hashlib
 import json
 import logging
+import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
@@ -16,6 +18,158 @@ import asyncpg
 from app.utils.url_normalize import normalize_url
 
 logger = logging.getLogger(__name__)
+
+# Common site name separators in titles — require spaces around separator
+# to avoid splitting on hyphens within words/titles like "auto-retry"
+_TITLE_SEPARATORS = re.compile(r"\s+[|–—]\s+|\s+-\s+")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_site_name_from_title(title: str) -> str:
+    """Remove trailing ' | Site Name' or ' - Site Name' from titles.
+
+    Heuristic: split on separators, drop the last segment if it looks
+    like a site/brand name (≤4 words, appears at the end).
+    """
+    if not title:
+        return title
+    # Split on common separators
+    parts = _TITLE_SEPARATORS.split(title)
+    if len(parts) >= 2:
+        last = parts[-1].strip()
+        # If last segment is short (≤4 words), it's likely a site name
+        if len(last.split()) <= 4:
+            return _TITLE_SEPARATORS.split(title, maxsplit=len(parts) - 2)[0].strip()
+    return title
+
+
+def _strip_html_from_meta(text: str | None) -> str | None:
+    """Remove HTML tags from meta descriptions."""
+    if not text:
+        return text
+    cleaned = _HTML_TAG_RE.sub("", text).strip()
+    # Collapse multiple spaces
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned if cleaned else None
+
+
+def filter_nav_links(
+    all_posts_links: dict[str, list["InternalLink"]],
+    threshold: float = 0.8,
+) -> dict[str, list["InternalLink"]]:
+    """Filter out site-wide navigation links that appear on most pages.
+
+    Args:
+        all_posts_links: mapping of post_url → list of InternalLinks
+        threshold: if a target_url appears in ≥ this fraction of posts, it's nav
+
+    Returns:
+        Filtered mapping with nav links removed.
+    """
+    if not all_posts_links:
+        return all_posts_links
+
+    total_posts = len(all_posts_links)
+    if total_posts < 3:
+        return all_posts_links  # Too few posts to detect nav patterns
+
+    # Count how many posts link to each target URL
+    target_counts: Counter[str] = Counter()
+    for links in all_posts_links.values():
+        # Deduplicate within a single post
+        seen = set()
+        for link in links:
+            norm = link.target_url.rstrip("/").lower()
+            if norm not in seen:
+                target_counts[norm] += 1
+                seen.add(norm)
+
+    # URLs appearing in ≥ threshold fraction of posts are nav links
+    nav_urls: set[str] = set()
+    for url, count in target_counts.items():
+        if count / total_posts >= threshold:
+            nav_urls.add(url)
+
+    if nav_urls:
+        logger.info(
+            "Detected %d navigation URLs (appearing in ≥%.0f%% of %d posts)",
+            len(nav_urls), threshold * 100, total_posts,
+        )
+
+    # Filter
+    filtered = {}
+    for post_url, links in all_posts_links.items():
+        filtered[post_url] = [
+            link for link in links
+            if link.target_url.rstrip("/").lower() not in nav_urls
+        ]
+
+    return filtered
+
+
+def filter_sitewide_headings(
+    all_posts_headings: dict[str, list[dict[str, str]]],
+    threshold: float = 0.8,
+) -> dict[str, list[dict[str, str]]]:
+    """Remove headings that appear on almost every page (site header/footer).
+
+    Args:
+        all_posts_headings: mapping of post_url → list of heading dicts
+        threshold: if a heading text appears in ≥ this fraction of posts, remove it
+
+    Returns:
+        Filtered mapping with sitewide headings removed.
+    """
+    if not all_posts_headings:
+        return all_posts_headings
+
+    total_posts = len(all_posts_headings)
+    if total_posts < 3:
+        return all_posts_headings
+
+    # Count heading occurrences
+    heading_counts: Counter[str] = Counter()
+    for headings in all_posts_headings.values():
+        seen = set()
+        for h in headings:
+            text = h.get("text", "").strip().lower()
+            if text and text not in seen:
+                heading_counts[text] += 1
+                seen.add(text)
+
+    # Only filter H1-level sitewide headings (site name, nav items)
+    # H2+ headings that repeat are likely legitimate section patterns
+    h1_counts: Counter[str] = Counter()
+    for headings in all_posts_headings.values():
+        seen = set()
+        for h in headings:
+            text = h.get("text", "").strip().lower()
+            level = str(h.get("level", "")).replace("h", "")
+            if text and text not in seen and level == "1":
+                h1_counts[text] += 1
+                seen.add(text)
+
+    sitewide: set[str] = set()
+    for text, count in h1_counts.items():
+        if count / total_posts >= threshold:
+            sitewide.add(text)
+
+    if sitewide:
+        logger.info(
+            "Detected %d sitewide headings (in ≥%.0f%% of posts): %s",
+            len(sitewide), threshold * 100,
+            ", ".join(f'"{h}"' for h in list(sitewide)[:5]),
+        )
+
+    # Filter
+    filtered = {}
+    for post_url, headings in all_posts_headings.items():
+        filtered[post_url] = [
+            h for h in headings
+            if h.get("text", "").strip().lower() not in sitewide
+        ]
+
+    return filtered
 
 
 @dataclass
@@ -85,6 +239,23 @@ async def save_normalized_posts(
             len(posts), len(deduped_posts),
         )
 
+    # ── Pre-process: strip site names from titles, clean meta, filter nav ──
+    for post in deduped_posts:
+        post.title = _strip_site_name_from_title(post.title)
+        post.meta_description = _strip_html_from_meta(post.meta_description)
+
+    # Build link/heading maps for site-wide filtering
+    links_map = {p.url: p.internal_links for p in deduped_posts}
+    headings_map = {p.url: p.headings for p in deduped_posts}
+
+    filtered_links = filter_nav_links(links_map)
+    filtered_headings = filter_sitewide_headings(headings_map)
+
+    for post in deduped_posts:
+        post.internal_links = filtered_links.get(post.url, post.internal_links)
+        post.headings = filtered_headings.get(post.url, post.headings)
+
+    # ── Persist ──
     for post in deduped_posts:
         try:
             # Serialize headings to JSON

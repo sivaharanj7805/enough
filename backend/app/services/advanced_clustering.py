@@ -514,7 +514,7 @@ Top c-TF-IDF keywords: {keyword_str}
 
 Give a 2-4 word topic label and a one-sentence description.
 Format: Label: <label>
-Description: <description>""", max_tokens=1500)
+Description: <description>""", max_chars=1500)
 
                 response = await self.claude.messages.create(
                     model="claude-sonnet-4-20250514",

@@ -517,9 +517,10 @@ class ProblemDetector:
     async def _detect_readability_issues(
         self, db: asyncpg.Connection, site_id: UUID,
     ) -> int:
-        """Detect posts with poor readability (Flesch < 40).
+        """Detect posts with poor readability (Flesch < 50).
 
-        Requires readability_score to be pre-computed by ReadabilityScorer.
+        Web content should target 60-70 Flesch. Below 50 is too complex
+        for most web audiences. Requires readability_score to be pre-computed.
         """
         hard_to_read = await db.fetch(
             """
@@ -527,13 +528,13 @@ class ProblemDetector:
             FROM posts
             WHERE site_id = $1
               AND readability_score IS NOT NULL
-              AND readability_score < 40.0
+              AND readability_score < 50.0
             """,
             site_id,
         )
 
         for r in hard_to_read:
-            severity = "high" if r["readability_score"] < 20 else "medium"
+            severity = "high" if r["readability_score"] < 30 else "medium"
             await self._insert_problem(
                 db, r["id"], site_id, "readability_too_complex", severity,
                 {
