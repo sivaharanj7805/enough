@@ -212,6 +212,7 @@ class SiteHealthResponse(BaseModel):
     content_efficiency_ratio: float
     clusters: list[ClusterSummary]
     trends: dict[str, float]
+    data_completeness: float = 1.0  # 0.0-1.0, fraction of signals available
 
 
 class PillarPostInfo(BaseModel):

@@ -43,7 +43,9 @@ const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; colo
   expand: { label: 'Expand Content', icon: FileText, color: '#3b82f6' },
   optimize: { label: 'SEO Fix', icon: Target, color: '#8b5cf6' },
   merge: { label: 'Merge Posts', icon: Layers, color: '#f97316' },
+  differentiate: { label: 'Differentiate', icon: Layers, color: '#ec4899' },
   interlink: { label: 'Add Links', icon: Zap, color: '#22c55e' },
+  redirect: { label: 'Redirect', icon: Target, color: '#ef4444' },
   update: { label: 'Update', icon: Clock, color: '#eab308' },
   growth: { label: 'Growth', icon: TrendingUp, color: '#06b6d4' },
 };

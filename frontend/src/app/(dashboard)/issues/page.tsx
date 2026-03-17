@@ -26,7 +26,7 @@ type IssueTab = 'all' | 'cannibalization' | 'decay' | 'thin' | 'seo' | 'orphan' 
 
 const TABS: Array<{ key: IssueTab; label: string; icon: React.ElementType; types: string[] }> = [
   { key: 'all', label: 'All Issues', icon: AlertTriangle, types: [] },
-  { key: 'seo', label: 'SEO', icon: Search, types: ['seo_no_images', 'seo_title_length', 'seo_missing_meta', 'seo_no_internal_links', 'seo_no_h1', 'seo_no_og', 'seo_no_jsonld', 'seo_no_canonical'] },
+  { key: 'seo', label: 'SEO', icon: Search, types: ['seo_no_images', 'seo_title_length', 'seo_missing_meta', 'seo_no_internal_links', 'seo_no_h1', 'seo_no_og', 'seo_no_jsonld', 'seo_no_canonical', 'duplicate_content'] },
   { key: 'thin', label: 'Thin Content', icon: Shrink, types: ['thin_content', 'thin_below_cluster_avg'] },
   { key: 'decay', label: 'Decay', icon: TrendingDown, types: ['content_decay', 'proxy_decay'] },
   { key: 'orphan', label: 'Orphans', icon: Ghost, types: ['orphan'] },
@@ -49,6 +49,7 @@ const ISSUE_LABELS: Record<string, { label: string; description: string; icon: R
   orphan: { label: 'Orphan Page', description: 'No internal links point to this page — invisible to users and crawlers', icon: Ghost },
   readability_too_complex: { label: 'Hard to Read', description: 'Readability score is below threshold for the site\'s industry', icon: BookOpen },
   velocity_decline: { label: 'Publishing Decline', description: 'Publishing frequency has dropped significantly', icon: TrendingDown },
+  duplicate_content: { label: 'Duplicate Content', description: 'Identical content exists at another URL — set up a 301 redirect', icon: AlertTriangle },
 };
 
 export default function IssuesDashboardPage() {

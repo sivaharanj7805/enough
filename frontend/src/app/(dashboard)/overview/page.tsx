@@ -225,7 +225,9 @@ function RecommendationSummary({
     expand: { label: 'Expand Content', icon: FileText, color: '#3b82f6' },
     optimize: { label: 'SEO Optimization', icon: Target, color: '#8b5cf6' },
     merge: { label: 'Merge Posts', icon: Layers, color: '#f97316' },
+    differentiate: { label: 'Differentiate Content', icon: Shield, color: '#ec4899' },
     interlink: { label: 'Add Internal Links', icon: Zap, color: '#22c55e' },
+    redirect: { label: 'Redirect Duplicates', icon: ArrowRight, color: '#ef4444' },
     update: { label: 'Update Content', icon: Clock, color: '#eab308' },
     growth: { label: 'Growth Opportunity', icon: TrendingUp, color: '#06b6d4' },
   };
@@ -353,6 +355,16 @@ export default function OverviewPage() {
             Content Health Score
           </p>
           <HealthRing score={health.content_health_score} size={180} />
+          {health.data_completeness < 1.0 && (
+            <div className="mt-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-xs text-amber-400 text-center">
+                Based on {Math.round(health.data_completeness * 100)}% of available signals
+              </p>
+              <p className="text-[10px] text-amber-400/70 text-center mt-0.5">
+                Connect Google Search Console for full scoring
+              </p>
+            </div>
+          )}
           <div className="mt-4 flex items-center gap-2">
             <span className="text-sm text-brand-text-muted">Content Efficiency:</span>
             <span className="text-sm font-bold text-brand-text">

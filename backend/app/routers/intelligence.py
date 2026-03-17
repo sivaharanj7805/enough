@@ -294,6 +294,10 @@ async def list_clusters(
         """
         SELECT * FROM clusters
         WHERE site_id = $1
+        AND id NOT IN (
+            SELECT parent_cluster_id FROM clusters
+            WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+        )
         ORDER BY post_count DESC
         """,
         site_id,
@@ -485,6 +489,10 @@ async def get_site_health(
         """
         SELECT id, label, ecosystem_state, post_count
         FROM clusters WHERE site_id = $1
+        AND id NOT IN (
+            SELECT parent_cluster_id FROM clusters
+            WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+        )
         ORDER BY post_count DESC
         """,
         site_id,
@@ -506,6 +514,18 @@ async def get_site_health(
         )
         trends[f"{days}d"] = float(traffic)
 
+    # Data completeness: check what data sources are available
+    has_ga4 = await db.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM ga4_metrics g JOIN posts p ON p.id = g.post_id WHERE p.site_id = $1 LIMIT 1)",
+        site_id,
+    )
+    has_gsc = await db.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM gsc_metrics g JOIN posts p ON p.id = g.post_id WHERE p.site_id = $1 LIMIT 1)",
+        site_id,
+    )
+    # Crawl data = 40%, GA4 = 30%, GSC = 30%
+    data_completeness = 0.4 + (0.3 if has_ga4 else 0.0) + (0.3 if has_gsc else 0.0)
+
     return SiteHealthResponse(
         content_health_score=float(avg_health),
         total_posts=total_posts,
@@ -516,6 +536,7 @@ async def get_site_health(
         content_efficiency_ratio=round(efficiency, 3),
         clusters=clusters,
         trends=trends,
+        data_completeness=data_completeness,
     )
 
 

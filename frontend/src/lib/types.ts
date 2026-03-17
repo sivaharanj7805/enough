@@ -157,6 +157,7 @@ export interface SiteHealth {
   content_efficiency_ratio: number;
   clusters: ClusterSummary[];
   trends: Record<string, number>; // { "30d": number, "60d": number, "90d": number }
+  data_completeness: number; // 0.0-1.0 fraction of available data signals
 }
 
 // ─── Consolidation ──────────────────────────────
