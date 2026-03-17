@@ -31,10 +31,20 @@ from app.utils.rate_limiter import RateLimiter
 logger = logging.getLogger(__name__)
 
 # Chunking parameters
-MIN_CHUNK_WORDS = 50       # Skip chunks smaller than this
-MAX_CHUNK_WORDS = 500      # Split chunks larger than this
-SLIDING_WINDOW_WORDS = 300 # Fallback window size
-SLIDING_OVERLAP_WORDS = 50 # Overlap between sliding windows
+# Adaptive chunk sizing based on post length
+def _adaptive_chunk_params(total_words: int) -> tuple[int, int, int, int]:
+    """Return (min_chunk, max_chunk, window, overlap) based on content length."""
+    if total_words < 500:
+        return 30, 200, 150, 20   # Short posts: small chunks
+    if total_words < 2000:
+        return 50, 400, 250, 40   # Medium posts: standard
+    return 80, 600, 350, 50       # Long posts: larger chunks
+
+# Defaults (used when not calling adaptive)
+MIN_CHUNK_WORDS = 50
+MAX_CHUNK_WORDS = 500
+SLIDING_WINDOW_WORDS = 300
+SLIDING_OVERLAP_WORDS = 50
 CANNIBAL_THRESHOLD = 0.85  # Chunk-pair similarity threshold
 
 
@@ -243,6 +253,35 @@ def _sliding_window_chunks(
         pos += SLIDING_WINDOW_WORDS - SLIDING_OVERLAP_WORDS
 
     return chunks
+
+
+def _score_chunk_quality(text: str) -> float:
+    """Score chunk quality 0-100. Low scores = boilerplate/nav content."""
+    import re
+    words = text.split()
+    if len(words) < 10:
+        return 10.0
+
+    score = 50.0  # Baseline
+
+    # Unique vocabulary ratio (high = original, low = repetitive)
+    unique_ratio = len(set(w.lower() for w in words)) / len(words)
+    score += unique_ratio * 20  # 0-20 bonus
+
+    # Has data/statistics
+    if re.search(r'\d+%|\$\d|increase|decrease|growth|revenue|users', text.lower()):
+        score += 10
+
+    # Has code blocks
+    if '```' in text or 'function ' in text or 'const ' in text:
+        score += 5
+
+    # Penalty for boilerplate patterns
+    boilerplate = ['subscribe', 'newsletter', 'follow us', 'share this', 'cookie', 'privacy policy']
+    if any(bp in text.lower() for bp in boilerplate):
+        score -= 20
+
+    return max(0, min(100, score))
 
 
 class ContentChunkerService:

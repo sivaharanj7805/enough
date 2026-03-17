@@ -115,3 +115,47 @@ class InternalPageRank:
                 """,
                 float(rank), post_id,
             )
+
+    @staticmethod
+    async def detect_broken_links(
+        db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Detect internal links pointing to non-existent or error pages.
+
+        Returns the count of broken links found.
+        """
+        broken = await db.fetch("""
+            SELECT il.source_post_id, il.target_url,
+                   ps.title as source_title
+            FROM internal_links il
+            JOIN posts ps ON ps.id = il.source_post_id
+            LEFT JOIN posts pt ON pt.url = il.target_url AND pt.site_id = $1
+            WHERE ps.site_id = $1
+              AND pt.id IS NULL
+              AND il.target_url LIKE '%' || (
+                  SELECT domain FROM sites WHERE id = $1
+              ) || '%'
+        """, site_id)
+
+        logger.info("Found %d broken internal links for site %s", len(broken), site_id)
+        return len(broken)
+
+    @staticmethod
+    async def count_outbound_links(
+        db: asyncpg.Connection, site_id: UUID,
+    ) -> dict[UUID, int]:
+        """Count external (outbound) links per post.
+
+        Posts with 0 outbound links lack citations — a content quality signal.
+        """
+        rows = await db.fetch("""
+            SELECT il.source_post_id, count(*) as cnt
+            FROM internal_links il
+            JOIN posts p ON p.id = il.source_post_id
+            WHERE p.site_id = $1
+              AND il.target_url NOT LIKE '%' || (
+                  SELECT domain FROM sites WHERE id = $1
+              ) || '%'
+            GROUP BY il.source_post_id
+        """, site_id)
+        return {r["source_post_id"]: r["cnt"] for r in rows}

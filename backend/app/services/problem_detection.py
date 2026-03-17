@@ -71,6 +71,8 @@ class ProblemDetector:
         # Decay detection requires GSC data (click/position trends)
         if has_gsc:
             counts["decay"] = await self._detect_content_decay(db, site_id)
+            # Proxy decay detection (works without GSC/GA4)
+            counts["decay"] += await self._detect_proxy_decay(db, site_id)
         else:
             counts["decay"] = 0
             logger.info("Skipping decay detection — no GSC data for site %s", site_id)
@@ -91,6 +93,10 @@ class ProblemDetector:
         # Velocity decline: needs publish dates (crawl-based)
         counts["velocity"] = await self._detect_velocity_decline(db, site_id)
 
+        # Group related problems — if a post has both thin_content AND thin_below_cluster_avg,
+        # mark them as related in details
+        await self._group_related_problems(db, site_id)
+
         total = sum(counts.values())
         logger.info(
             "Problem detection complete for site %s — %d total problems "
@@ -101,6 +107,37 @@ class ProblemDetector:
             counts["velocity"], has_ga4, has_gsc,
         )
         return counts
+
+    @staticmethod
+    async def _group_related_problems(db: asyncpg.Connection, site_id: UUID) -> None:
+        """Mark related problems on the same post with a shared group key."""
+        RELATED_GROUPS = [
+            {"types": {"thin_content", "thin_below_cluster_avg"}, "root": "thin_content"},
+            {"types": {"seo_no_internal_links", "orphan"}, "root": "orphan"},
+        ]
+        # Get all problems grouped by post
+        problems = await db.fetch("""
+            SELECT id, post_id, problem_type, details
+            FROM content_problems WHERE site_id = $1
+            ORDER BY post_id
+        """, site_id)
+
+        from itertools import groupby
+        for post_id, post_probs in groupby(problems, key=lambda x: x["post_id"]):
+            post_probs = list(post_probs)
+            prob_types = {p["problem_type"] for p in post_probs}
+            for group in RELATED_GROUPS:
+                overlap = prob_types & group["types"]
+                if len(overlap) > 1:
+                    # Mark secondary problems as related
+                    for p in post_probs:
+                        if p["problem_type"] in overlap and p["problem_type"] != group["root"]:
+                            details = json.loads(p["details"]) if isinstance(p["details"], str) else (p["details"] or {})
+                            details["related_to"] = group["root"]
+                            await db.execute(
+                                "UPDATE content_problems SET details = $1 WHERE id = $2",
+                                json.dumps(details), p["id"],
+                            )
 
     # ═══════════════════════════════════════════════
     # 2.9: Content decay detection
@@ -273,6 +310,56 @@ class ProblemDetector:
     # 2.10: Thin content detection
     # ═══════════════════════════════════════════════
 
+    async def _detect_proxy_decay(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Detect content decay without GSC/GA4 data.
+
+        Uses proxy signals:
+        1. Posts > 18 months old without updates
+        2. Outdated year references in title (e.g. "2022 Guide" in 2026)
+        3. Time-sensitive content (has year in title) older than 12 months
+        """
+        import re
+        now = datetime.now(timezone.utc)
+        eighteen_months_ago = now - timedelta(days=548)
+        found = 0
+
+        # Posts not updated in 18+ months
+        stale_posts = await db.fetch("""
+            SELECT p.id, p.title, p.url, p.publish_date, p.modified_date
+            FROM posts p
+            WHERE p.site_id = $1
+            AND COALESCE(p.modified_date, p.publish_date) < $2
+            AND p.id NOT IN (
+                SELECT post_id FROM content_problems WHERE problem_type = 'content_decay' AND site_id = $1
+            )
+        """, site_id, eighteen_months_ago)
+
+        for post in stale_posts:
+            title = post["title"] or ""
+            # Check for outdated year references
+            year_match = re.search(r'20(1\d|2[0-4])', title)
+            if year_match:
+                ref_year = int("20" + year_match.group(1))
+                if ref_year < now.year - 1:
+                    await self._insert_problem(
+                        db, post["id"], site_id, "content_decay", "high",
+                        {"issue": f"Outdated year reference ({ref_year}) in title", "proxy": True},
+                    )
+                    found += 1
+                    continue
+
+            # Very old posts (18+ months) that are time-sensitive
+            if any(kw in title.lower() for kw in ["best ", "top ", "review", "pricing", "compare", "vs "]):
+                await self._insert_problem(
+                    db, post["id"], site_id, "content_decay", "medium",
+                    {"issue": "Time-sensitive content not updated in 18+ months", "proxy": True},
+                )
+                found += 1
+
+        return found
+
     async def _detect_thin_content(
         self, db: asyncpg.Connection, site_id: UUID, has_ga4: bool = True,
     ) -> int:
@@ -287,16 +374,31 @@ class ProblemDetector:
         now = datetime.now(timezone.utc)
         ninety_days_ago = now - timedelta(days=90)
 
-        # ── 1. Absolute thin content (<500 words) ──
+        # ── 1. Absolute thin content (content-type-aware thresholds) ──
         thin_rows = await db.fetch(
             """
-            SELECT id, title, word_count
+            SELECT id, title, url, word_count
             FROM posts
-            WHERE site_id = $1 AND word_count < 500 AND word_count > 0
+            WHERE site_id = $1 AND word_count > 0
             """,
             site_id,
         )
         for r in thin_rows:
+            # Content-type-aware thin threshold
+            url = (r["url"] or "").lower()
+            title = (r["title"] or "").lower()
+            if any(kw in url or kw in title for kw in ["/compare", "/vs-", " vs ", "comparison"]):
+                threshold = 500  # Comparisons: OK to be shorter with tables
+            elif any(kw in url or kw in title for kw in ["how-to", "guide", "tutorial", "step-by-step"]):
+                threshold = 800  # Tutorials need depth
+            elif any(kw in url or kw in title for kw in ["/glossary", "what-is", "definition"]):
+                threshold = 200  # Definitions can be short
+            else:
+                threshold = 500  # Default
+
+            if r["word_count"] >= threshold:
+                continue
+
             await db.execute(
                 """
                 INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
@@ -305,7 +407,7 @@ class ProblemDetector:
                     severity = $4, details = $5, detected_at = NOW()
                 """,
                 r["id"], site_id, "thin_content",
-                "high" if r["word_count"] < 300 else "medium",
+                "high" if r["word_count"] < threshold * 0.5 else "medium",
                 json.dumps({"word_count": r["word_count"]}),
             )
             found += 1
@@ -466,9 +568,14 @@ class ProblemDetector:
                 )
                 found += 1
 
-            # 5. No images
+            # 5. No images — check multiple image patterns (JS-rendered, lazy-loaded, etc.)
             body_html = r["body_html"] or ""
-            has_images = "<img" in body_html.lower()
+            html_lower = body_html.lower()
+            has_images = any(tag in html_lower for tag in [
+                '<img', '<picture', '<figure', '<svg',
+                'data-src=', 'srcset=', 'background-image:',
+                'loading="lazy"', "loading='lazy'",
+            ])
             if not has_images:
                 await self._insert_problem(
                     db, r["id"], site_id, "seo_no_images", "low",
@@ -517,20 +624,41 @@ class ProblemDetector:
     async def _detect_readability_issues(
         self, db: asyncpg.Connection, site_id: UUID,
     ) -> int:
-        """Detect posts with poor readability (Flesch < 50).
+        """Detect posts with poor readability.
 
-        Web content should target 60-70 Flesch. Below 50 is too complex
-        for most web audiences. Requires readability_score to be pre-computed.
+        Industry-adaptive thresholds:
+        - B2B/Technical (SaaS, agency): Flesch < 35 (allow more complexity)
+        - General (default): Flesch < 50
+        - Consumer: Flesch < 55
         """
+        # Detect industry from site metadata or cluster labels
+        from app.services.industry_benchmarks import detect_industry
+        clusters = await db.fetch(
+            "SELECT label FROM clusters WHERE site_id = $1", site_id,
+        )
+        labels = [c["label"] for c in clusters]
+        industry = detect_industry(labels, [])
+
+        # Industry-adaptive threshold
+        thresholds = {
+            "saas": 35.0,
+            "agency": 35.0,
+            "ecommerce": 50.0,
+            "media": 55.0,
+            "default": 50.0,
+        }
+        threshold = thresholds.get(industry, 50.0)
+        logger.info("Readability threshold for %s industry: Flesch < %.0f", industry, threshold)
+
         hard_to_read = await db.fetch(
             """
             SELECT id, title, readability_score, grade_level
             FROM posts
             WHERE site_id = $1
               AND readability_score IS NOT NULL
-              AND readability_score < 50.0
+              AND readability_score < $2
             """,
-            site_id,
+            site_id, threshold,
         )
 
         for r in hard_to_read:
@@ -603,6 +731,23 @@ class ProblemDetector:
         )
         return 1
 
+    # Problem type weights for severity scoring
+    _PROBLEM_WEIGHTS: dict[str, float] = {
+        "seo_missing_meta": 0.9,
+        "seo_no_internal_links": 0.8,
+        "thin_content": 0.7,
+        "readability_too_complex": 0.6,
+        "orphan": 0.6,
+        "seo_no_headings": 0.5,
+        "thin_below_cluster_avg": 0.5,
+        "seo_title_length": 0.4,
+        "seo_no_images": 0.3,
+        "content_decay": 0.9,
+        "velocity_decline": 0.7,
+        "intent_mismatch": 0.8,
+        "serp_opportunity_missed": 0.6,
+    }
+
     @staticmethod
     async def _insert_problem(
         db: asyncpg.Connection,
@@ -612,7 +757,12 @@ class ProblemDetector:
         severity: str,
         details: dict,
     ) -> None:
-        """Insert or update a content problem."""
+        """Insert or update a content problem.
+
+        Automatically adds a severity_score (0-100) based on problem type weight.
+        """
+        type_weight = ProblemDetector._PROBLEM_WEIGHTS.get(problem_type, 0.5)
+        details["severity_score"] = round(type_weight * 100)
         await db.execute(
             """
             INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)

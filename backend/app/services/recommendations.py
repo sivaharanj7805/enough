@@ -22,6 +22,55 @@ from anthropic import AsyncAnthropic
 from app.config import get_settings
 from app.utils.rate_limiter import RateLimiter
 from app.utils.token_guard import truncate_for_api
+import re as _re
+
+
+def smart_truncate(body_text: str, headings: list | str | None = None, max_chars: int = 4000) -> str:
+    """Smart truncation that preserves structure: intro + headings + conclusion.
+
+    Instead of blind first-N-chars, extracts:
+    - First 500 chars (intro)
+    - All H2/H3 headings with first sentence under each
+    - Last 300 chars (conclusion)
+    """
+    if not body_text or len(body_text) <= max_chars:
+        return body_text or ""
+
+    parts: list[str] = []
+
+    # Intro (first 500 chars)
+    intro = body_text[:500]
+    parts.append(intro)
+
+    # Headings with context
+    if headings:
+        if isinstance(headings, str):
+            import json
+            try:
+                headings = json.loads(headings)
+            except (json.JSONDecodeError, TypeError):
+                headings = []
+        if isinstance(headings, list):
+            for h in headings[:15]:
+                if isinstance(h, dict):
+                    text = h.get("text", "")
+                    level = h.get("level", "h2")
+                    parts.append(f"\n[{level}] {text}")
+
+    # Key sentences from middle (sentences with numbers/stats)
+    middle = body_text[500:-300] if len(body_text) > 800 else ""
+    if middle:
+        sentences = _re.split(r'[.!?]\s+', middle)
+        stat_sentences = [s for s in sentences if _re.search(r'\d+%|\$\d|increase|decrease|improve|reduce', s)]
+        for s in stat_sentences[:5]:
+            parts.append(s.strip()[:150])
+
+    # Conclusion (last 300 chars)
+    if len(body_text) > 300:
+        parts.append("\n..." + body_text[-300:])
+
+    result = "\n".join(parts)
+    return result[:max_chars]
 
 logger = logging.getLogger(__name__)
 
@@ -46,21 +95,25 @@ class RecommendationEngine:
         """
         logger.info("Generating recommendations for site %s", site_id)
 
-        # Clear old pending recommendations (keep completed/dismissed)
-        await db.execute(
-            """
-            DELETE FROM recommendations
-            WHERE site_id = $1 AND status = 'pending'
-            """,
+        # Check which problems already have recommendations (crash resume)
+        existing_problem_ids = set()
+        rows = await db.fetch(
+            "SELECT DISTINCT problem_id FROM recommendations WHERE site_id = $1 AND status = 'pending'",
             site_id,
         )
+        existing_problem_ids = {r["problem_id"] for r in rows}
+        if existing_problem_ids:
+            logger.info(
+                "Resuming — %d problems already have recommendations, skipping",
+                len(existing_problem_ids),
+            )
 
-        # Get all problems
+        # Get all unresolved problems
         problems = await db.fetch(
             """
             SELECT cp.id, cp.post_id, cp.problem_type, cp.severity, cp.details,
                    p.title, p.url, p.word_count, p.body_text, p.meta_description,
-                   p.headings, p.publish_date, p.modified_date
+                   p.headings, p.publish_date, p.modified_date, p.body_html
             FROM content_problems cp
             JOIN posts p ON p.id = cp.post_id
             WHERE cp.site_id = $1 AND cp.resolved_at IS NULL
@@ -77,26 +130,115 @@ class RecommendationEngine:
             logger.info("No problems found for site %s", site_id)
             return 0
 
-        generated = 0
-        for problem in problems:
+        # Filter out already-processed problems (crash resilience)
+        remaining = [p for p in problems if p["id"] not in existing_problem_ids]
+        logger.info(
+            "Processing %d problems (%d total, %d already done)",
+            len(remaining), len(problems), len(existing_problem_ids),
+        )
+
+        generated = len(existing_problem_ids)  # Count existing as generated
+        for i, problem in enumerate(remaining):
             try:
                 rec = await self._generate_recommendation(db, site_id, problem)
                 if rec:
                     generated += 1
+                if (i + 1) % 25 == 0:
+                    logger.info("Progress: %d/%d problems processed", i + 1, len(remaining))
             except Exception as e:
                 logger.error(
                     "Failed to generate recommendation for problem %s: %s",
                     problem["id"], e,
                 )
 
+        # Generate merge recs for high-cosine pairs (cos >= 0.90) regardless of severity label
+        merge_count = await self._generate_high_similarity_merges(db, site_id)
+        generated += merge_count
+
         # Also generate growth recommendations for healthy posts
         growth_count = await self._generate_growth_recommendations(db, site_id)
         generated += growth_count
+
+        # Deduplicate reciprocal merge recommendations
+        await self._dedup_merge_recs(db, site_id)
+
+        # Re-score priorities based on post importance (PageRank + word count)
+        await self._rescore_priorities(db, site_id)
 
         logger.info(
             "Generated %d recommendations for site %s", generated, site_id,
         )
         return generated
+
+    async def _dedup_merge_recs(self, db: asyncpg.Connection, site_id: UUID) -> None:
+        """Remove reciprocal merge recommendations.
+
+        If Post A says 'merge B into A' and Post B says 'merge A into B',
+        keep only the one for the stronger post (higher word count).
+        """
+        merge_recs = await db.fetch("""
+            SELECT r.id, r.post_id, r.title, p.word_count
+            FROM recommendations r
+            JOIN posts p ON r.post_id = p.id
+            WHERE r.site_id = $1 AND r.recommendation_type = 'merge' AND r.status = 'pending'
+            ORDER BY p.word_count DESC
+        """, site_id)
+
+        seen_posts: set[str] = set()
+        to_delete: list = []
+        for r in merge_recs:
+            pid = str(r["post_id"])
+            if pid in seen_posts:
+                to_delete.append(r["id"])
+            else:
+                seen_posts.add(pid)
+
+        if to_delete:
+            await db.execute(
+                "DELETE FROM recommendations WHERE id = ANY($1::uuid[])",
+                to_delete,
+            )
+            logger.info("Deduped %d reciprocal merge recommendations", len(to_delete))
+
+    async def _rescore_priorities(self, db: asyncpg.Connection, site_id: UUID) -> None:
+        """Re-score recommendation priorities using post importance signals.
+
+        Posts with higher PageRank and more internal links get their recs
+        upgraded to higher priority (fix important pages first).
+        """
+        recs = await db.fetch("""
+            SELECT r.id, r.post_id, r.priority,
+                   COALESCE(phs.internal_pagerank, 0) as pagerank,
+                   COALESCE(phs.composite_score, 0) as health_score,
+                   COALESCE(p.word_count, 0) as word_count
+            FROM recommendations r
+            JOIN posts p ON r.post_id = p.id
+            LEFT JOIN post_health_scores phs ON phs.post_id = p.id
+            WHERE r.site_id = $1 AND r.status = 'pending'
+            ORDER BY COALESCE(phs.internal_pagerank, 0) DESC
+        """, site_id)
+
+        if not recs:
+            return
+
+        # Top 20% by PageRank → critical, next 30% → high, rest stay as-is
+        total = len(recs)
+        for i, r in enumerate(recs):
+            pct = i / max(total, 1)
+            if pct < 0.10:
+                new_priority = "critical"
+            elif pct < 0.30:
+                new_priority = "high"
+            else:
+                continue  # Keep existing priority
+
+            if r["priority"] != new_priority:
+                await db.execute(
+                    "UPDATE recommendations SET priority = $1 WHERE id = $2",
+                    new_priority, r["id"],
+                )
+
+        logger.info("Re-scored priorities for %d recommendations", total)
 
     async def _generate_recommendation(
         self,
@@ -360,7 +502,7 @@ Respond in JSON:
     ) -> bool:
         """Generate expand/consolidate recommendation for thin content."""
         details = json.loads(problem["details"]) if problem["details"] else {}
-        body = truncate_for_api(problem["body_text"] or "", max_chars=3000, label="thin_post")
+        body = smart_truncate(problem["body_text"] or "", headings=problem.get("headings"), max_chars=4000)
 
         # Find the closest post in the same cluster that could absorb this
         similar_post = await db.fetchrow(
@@ -442,7 +584,7 @@ Respond in JSON:
         """Generate specific SEO fix with actual generated content."""
         ptype = problem["problem_type"]
         gsc_data = await self._get_post_gsc_summary(db, problem["post_id"])
-        body = truncate_for_api(problem["body_text"] or "", max_chars=2000, label="seo_post")
+        body = smart_truncate(problem["body_text"] or "", headings=problem.get("headings"), max_chars=3000)
 
         if ptype == "seo_missing_meta":
             return await self._recommend_meta_description(db, site_id, problem, gsc_data, body)
@@ -577,38 +719,50 @@ Respond in JSON:
         )
         return True
 
+    # Track suggested interlink targets to avoid repetition within a pipeline run
+    _interlink_target_counts: dict[str, int] = {}
+
     async def _recommend_interlinks(
         self, db: asyncpg.Connection, site_id: UUID,
         problem: asyncpg.Record,
     ) -> bool:
-        """Find posts to interlink with."""
+        """Find posts to interlink with — uses embedding similarity, diversifies targets."""
+        # Use embedding similarity to find truly related posts
         related = await db.fetch(
             """
-            SELECT p2.title, p2.url
-            FROM post_clusters pc1
-            JOIN post_clusters pc2 ON pc1.cluster_id = pc2.cluster_id
-            JOIN posts p2 ON p2.id = pc2.post_id
-            WHERE pc1.post_id = $1 AND p2.id != $1
-            ORDER BY p2.word_count DESC
-            LIMIT 5
+            SELECT p.id, p.title, p.url,
+                   1 - (pe1.embedding <=> pe2.embedding) as similarity
+            FROM post_embeddings pe1
+            JOIN post_embeddings pe2 ON pe1.post_id != pe2.post_id
+            JOIN posts p ON p.id = pe2.post_id
+            WHERE pe1.post_id = $1 AND p.site_id = $2
+            ORDER BY pe1.embedding <=> pe2.embedding
+            LIMIT 15
             """,
-            problem["post_id"],
+            problem["post_id"], site_id,
         )
 
         if not related:
-            # Fallback: find by embedding similarity
-            related = await db.fetch(
-                """
-                SELECT p.title, p.url
-                FROM post_embeddings pe1
-                JOIN post_embeddings pe2 ON pe1.post_id != pe2.post_id
-                JOIN posts p ON p.id = pe2.post_id
-                WHERE pe1.post_id = $1 AND p.site_id = $2
-                ORDER BY pe1.embedding <=> pe2.embedding
-                LIMIT 5
-                """,
-                problem["post_id"], site_id,
-            )
+            return False
+
+        # Diversify: skip targets already suggested 3+ times in this run
+        filtered = []
+        for r in related:
+            url = r["url"]
+            count = self._interlink_target_counts.get(url, 0)
+            if count < 3:
+                filtered.append(r)
+                if len(filtered) >= 5:
+                    break
+
+        if not filtered:
+            filtered = list(related[:5])  # Fallback if all over-suggested
+
+        # Track usage
+        for r in filtered:
+            self._interlink_target_counts[r["url"]] = self._interlink_target_counts.get(r["url"], 0) + 1
+
+        related = filtered
 
         actions = []
         for r in related:
@@ -637,8 +791,18 @@ Respond in JSON:
         self, db: asyncpg.Connection, site_id: UUID,
         problem: asyncpg.Record,
     ) -> bool:
+        # Check body_html for actual image tags — skip if images exist (false positive)
+        body_html = problem.get("body_html") or await db.fetchval(
+            "SELECT body_html FROM posts WHERE id = $1", problem["post_id"],
+        )
+        if body_html:
+            html_lower = body_html.lower()
+            if any(tag in html_lower for tag in ['<img', '<picture', '<figure', 'data-src=', 'srcset=', '<svg']):
+                logger.debug("Skipping image rec for %s — images found in HTML", problem["title"][:40])
+                return False
+
         # Get body text for context-aware image suggestions
-        body = await db.fetchval(
+        body = problem.get("body_text") or await db.fetchval(
             "SELECT body_text FROM posts WHERE id = $1",
             problem["post_id"],
         )
@@ -696,6 +860,79 @@ Respond in JSON:
     # ═══════════════════════════════════════════════
     # 2.18: Growth recommendations
     # ═══════════════════════════════════════════════
+
+    async def _generate_high_similarity_merges(
+        self, db: asyncpg.Connection, site_id: UUID, threshold: float = 0.90, max_merges: int = 20,
+    ) -> int:
+        """Generate merge recommendations for any pair with cosine >= threshold.
+
+        These are clearly overlapping posts that should be consolidated,
+        regardless of what auto-calibration labelled them as.
+        """
+        pairs = await db.fetch("""
+            SELECT cp.id, pa.id as a_id, pb.id as b_id,
+                   pa.title as a_title, pb.title as b_title,
+                   pa.word_count as a_wc, pb.word_count as b_wc,
+                   pa.url as a_url, pb.url as b_url,
+                   cp.cosine_similarity
+            FROM cannibalization_pairs cp
+            JOIN posts pa ON cp.post_a_id = pa.id
+            JOIN posts pb ON cp.post_b_id = pb.id
+            WHERE pa.site_id = $1 AND cp.cosine_similarity >= $2
+            ORDER BY cp.cosine_similarity DESC
+            LIMIT $3
+        """, site_id, threshold, max_merges)
+
+        if not pairs:
+            return 0
+
+        generated = 0
+        for pair in pairs:
+            # Skip if already has a merge rec for either post
+            existing = await db.fetchval(
+                """SELECT count(*) FROM recommendations
+                   WHERE site_id = $1 AND recommendation_type = 'merge'
+                   AND post_id IN ($2, $3)""",
+                site_id, pair["a_id"], pair["b_id"],
+            )
+            if existing > 0:
+                continue
+
+            # Determine which post to keep (longer = primary)
+            if (pair["a_wc"] or 0) >= (pair["b_wc"] or 0):
+                primary_id, primary_title = pair["a_id"], pair["a_title"]
+                secondary_title, secondary_url = pair["b_title"], pair["b_url"]
+                merge_into_id = pair["b_id"]
+            else:
+                primary_id, primary_title = pair["b_id"], pair["b_title"]
+                secondary_title, secondary_url = pair["a_title"], pair["a_url"]
+                merge_into_id = pair["a_id"]
+
+            cos = pair["cosine_similarity"]
+            if cos >= 0.99:
+                action = f"301 redirect {secondary_url} → primary post (identical content)"
+                summary = f"Duplicate content detected (cos={cos:.3f}). Redirect the shorter version."
+            else:
+                action = f"Merge unique sections from '{secondary_title}' into '{primary_title}', then redirect"
+                summary = f"High overlap (cos={cos:.3f}). Consolidate into the stronger post."
+
+            await db.execute("""
+                INSERT INTO recommendations
+                    (post_id, site_id, recommendation_type, priority,
+                     estimated_effort_hours, estimated_impact, title, summary,
+                     specific_actions, ai_generated_content)
+                VALUES ($1, $2, 'merge', 'high', 1.0, 'high', $3, $4, $5, $6)
+            """,
+                merge_into_id, site_id,
+                f"Merge: {secondary_title[:60]}",
+                summary,
+                json.dumps([action, f"Update internal links pointing to {secondary_url}", "Set up 301 redirect"]),
+                json.dumps({"cosine_similarity": cos, "primary_post": primary_title, "confidence": min(1.0, cos)}),
+            )
+            generated += 1
+
+        logger.info("Generated %d high-similarity merge recommendations", generated)
+        return generated
 
     async def _generate_growth_recommendations(
         self, db: asyncpg.Connection, site_id: UUID,

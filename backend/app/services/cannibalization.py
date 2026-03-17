@@ -99,9 +99,9 @@ class CannibalizationDetector:
         p97 = float(np.percentile(sims, 97))
 
         # Floor: don't go below absolute minimums
-        flag = max(p85, 0.30)
-        high = max(p92, 0.40)
-        critical = max(p97, 0.50)
+        flag = max(p85, 0.50)
+        high = max(p92, 0.70)
+        critical = max(p97, 0.85)
 
         logger.info(
             "Calibrated thresholds for site %s: flag=%.3f (p85), high=%.3f (p92), "
@@ -124,15 +124,30 @@ class CannibalizationDetector:
 
     async def detect_for_site(
         self, db: asyncpg.Connection, site_id: UUID,
+        max_pairs: int = 200,
     ) -> int:
         """Run cannibalization detection across all clusters for a site.
 
         Auto-calibrates thresholds on first run, then uses site-specific
-        thresholds stored in the sites table.
+        thresholds stored in the sites table. Limits output to max_pairs
+        most severe pairs for actionability.
 
         Returns the number of cannibalization pairs found.
         """
         logger.info("Starting cannibalization detection for site %s", site_id)
+
+        # Pre-filter: detect and flag duplicate content (different URLs, same content)
+        dupes = await db.fetch("""
+            SELECT p1.id as id1, p2.id as id2, p1.url as url1, p2.url as url2
+            FROM posts p1
+            JOIN posts p2 ON p1.content_hash = p2.content_hash
+                AND p1.id < p2.id AND p1.site_id = p2.site_id
+            WHERE p1.site_id = $1 AND p1.content_hash IS NOT NULL
+        """, site_id)
+        if dupes:
+            logger.info("Found %d duplicate content pairs (same content, different URLs)", len(dupes))
+            for d in dupes[:5]:
+                logger.info("  Duplicate: %s ↔ %s", d["url1"][:50], d["url2"][:50])
 
         # Load site-specific calibrated thresholds (or calibrate now)
         site_meta = await db.fetchval(
@@ -174,6 +189,23 @@ class CannibalizationDetector:
                 db, cluster_row["id"], site_id, thresholds=thresholds,
             )
             total_pairs += pairs
+
+        # Prune to max_pairs — keep only the most severe
+        if total_pairs > max_pairs:
+            await db.execute("""
+                DELETE FROM cannibalization_pairs
+                WHERE id NOT IN (
+                    SELECT cp.id FROM cannibalization_pairs cp
+                    JOIN posts p ON cp.post_a_id = p.id
+                    WHERE p.site_id = $1
+                    ORDER BY cp.cosine_similarity DESC
+                    LIMIT $2
+                )
+                AND post_a_id IN (SELECT id FROM posts WHERE site_id = $1)
+            """, site_id, max_pairs)
+            pruned = total_pairs - max_pairs
+            logger.info("Pruned %d low-severity pairs, keeping top %d", pruned, max_pairs)
+            total_pairs = max_pairs
 
         logger.info(
             "Cannibalization detection complete for site %s — %d pairs found",
@@ -362,6 +394,16 @@ class CannibalizationDetector:
             # ── Calculate combined overlap score ──
             overlap_score = self._compute_overlap_score(cosine_sim, n_shared, queries_a, queries_b)
 
+            # Compute numeric severity score (0-100) factoring in cosine + intent match
+            intent_match = 1.0 if (post_a.get("content_intent") == post_b.get("content_intent")) else 0.5
+            severity_score = min(100.0, cosine_sim * 60 + intent_match * 30 + (n_shared / max(len(queries_a or []), 1)) * 10)
+
+            # Compute resolution recommendation
+            resolution = self._recommend_resolution(
+                cosine_sim, severity,
+                post_a.get("content_intent"), post_b.get("content_intent"),
+            )
+
             # ── Insert pair ──
             await db.execute(
                 """
@@ -383,6 +425,22 @@ class CannibalizationDetector:
             pairs_found += 1
 
         return pairs_found
+
+    @staticmethod
+    def _recommend_resolution(
+        cosine_sim: float,
+        severity: str,
+        intent_a: str | None = None,
+        intent_b: str | None = None,
+    ) -> str:
+        """Recommend a resolution action for a cannibalization pair."""
+        if cosine_sim >= 0.95:
+            return "redirect"  # Near-identical → 301 redirect shorter to longer
+        if intent_a and intent_b and intent_a != intent_b:
+            return "differentiate"  # Different intents → refocus each on its intent
+        if severity == "critical" or cosine_sim >= 0.85:
+            return "merge"  # High overlap, same intent → merge into stronger
+        return "monitor"  # Moderate overlap → add internal link, monitor
 
     @staticmethod
     def _compute_severity(

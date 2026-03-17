@@ -169,6 +169,34 @@ class TopicClusterer:
                 )
             cluster_count += 1
 
+        # 8. Recursive sub-clustering for mega-clusters
+        MAX_CLUSTER_SIZE = 50
+        for cluster_label_id, member_indices in cluster_groups.items():
+            if len(member_indices) > MAX_CLUSTER_SIZE:
+                member_post_ids = [post_ids[i] for i in member_indices]
+                member_embeddings = embeddings[member_indices]
+                # Find the cluster_id we just saved
+                parent_id = await db.fetchval(
+                    """SELECT c.id FROM clusters c
+                       JOIN post_clusters pc ON pc.cluster_id = c.id
+                       WHERE c.site_id = $1 AND pc.post_id = $2
+                       LIMIT 1""",
+                    site_id, member_post_ids[0],
+                )
+                if parent_id:
+                    sub_count = await self._recursive_subcluster(
+                        db, site_id, parent_id,
+                        member_embeddings,
+                        member_post_ids,
+                        [titles[i] for i in member_indices],
+                        [urls[i] for i in member_indices],
+                    )
+                    cluster_count += sub_count
+                    logger.info(
+                        "Sub-clustered mega-cluster (%d posts) into %d sub-clusters",
+                        len(member_indices), sub_count,
+                    )
+
         logger.info(
             "Clustering complete for site %s — %d clusters (%d unclustered posts), 2D positions stored",
             site_id, cluster_count, len(unclustered_indices),
@@ -189,14 +217,34 @@ class TopicClusterer:
         n_components = min(UMAP_N_COMPONENTS_CLUSTER, n_posts - 2)
         n_neighbors = min(15, n_posts - 1)
 
+        # Adaptive min_dist: compute mean pairwise cosine similarity on sample
+        from sklearn.metrics.pairwise import cosine_similarity as cos_sim
+        sample_size = min(100, n_posts)
+        sample_indices = np.random.choice(n_posts, sample_size, replace=False)
+        sample = embeddings[sample_indices]
+        sim_matrix = cos_sim(sample)
+        np.fill_diagonal(sim_matrix, 0)
+        mean_sim = sim_matrix.mean()
+        logger.info("Mean pairwise cosine similarity: %.3f", mean_sim)
+
+        if mean_sim > 0.70:
+            # Tight niche — spread more to find differences
+            min_dist = 0.05
+            n_neighbors = min(5, n_posts - 1)
+            logger.info("Tight niche detected (%.3f) — using min_dist=0.05, n_neighbors=%d", mean_sim, n_neighbors)
+        elif mean_sim > 0.50:
+            min_dist = 0.1
+        else:
+            min_dist = 0.0  # Standard diverse content
+
         logger.info(
-            "UMAP clustering: %d dims → %d dims (n_neighbors=%d)",
-            embeddings.shape[1], n_components, n_neighbors,
+            "UMAP clustering: %d dims → %d dims (n_neighbors=%d, min_dist=%.2f)",
+            embeddings.shape[1], n_components, n_neighbors, min_dist,
         )
         reducer_cluster = umap.UMAP(
             n_components=n_components,
             n_neighbors=n_neighbors,
-            min_dist=0.0,
+            min_dist=min_dist,
             metric="cosine",
             random_state=42,
         )
@@ -230,6 +278,26 @@ class TopicClusterer:
         n_noise = int(np.sum(labels == -1))
         logger.info("HDBSCAN found %d clusters, %d noise points", n_clusters, n_noise)
 
+        # Compute silhouette scores for quality assessment
+        if n_clusters >= 2:
+            from sklearn.metrics import silhouette_score, silhouette_samples
+            # Only score non-noise points
+            mask = labels != -1
+            if mask.sum() >= 2:
+                avg_silhouette = float(silhouette_score(reduced[mask], labels[mask]))
+                per_sample = silhouette_samples(reduced[mask], labels[mask])
+                logger.info("Cluster quality — avg silhouette: %.3f", avg_silhouette)
+                # Store per-cluster quality as attribute for later use
+                self._cluster_silhouettes = {}
+                for cl in set(labels[mask]):
+                    cl_scores = per_sample[labels[mask] == cl]
+                    self._cluster_silhouettes[int(cl)] = float(np.mean(cl_scores))
+                    logger.info("  Cluster %d: silhouette %.3f", cl, self._cluster_silhouettes[int(cl)])
+            else:
+                self._cluster_silhouettes = {}
+        else:
+            self._cluster_silhouettes = {}
+
         # ── Step 3: UMAP reduction for 2D visualization ──
         logger.info("UMAP 2D: %d dims → 2 dims for map positions", embeddings.shape[1])
         reducer_2d = umap.UMAP(
@@ -242,6 +310,102 @@ class TopicClusterer:
         positions_2d = reducer_2d.fit_transform(embeddings)
 
         return labels, positions_2d
+
+    async def _recursive_subcluster(
+        self,
+        db: asyncpg.Connection,
+        site_id: UUID,
+        parent_cluster_id: UUID,
+        embeddings: np.ndarray,
+        post_ids: list[UUID],
+        titles: list[str],
+        urls: list[str],
+        depth: int = 0,
+        max_depth: int = 3,
+        max_cluster_size: int = 50,
+    ) -> int:
+        """Recursively sub-cluster a mega-cluster until all children < max_cluster_size."""
+        import umap
+        import hdbscan
+
+        if len(post_ids) <= max_cluster_size or depth >= max_depth:
+            return 0
+
+        logger.info(
+            "Sub-clustering %d posts at depth %d (parent %s)",
+            len(post_ids), depth, parent_cluster_id,
+        )
+
+        n = len(post_ids)
+        n_components = min(10, n - 2)
+        n_neighbors = min(10, n - 1)
+
+        # Tighter UMAP params for sub-clustering within a niche
+        reducer = umap.UMAP(
+            n_components=n_components,
+            n_neighbors=n_neighbors,
+            min_dist=0.05,  # Tighter to separate similar content
+            metric="cosine",
+            random_state=42 + depth,
+        )
+        reduced = reducer.fit_transform(embeddings)
+
+        # More aggressive clustering — smaller clusters
+        min_cluster_size = max(3, n // 10)
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=2,
+            metric="euclidean",
+            cluster_selection_method="eom",
+        )
+        labels = clusterer.fit_predict(reduced)
+
+        unique_labels = set(labels) - {-1}
+        if len(unique_labels) <= 1:
+            # Can't split further — single sub-cluster or all noise
+            logger.info("Sub-clustering at depth %d found only %d sub-clusters, stopping", depth, len(unique_labels))
+            return 0
+
+        sub_count = 0
+        for sub_label in unique_labels:
+            indices = [i for i, l in enumerate(labels) if l == sub_label]
+            sub_post_ids = [post_ids[i] for i in indices]
+            sub_titles = [titles[i] for i in indices]
+            sub_urls = [urls[i] for i in indices]
+            sub_embeddings = embeddings[indices]
+
+            # Label via Claude
+            label, description = await self._label_and_describe_cluster(sub_titles, sub_urls)
+
+            # Save as child cluster with parent_id reference
+            child_id = await db.fetchval(
+                """
+                INSERT INTO clusters (site_id, label, description, post_count, parent_cluster_id)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+                """,
+                site_id, label, description, len(sub_post_ids), parent_cluster_id,
+            )
+
+            # Assign posts to sub-cluster (keep them in parent too)
+            for pid in sub_post_ids:
+                await db.execute(
+                    "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    pid, child_id,
+                )
+
+            sub_count += 1
+
+            # Recurse if still too large
+            if len(sub_post_ids) > max_cluster_size:
+                deeper = await self._recursive_subcluster(
+                    db, site_id, child_id, sub_embeddings,
+                    sub_post_ids, sub_titles, sub_urls,
+                    depth=depth + 1, max_depth=max_depth, max_cluster_size=max_cluster_size,
+                )
+                sub_count += deeper
+
+        return sub_count
 
     @staticmethod
     def _simple_2d_layout(n_posts: int) -> np.ndarray:
@@ -289,22 +453,24 @@ class TopicClusterer:
 
         Single API call for both to save tokens and latency.
         """
-        sample_titles = titles[:7]
+        sample_titles = titles[:12]  # More samples for better labelling
         titles_text = "\n".join(f"- {t}" for t in sample_titles)
 
         await self.rate_limiter.wait()
         try:
             response = await self.anthropic.messages.create(
                 model=CLAUDE_MODEL,
-                max_tokens=150,
+                max_tokens=200,
                 messages=[{
                     "role": "user",
                     "content": (
-                        f"These blog posts are grouped in the same topic cluster:\n"
-                        f"{titles_text}\n\n"
-                        f"Respond with exactly two lines:\n"
-                        f"Line 1: A short 2-4 word topic label\n"
+                        f"These {len(titles)} blog posts are grouped in the same topic cluster:\n"
+                        f"{titles_text}\n"
+                        f"{'...' if len(titles) > 12 else ''}\n\n"
+                        f"Respond with exactly three lines:\n"
+                        f"Line 1: A specific 2-5 word topic label (not generic like 'Sales Strategy')\n"
                         f"Line 2: A one-sentence description of what this cluster covers\n"
+                        f"Line 3: 3-5 sub-themes separated by commas (e.g. 'cold calling scripts, objection handling, voicemail tactics')\n"
                         f"No quotes, no bullets, no extra formatting."
                     ),
                 }],

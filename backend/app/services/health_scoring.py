@@ -172,7 +172,7 @@ class HealthScorer:
         post_rows = await db.fetch(
             """
             SELECT p.id, p.title, p.url, p.publish_date, p.modified_date,
-                   p.word_count, p.headings, p.meta_description
+                   p.word_count, p.headings, p.meta_description, p.body_html
             FROM post_clusters pc
             JOIN posts p ON p.id = pc.post_id
             WHERE pc.cluster_id = $1
@@ -336,11 +336,14 @@ class HealthScorer:
 
             # Factor 4: Freshness (15%)
             last_updated = row["modified_date"] or row["publish_date"]
-            freshness_score = _freshness_score(last_updated, now)
+            freshness_score = _freshness_score(
+                last_updated, now,
+                title=row["title"] or "", url=row.get("url", ""),
+            )
 
             # Factor 5: Content depth (10%)
             wc = row["word_count"] or 0
-            depth_score = _content_depth_score(wc, cluster_avg_word_count)
+            depth_score = _content_depth_score(wc, cluster_avg_word_count, body_html=row.get("body_html"))
 
             # Factor 6: Internal links (10%)
             inbound = inbound_map.get(post_id, 0)
@@ -353,6 +356,7 @@ class HealthScorer:
                 headings=row["headings"],
                 has_outbound=outbound_map.get(post_id, 0) > 0,
                 has_inbound=inbound > 0,
+                body_html=row.get("body_html"),
             )
 
             # Composite (0-100) — dynamically weighted
@@ -372,7 +376,15 @@ class HealthScorer:
 
             # Role assignment
             is_cannibalizing = post_id in cannibalizing_ids
-            role = _assign_role(composite, traffic_contribution, r_pv, is_cannibalizing)
+            has_traffic_data = has_ga4 or has_gsc
+            role = _assign_role(composite, traffic_contribution, r_pv, is_cannibalizing, has_traffic_data=has_traffic_data)
+
+            # Page importance multiplier for prioritisation
+            page_importance = 1.0
+            if inbound >= 10:
+                page_importance = 2.0  # Hub / pillar page
+            elif inbound >= 5:
+                page_importance = 1.5
 
             post_metrics.append({
                 "post_id": post_id,
@@ -461,6 +473,10 @@ def _compute_trend(
     - Dead: <5 clicks total in 60 days
     """
     if total_60d_pv < 5:
+        # If no traffic data at all (GSC not connected), return "unknown"
+        # instead of "dead" — the post may have traffic we can't see
+        if total_60d_pv == 0 and prev_pv == 0 and recent_pv == 0:
+            return "unknown", 30.0  # Neutral score, not penalised
         return "dead", 0.0
 
     if prev_pv == 0:
@@ -513,18 +529,40 @@ def _engagement_score(bounce_rate: float, avg_time_seconds: float) -> float:
     return 0.4 * bounce_score + 0.6 * time_score
 
 
-def _freshness_score(last_updated: datetime | None, now: datetime) -> float:
+def _is_time_sensitive(title: str, url: str) -> bool:
+    """Detect if content is time-sensitive (year references, listicles, rankings)."""
+    import re
+    text = f"{title} {url}".lower()
+    # Year references in title/URL
+    if re.search(r"20[12]\d", text):
+        return True
+    # "best of", "top X", "ranking", pricing pages
+    if any(kw in text for kw in ["best ", "top ", "ranking", "pricing", "review"]):
+        return True
+    return False
+
+
+def _freshness_score(
+    last_updated: datetime | None, now: datetime,
+    title: str = "", url: str = "",
+) -> float:
     """Freshness score 0-100 based on months since last update.
+
+    Evergreen content (how-to, guides, what-is) gets a gentler curve.
+    Time-sensitive content (year in title, best-of lists) gets a steeper curve.
 
     Updated this month = 100
     1-3 months = 80
     3-6 months = 60
     6-12 months = 40
     12-18 months = 20
-    18+ months = 0
+    18+ months = 0 (time-sensitive) or 30 (evergreen)
     """
     if not last_updated:
-        return 20.0  # No date known — assume stale but not dead
+        return 50.0  # No date known — neutral score, don't penalise
+
+    time_sensitive = _is_time_sensitive(title, url)
+    evergreen_floor = 0.0 if time_sensitive else 30.0
 
     if last_updated.tzinfo is None:
         last_updated = last_updated.replace(tzinfo=timezone.utc)
@@ -539,14 +577,51 @@ def _freshness_score(last_updated: datetime | None, now: datetime) -> float:
     if months_old < 6:
         return 60.0
     if months_old < 12:
-        return 40.0
+        return max(40.0, evergreen_floor)
     if months_old < 18:
-        return 20.0
-    return 0.0
+        return max(20.0, evergreen_floor)
+    return evergreen_floor
 
 
-def _content_depth_score(word_count: int, cluster_avg: float) -> float:
+def _content_quality_bonus(body_html: str | None) -> float:
+    """Bonus points (0-15) for content quality signals beyond word count.
+
+    Checks for: lists, data/stats, code blocks, tables, external citations.
+    """
+    if not body_html:
+        return 0.0
+    import re
+    bonus = 0.0
+    html = body_html.lower()
+    # Lists indicate structured, scannable content
+    if "<li" in html:
+        list_count = html.count("<li")
+        bonus += min(3.0, list_count * 0.3)
+    # Data/statistics: numbers with % or $
+    stats = re.findall(r'\d+(?:\.\d+)?(?:%|\$|percent)', html)
+    if stats:
+        bonus += min(3.0, len(stats) * 0.5)
+    # Code blocks indicate technical depth
+    if "<pre" in html or "<code" in html:
+        bonus += 2.0
+    # Tables indicate structured data
+    if "<table" in html:
+        bonus += 2.0
+    # External links (citations / references)
+    ext_links = re.findall(r'href=["\']https?://(?!(?:www\.)?close\.com)', html)
+    if ext_links:
+        bonus += min(3.0, len(ext_links) * 0.3)
+    # Images
+    if "<img" in html or "<picture" in html or "<figure" in html:
+        bonus += 2.0
+    return min(15.0, bonus)
+
+
+def _content_depth_score(word_count: int, cluster_avg: float, body_html: str | None = None) -> float:
     """Content depth score 0-100 based on word count vs cluster average.
+
+    Includes bonus for content quality signals (lists, data, code, tables,
+    citations, images).
 
     Below 500 words: penalized
     At cluster average: 60
@@ -564,14 +639,18 @@ def _content_depth_score(word_count: int, cluster_avg: float) -> float:
     ratio = word_count / cluster_avg
 
     if ratio < 0.5:
-        return 20.0
-    if ratio < 0.75:
-        return 40.0
-    if ratio < 1.0:
-        return 55.0 + (ratio - 0.75) * 20.0  # 55-60
-    if ratio < 1.5:
-        return 60.0 + (ratio - 1.0) * 60.0  # 60-90
-    return min(100.0, 90.0 + (ratio - 1.5) * 20.0)  # 90-100
+        base = 20.0
+    elif ratio < 0.75:
+        base = 40.0
+    elif ratio < 1.0:
+        base = 55.0 + (ratio - 0.75) * 20.0  # 55-60
+    elif ratio < 1.5:
+        base = 60.0 + (ratio - 1.0) * 60.0  # 60-90
+    else:
+        base = min(100.0, 90.0 + (ratio - 1.5) * 20.0)  # 90-100
+
+    bonus = _content_quality_bonus(body_html)
+    return min(100.0, base + bonus)
 
 
 def _technical_seo_score(
@@ -580,29 +659,37 @@ def _technical_seo_score(
     headings: list | str | None,
     has_outbound: bool,
     has_inbound: bool,
+    body_html: str | None = None,
 ) -> float:
-    """Technical SEO score 0-100 based on checklist.
+    """Technical SEO score 0-100 based on extended checklist.
 
-    5 checks, each worth 20 points:
+    8 checks (12.5 points each):
     1. Has meta description
     2. Title length 30-60 chars
     3. Has H2+ headings
     4. Has outbound internal links
     5. Has inbound internal links
+    6. Has Open Graph tags (og:title, og:image)
+    7. Has structured data (JSON-LD)
+    8. Has canonical tag
     """
+    import re as _re
     score = 0.0
+    pts = 12.5  # 8 checks × 12.5 = 100
+
+    html = (body_html or "").lower()
 
     # 1. Meta description
     if meta_description and len(meta_description.strip()) > 10:
-        score += 20.0
+        score += pts
 
     # 2. Title length
     if title:
         title_len = len(title.strip())
         if 30 <= title_len <= 60:
-            score += 20.0
+            score += pts
         elif 20 <= title_len <= 70:
-            score += 10.0  # Partial credit
+            score += pts * 0.5  # Partial credit
 
     # 3. Headings (H2+)
     if headings:
@@ -620,17 +707,29 @@ def _technical_seo_score(
             if isinstance(h, dict)
         )
         if has_h2:
-            score += 20.0
+            score += pts
 
     # 4. Has outbound internal links
     if has_outbound:
-        score += 20.0
+        score += pts
 
     # 5. Has inbound internal links
     if has_inbound:
-        score += 20.0
+        score += pts
 
-    return score
+    # 6. Open Graph tags
+    if html and ('og:title' in html or 'og:image' in html or 'property="og:' in html):
+        score += pts
+
+    # 7. Structured data (JSON-LD)
+    if html and 'application/ld+json' in html:
+        score += pts
+
+    # 8. Canonical tag
+    if html and 'rel="canonical"' in html or "rel='canonical'" in (body_html or "").lower():
+        score += pts
+
+    return min(100.0, score)
 
 
 def _assign_role(
@@ -638,8 +737,25 @@ def _assign_role(
     traffic_contribution: float,
     recent_pv: int,
     is_cannibalizing: bool,
+    has_traffic_data: bool = True,
 ) -> str:
-    """Assign a role to a post based on its health metrics."""
+    """Assign a role to a post based on its health metrics.
+
+    When no traffic data is available (no GSC/GA4), derive role from
+    composite score alone so posts aren't all labelled dead_weight.
+    """
+    if not has_traffic_data:
+        # Derive role from composite score (content quality signals only)
+        if is_cannibalizing:
+            return "competitor"
+        if composite >= 60:
+            return "pillar"
+        if composite >= 35:
+            return "supporter"
+        if composite >= 15:
+            return "at_risk"
+        return "dead_weight"
+
     if composite < 15 or recent_pv == 0:
         return "dead_weight"
     if is_cannibalizing:

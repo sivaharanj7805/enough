@@ -156,24 +156,38 @@ class IntentClassifier:
                 messages=[{
                     "role": "user",
                     "content": (
-                        f"Classify each blog post's PRIMARY search intent as exactly one of: "
-                        f"informational, transactional, commercial, navigational.\n\n"
+                        f"Classify each blog post's search intent.\n\n"
                         f"{posts_text}\n\n"
-                        f"Respond with ONLY the intent for each post, one per line, "
-                        f"in the same order. No numbers, no explanations, just the intent word."
+                        f"For each post, respond with one line in this format:\n"
+                        f"primary_intent|sub_intent|confidence\n\n"
+                        f"Where:\n"
+                        f"- primary_intent: informational, transactional, commercial, or navigational\n"
+                        f"- sub_intent: educational, tutorial, comparison, review, listicle, news, opinion, case_study, tool, or pricing\n"
+                        f"- confidence: 0.0-1.0\n\n"
+                        f"Example: informational|tutorial|0.9\n"
+                        f"No numbers, no explanations, just the three values per line."
                     ),
                 }],
             )
             text = response.content[0].text.strip()
             intents = []
+            self._last_batch_details = []  # Store sub-intent + confidence
             for line in text.split("\n"):
                 line = line.strip().lower()
-                if line in ("informational", "transactional", "commercial", "navigational"):
-                    intents.append(line)
+                parts = line.split("|")
+                primary = parts[0].strip() if parts else "informational"
+                sub = parts[1].strip() if len(parts) > 1 else ""
+                conf = float(parts[2].strip()) if len(parts) > 2 else 0.7
+
+                if primary not in ("informational", "transactional", "commercial", "navigational"):
+                    primary = "informational"
+                intents.append(primary)
+                self._last_batch_details.append({"sub_intent": sub, "confidence": conf})
 
             # Pad with "informational" if Claude returned fewer results
             while len(intents) < len(posts):
                 intents.append("informational")
+                self._last_batch_details.append({"sub_intent": "", "confidence": 0.5})
 
             return intents[:len(posts)]
         except Exception as e:

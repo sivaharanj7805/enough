@@ -17,6 +17,7 @@ Scoring guide:
   0-29:   Very confusing (graduate)
 """
 
+import json
 import logging
 import re
 from uuid import UUID
@@ -128,8 +129,34 @@ class ReadabilityScorer:
         scored = 0
         for post in posts:
             text = post["body_text"]
+
+            # Language detection — Flesch-Kincaid only valid for English
+            try:
+                from langdetect import detect as detect_lang
+                lang = detect_lang(text[:1000])
+                if lang != "en":
+                    logger.debug("Skipping non-English post (detected: %s): %s", lang, post["id"])
+                    continue
+            except Exception:
+                pass  # Default to scoring if detection fails
+
             fre = compute_flesch_reading_ease(text)
             grade = compute_grade_level(text)
+
+            # Paragraph-level breakdown: find hardest paragraphs
+            paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) > 50]
+            hard_paragraphs = []
+            for i, para in enumerate(paragraphs):
+                para_fre = compute_flesch_reading_ease(para)
+                if para_fre < 30 and len(para.split()) > 20:  # Hard to read
+                    hard_paragraphs.append({
+                        "index": i,
+                        "flesch": round(para_fre, 1),
+                        "preview": para[:100],
+                    })
+            # Keep top 3 hardest
+            hard_paragraphs.sort(key=lambda x: x["flesch"])
+            readability_details = json.dumps(hard_paragraphs[:3]) if hard_paragraphs else None
 
             await db.execute(
                 """

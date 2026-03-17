@@ -50,6 +50,27 @@ class LinkSuggestion:
     source_cluster: str           # Cluster of source post
     target_cluster: str           # Cluster of target post
     priority: str                 # high/medium/low
+    placement_hint: str = ""      # Where in the source post to add the link
+
+
+def _find_placement_hint(source_text: str, target_keywords: list[str]) -> str:
+    """Find the best paragraph in source post to place a link to target."""
+    if not source_text or not target_keywords:
+        return ""
+    paragraphs = source_text.split("\n\n")
+    best_para = ""
+    best_score = 0
+    for i, para in enumerate(paragraphs):
+        if len(para.strip()) < 30:
+            continue
+        para_lower = para.lower()
+        score = sum(1 for kw in target_keywords if kw in para_lower)
+        if score > best_score:
+            best_score = score
+            best_para = para.strip()[:120]
+    if best_para:
+        return f"Near: \"{best_para}...\""
+    return ""
 
 
 def extract_keywords(text: str, top_n: int = 20) -> list[str]:
@@ -232,14 +253,30 @@ class LinkSuggestionEngine:
                     "authority": authority,
                 })
 
-            # Sort: cross-cluster first, then by authority (strong → weak)
+            # Sort: cross-cluster first, then by similarity × authority
             candidates.sort(
-                key=lambda x: (x["is_cross_cluster"], x["authority"]),
+                key=lambda x: (
+                    x["is_cross_cluster"],
+                    x["similarity"] * 0.6 + (x["authority"] / 100) * 0.4,
+                ),
                 reverse=True,
             )
 
-            # Take top N suggestions
-            for cand in candidates[:MAX_SUGGESTIONS_PER_POST]:
+            # Ensure mix: at least 40% cross-cluster if available
+            cross = [c for c in candidates if c["is_cross_cluster"]]
+            within = [c for c in candidates if not c["is_cross_cluster"]]
+            n = MAX_SUGGESTIONS_PER_POST
+            n_cross = min(len(cross), max(2, int(n * 0.4)))
+            n_within = min(len(within), n - n_cross)
+            balanced = cross[:n_cross] + within[:n_within]
+            # Fill remaining slots
+            remaining = n - len(balanced)
+            if remaining > 0:
+                used_ids = {c["post"]["id"] for c in balanced}
+                extra = [c for c in candidates if c["post"]["id"] not in used_ids]
+                balanced.extend(extra[:remaining])
+
+            for cand in balanced:
                 other = cand["post"]
 
                 # Find shared keywords for anchor text
@@ -272,6 +309,10 @@ class LinkSuggestionEngine:
                         f"'{post['cluster_label'] or 'cluster'}'."
                     )
 
+                # Find best placement in source post
+                target_kw = post_keywords.get(other["id"], [])[:5]
+                placement = _find_placement_hint(post["body_text"] or "", target_kw)
+
                 suggestions.append(LinkSuggestion(
                     source_post_id=pid,
                     source_title=post["title"] or "",
@@ -284,7 +325,32 @@ class LinkSuggestionEngine:
                     source_cluster=post["cluster_label"] or "",
                     target_cluster=other["cluster_label"] or "",
                     priority=priority,
+                    placement_hint=placement,
                 ))
+
+        # Flag circular link suggestions (A→B→C→A)
+        try:
+            import networkx as nx
+            G = nx.DiGraph()
+            # Add existing links
+            for src, tgt in existing_links:
+                G.add_edge(str(src), str(tgt))
+            # Add suggested links and check for short cycles
+            flagged = 0
+            for s in suggestions:
+                G.add_edge(str(s.source_post_id), str(s.target_post_id))
+                # Check if this creates a short cycle
+                try:
+                    cycle = nx.shortest_path(G, str(s.target_post_id), str(s.source_post_id))
+                    if len(cycle) <= 3:
+                        s.reason += " ⚠️ Creates circular link path."
+                        flagged += 1
+                except nx.NetworkXNoPath:
+                    pass
+            if flagged:
+                logger.info("Flagged %d suggestions that create circular paths", flagged)
+        except ImportError:
+            pass
 
         logger.info("Generated %d link suggestions for site %s",
                      len(suggestions), site_id)
