@@ -165,8 +165,14 @@ class CannibalizationDetector:
         else:
             thresholds = await self.calibrate_thresholds(db, site_id)
 
+        # Only scan leaf clusters (no children) to avoid redundant pairwise work
+        # on parent clusters whose posts are already covered by child clusters
         clusters = await db.fetch(
-            "SELECT id, post_count FROM clusters WHERE site_id = $1",
+            """SELECT id, post_count FROM clusters WHERE site_id = $1
+               AND id NOT IN (
+                   SELECT parent_cluster_id FROM clusters
+                   WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+               )""",
             site_id,
         )
 
@@ -234,6 +240,7 @@ class CannibalizationDetector:
         posts = await db.fetch(
             """
             SELECT p.id, p.title, p.url, p.word_count,
+                   p.content_hash, p.content_intent,
                    pe.embedding::text AS embedding_text
             FROM post_clusters pc
             JOIN posts p ON p.id = pc.post_id
@@ -345,6 +352,12 @@ class CannibalizationDetector:
             pid_a, pid_b = pair_key
             post_a = post_by_id[pid_a]
             post_b = post_by_id[pid_b]
+
+            # ── Skip duplicate content (same hash = redirect issue, not cannibalization) ──
+            hash_a = post_a.get("content_hash")
+            hash_b = post_b.get("content_hash")
+            if hash_a and hash_b and hash_a == hash_b:
+                continue
 
             # ── Signal 1: Embedding cosine similarity ──
             cosine_sim = hnsw_candidates.get(pair_key) if use_hnsw else None

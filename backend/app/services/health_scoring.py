@@ -403,7 +403,7 @@ class HealthScorer:
                 "publish_date": row["publish_date"],
             })
 
-        # ── Batch insert health scores ──
+        # ── Batch upsert health scores (one per post, keep highest) ──
         await db.executemany(
             """
             INSERT INTO post_health_scores
@@ -412,6 +412,17 @@ class HealthScorer:
                  engagement_score, freshness_score, content_depth_score,
                  technical_seo_score)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (post_id) DO UPDATE SET
+                traffic_contribution = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.traffic_contribution ELSE post_health_scores.traffic_contribution END,
+                ranking_strength = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.ranking_strength ELSE post_health_scores.ranking_strength END,
+                trend = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.trend ELSE post_health_scores.trend END,
+                internal_link_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.internal_link_score ELSE post_health_scores.internal_link_score END,
+                composite_score = GREATEST(EXCLUDED.composite_score, post_health_scores.composite_score),
+                role = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.role ELSE post_health_scores.role END,
+                engagement_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.engagement_score ELSE post_health_scores.engagement_score END,
+                freshness_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.freshness_score ELSE post_health_scores.freshness_score END,
+                content_depth_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.content_depth_score ELSE post_health_scores.content_depth_score END,
+                technical_seo_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.technical_seo_score ELSE post_health_scores.technical_seo_score END
             """,
             [
                 (

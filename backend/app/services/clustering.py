@@ -44,8 +44,12 @@ class TopicClusterer:
         self.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.rate_limiter = RateLimiter(requests_per_second=3)
 
-    async def cluster_site(self, db: asyncpg.Connection, site_id: UUID) -> int:
+    async def cluster_site(self, db: asyncpg.Connection, site_id: UUID, skip_labeling: bool = False) -> int:
         """Run full clustering pipeline for a site.
+
+        Args:
+            skip_labeling: If True, skip Claude API calls for cluster labels.
+                           Use fast_cluster_labels.py for TF-IDF labels instead.
 
         Steps:
           1. Fetch all embeddings
@@ -125,10 +129,14 @@ class TopicClusterer:
             member_urls = [urls[i] for i in member_indices]
             member_post_ids = [post_ids[i] for i in member_indices]
 
-            # Label + describe via Claude (single API call)
-            label, description = await self._label_and_describe_cluster(
-                member_titles, member_urls,
-            )
+            # Label + describe (Claude API or placeholder for fast mode)
+            if skip_labeling:
+                label = f"Cluster {cluster_count + 1} ({len(member_post_ids)} posts)"
+                description = ""
+            else:
+                label, description = await self._label_and_describe_cluster(
+                    member_titles, member_urls,
+                )
 
             cluster_id = await db.fetchval(
                 """
@@ -190,6 +198,7 @@ class TopicClusterer:
                         member_post_ids,
                         [titles[i] for i in member_indices],
                         [urls[i] for i in member_indices],
+                        skip_labeling=skip_labeling,
                     )
                     cluster_count += sub_count
                     logger.info(
@@ -323,6 +332,7 @@ class TopicClusterer:
         depth: int = 0,
         max_depth: int = 3,
         max_cluster_size: int = 50,
+        skip_labeling: bool = False,
     ) -> int:
         """Recursively sub-cluster a mega-cluster until all children < max_cluster_size."""
         import umap
@@ -374,8 +384,12 @@ class TopicClusterer:
             sub_urls = [urls[i] for i in indices]
             sub_embeddings = embeddings[indices]
 
-            # Label via Claude
-            label, description = await self._label_and_describe_cluster(sub_titles, sub_urls)
+            # Label (Claude API or placeholder for fast mode)
+            if skip_labeling:
+                label = f"Sub-cluster {sub_count + 1} ({len(sub_post_ids)} posts)"
+                description = ""
+            else:
+                label, description = await self._label_and_describe_cluster(sub_titles, sub_urls)
 
             # Save as child cluster with parent_id reference
             child_id = await db.fetchval(
@@ -402,6 +416,7 @@ class TopicClusterer:
                     db, site_id, child_id, sub_embeddings,
                     sub_post_ids, sub_titles, sub_urls,
                     depth=depth + 1, max_depth=max_depth, max_cluster_size=max_cluster_size,
+                    skip_labeling=skip_labeling,
                 )
                 sub_count += deeper
 

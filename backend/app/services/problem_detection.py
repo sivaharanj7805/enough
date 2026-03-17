@@ -569,9 +569,11 @@ class ProblemDetector:
                 found += 1
 
             # 5. No images — check multiple image patterns (JS-rendered, lazy-loaded, etc.)
+            # Skip if body_html is trafilatura XML output (strips all media elements)
             body_html = r["body_html"] or ""
             html_lower = body_html.lower()
-            has_images = any(tag in html_lower for tag in [
+            is_trafilatura_xml = html_lower.startswith("<doc") or "<doc " in html_lower[:100]
+            has_images = is_trafilatura_xml or any(tag in html_lower for tag in [
                 '<img', '<picture', '<figure', '<svg',
                 'data-src=', 'srcset=', 'background-image:',
                 'loading="lazy"', "loading='lazy'",

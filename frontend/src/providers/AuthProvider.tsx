@@ -28,6 +28,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Demo mode: bypass Supabase auth with pipeline test user
+    const isDemo = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+    if (isDemo) {
+      const demoUser = {
+        id: '11111111-1111-1111-1111-111111111111',
+        email: 'pipeline-test@enough.app',
+        user_metadata: { name: 'Demo User' },
+      } as unknown as User;
+      const demoSession = {
+        access_token: '11111111-1111-1111-1111-111111111111',
+        user: demoUser,
+      } as unknown as Session;
+      setUser(demoUser);
+      setSession(demoSession);
+      setLoading(false);
+      return;
+    }
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);

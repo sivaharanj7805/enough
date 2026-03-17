@@ -314,8 +314,11 @@ class SitemapCrawler:
         meta_desc_tag = soup.find("meta", attrs={"name": "description"})
         meta_description = meta_desc_tag.get("content", "").strip() if meta_desc_tag else None
 
-        # Extract HTML of main content area
-        body_html = trafilatura.extract(html, output_format="xml") or html
+        # Extract HTML of main content area — preserve images and structure
+        # Use BeautifulSoup to find the main content area instead of trafilatura XML
+        # (trafilatura XML strips media elements like <img>, <picture>, <figure>)
+        main_content = soup.find("main") or soup.find("article") or soup.find("div", class_=lambda c: c and ("content" in c.lower() or "post" in c.lower() or "entry" in c.lower())) or soup.find("body")
+        body_html = str(main_content) if main_content else html
 
         # Extract internal links from full page HTML
         internal_links = self._extract_internal_links(soup, url)

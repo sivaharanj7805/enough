@@ -61,7 +61,7 @@ if settings.allowed_host_list:
 # CORS (must be added after other middleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=["*"],  # Demo mode — allow all origins for tunnel
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Cron-Secret", "X-Request-Id"],
