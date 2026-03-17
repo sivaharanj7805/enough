@@ -429,7 +429,8 @@ class ProblemDetector:
             WHERE p.site_id = $1
               AND p.word_count IS NOT NULL
               AND p.word_count < ca.avg_wc * 0.5
-              AND ca.avg_wc > 500
+              AND p.word_count < 800
+              AND ca.avg_wc > 1500
             """,
             site_id,
         )
@@ -527,11 +528,16 @@ class ProblemDetector:
             # 2. Title length
             title = r["title"] or ""
             title_len = len(title.strip())
-            if title_len < 30 or title_len > 60:
+            if title_len < 20 or title_len > 70:
+                # Only flag truly problematic titles:
+                # <20 chars: almost certainly truncated/broken
+                # >70 chars: will be cut off in SERPs (Google shows ~55-60)
+                # 60-70 range is intentional for descriptive SaaS titles
+                severity = "medium" if title_len < 20 else "low"
                 await self._insert_problem(
-                    db, r["id"], site_id, "seo_title_length", "low",
+                    db, r["id"], site_id, "seo_title_length", severity,
                     {
-                        "issue": f"Title is {title_len} chars (ideal: 30-60)",
+                        "issue": f"Title is {title_len} chars (ideal: 30-70)",
                         "title_length": title_len,
                     },
                 )

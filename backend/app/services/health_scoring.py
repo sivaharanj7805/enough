@@ -570,10 +570,10 @@ def _freshness_score(
     18+ months = 0 (time-sensitive) or 30 (evergreen)
     """
     if not last_updated:
-        return 50.0  # No date known — neutral score, don't penalise
+        return 60.0  # No date known — slightly above neutral, don't penalise
 
     time_sensitive = _is_time_sensitive(title, url)
-    evergreen_floor = 0.0 if time_sensitive else 30.0
+    evergreen_floor = 10.0 if time_sensitive else 45.0
 
     if last_updated.tzinfo is None:
         last_updated = last_updated.replace(tzinfo=timezone.utc)
@@ -584,13 +584,16 @@ def _freshness_score(
     if months_old < 1:
         return 100.0
     if months_old < 3:
-        return 80.0
+        return 90.0
     if months_old < 6:
-        return 60.0
+        return 75.0
     if months_old < 12:
-        return max(40.0, evergreen_floor)
-    if months_old < 18:
-        return max(20.0, evergreen_floor)
+        return max(60.0, evergreen_floor)
+    if months_old < 24:
+        return max(50.0, evergreen_floor)
+    if months_old < 48:
+        return max(45.0, evergreen_floor)
+    # 4+ years old — still valuable if evergreen
     return evergreen_floor
 
 
