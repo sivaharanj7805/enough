@@ -4,6 +4,9 @@ import logging
 from uuid import UUID
 from typing import Annotated
 
+# In-memory lock to prevent concurrent pipeline runs per site
+_running_pipelines: set[UUID] = set()
+
 import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from slowapi import Limiter
@@ -76,6 +79,14 @@ async def _run_clustering(site_id: UUID) -> None:
             logger.info("BG task: clustering complete — %d clusters for site %s", count, site_id)
         except Exception as e:
             logger.error("BG task: clustering failed for site %s: %s", site_id, e)
+
+
+async def _run_clustering_safe(site_id: UUID) -> None:
+    """Wrapper that clears the pipeline lock after completion."""
+    try:
+        await _run_clustering(site_id)
+    finally:
+        _running_pipelines.discard(site_id)
 
 
 @with_retry(max_retries=2, base_delay=5.0)
@@ -278,7 +289,10 @@ async def trigger_clustering(
 ):
     """Trigger topic clustering for a site (background task)."""
     await _verify_site(site_id, user_id, db)
-    background_tasks.add_task(_run_clustering, site_id)
+    if site_id in _running_pipelines:
+        raise HTTPException(status_code=429, detail="Pipeline already running for this site")
+    _running_pipelines.add(site_id)
+    background_tasks.add_task(_run_clustering_safe, site_id)
     return TaskTriggerResponse(message="Clustering started", site_id=site_id)
 
 
@@ -746,6 +760,8 @@ async def list_problems(
     db: Annotated[asyncpg.Connection, Depends(get_db)],
     problem_type: str | None = None,
     severity: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
 ):
     """List all detected content problems for a site."""
     await _verify_site(site_id, user_id, db)
@@ -767,6 +783,8 @@ async def list_problems(
         idx += 1
 
     query += " ORDER BY CASE cp.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
+    query += f" LIMIT ${idx} OFFSET ${idx + 1}"
+    params.extend([min(limit, 500), offset])
 
     rows = await db.fetch(query, *params)
     import json

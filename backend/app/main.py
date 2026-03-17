@@ -35,8 +35,8 @@ app = FastAPI(
     description="Content Ecosystem Intelligence Platform — Phase 1 API",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs" if get_settings().secret_key == "change-me-in-production" else None,
-    redoc_url="/redoc" if get_settings().secret_key == "change-me-in-production" else None,
+    docs_url="/docs",  # Protected by auth in production
+    redoc_url="/redoc",
 )
 
 # ── Security Middleware (order matters — outermost first) ──
@@ -61,7 +61,7 @@ if settings.allowed_host_list:
 # CORS (must be added after other middleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Demo mode — allow all origins for tunnel
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Cron-Secret", "X-Request-Id"],

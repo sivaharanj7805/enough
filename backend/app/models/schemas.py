@@ -171,6 +171,7 @@ class PostHealthResponse(BaseModel):
     traffic_contribution: float | None
     ranking_strength: float | None
     internal_link_score: float | None
+    data_completeness: float | None = None  # 0.0-1.0, fraction of signals available
 
 
 class ClusterResponse(BaseModel):

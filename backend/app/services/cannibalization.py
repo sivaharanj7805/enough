@@ -134,6 +134,16 @@ class CannibalizationDetector:
 
         Returns the number of cannibalization pairs found.
         """
+        try:
+            return await self._detect_for_site_impl(db, site_id, max_pairs)
+        except Exception as e:
+            logger.error("Cannibalization detection failed for site %s: %s", site_id, e, exc_info=True)
+            raise
+
+    async def _detect_for_site_impl(
+        self, db: asyncpg.Connection, site_id: UUID,
+        max_pairs: int = 200,
+    ) -> int:
         logger.info("Starting cannibalization detection for site %s", site_id)
 
         # Pre-filter: detect and flag duplicate content (different URLs, same content)
