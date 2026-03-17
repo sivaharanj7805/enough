@@ -327,9 +327,11 @@ class SitemapCrawler:
         parsed = urlparse(url)
         slug = parsed.path.strip("/").split("/")[-1] if parsed.path.strip("/") else None
 
-        # Attempt to find publish date via trafilatura metadata
+        # Attempt to find publish/modified dates via trafilatura metadata + meta tags
         metadata = trafilatura.extract_metadata(html)
         publish_date = None
+        modified_date = None
+
         if metadata and metadata.date:
             from datetime import datetime, timezone
             try:
@@ -339,6 +341,58 @@ class SitemapCrawler:
             except (ValueError, TypeError):
                 pass
 
+        # Extract modified_date from meta tags (trafilatura doesn't always get it)
+        from datetime import datetime, timezone
+        modified_meta = (
+            soup.find("meta", attrs={"property": "article:modified_time"})
+            or soup.find("meta", attrs={"property": "og:updated_time"})
+            or soup.find("meta", attrs={"name": "last-modified"})
+            or soup.find("meta", attrs={"itemprop": "dateModified"})
+        )
+        if modified_meta and modified_meta.get("content"):
+            try:
+                modified_date = datetime.fromisoformat(
+                    modified_meta["content"].replace("Z", "+00:00")
+                ).replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError):
+                pass
+
+        # Also try to extract publish_date from meta if trafilatura missed it
+        if not publish_date:
+            pub_meta = (
+                soup.find("meta", attrs={"property": "article:published_time"})
+                or soup.find("meta", attrs={"property": "og:published_time"})
+                or soup.find("meta", attrs={"itemprop": "datePublished"})
+            )
+            if pub_meta and pub_meta.get("content"):
+                try:
+                    publish_date = datetime.fromisoformat(
+                        pub_meta["content"].replace("Z", "+00:00")
+                    ).replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    pass
+
+        # Extract time tags as fallback (common in blog templates)
+        if not publish_date or not modified_date:
+            time_tags = soup.find_all("time", attrs={"datetime": True})
+            for tt in time_tags:
+                try:
+                    dt = datetime.fromisoformat(
+                        tt["datetime"].replace("Z", "+00:00")
+                    ).replace(tzinfo=timezone.utc)
+                    classes = tt.get("class", [])
+                    if isinstance(classes, str):
+                        classes = [classes]
+                    cls_str = " ".join(classes).lower()
+                    if not publish_date and ("publish" in cls_str or "created" in cls_str or "entry-date" in cls_str):
+                        publish_date = dt
+                    elif not modified_date and ("modif" in cls_str or "update" in cls_str):
+                        modified_date = dt
+                    elif not publish_date:
+                        publish_date = dt  # First time tag as fallback
+                except (ValueError, TypeError):
+                    pass
+
         return NormalizedPost(
             url=url,
             slug=slug,
@@ -346,6 +400,7 @@ class SitemapCrawler:
             body_text=body_text,
             body_html=body_html,
             publish_date=publish_date,
+            modified_date=modified_date,
             internal_links=internal_links,
             cms_categories=[],
             cms_tags=[],
