@@ -540,6 +540,19 @@ async def get_site_health(
     # Crawl data = 40%, GA4 = 30%, GSC = 30%
     data_completeness = 0.4 + (0.3 if has_ga4 else 0.0) + (0.3 if has_gsc else 0.0)
 
+    # Freshness coverage — how many posts have a modified_date
+    posts_with_modified = await db.fetchval(
+        "SELECT COUNT(*) FROM posts WHERE site_id = $1 AND modified_date IS NOT NULL",
+        site_id,
+    )
+    modified_date_coverage = posts_with_modified / total_posts if total_posts > 0 else 0.0
+
+    # AI enrichment coverage — how many recs have Claude guidance
+    ai_enriched_count = await db.fetchval(
+        "SELECT COUNT(*) FROM recommendations WHERE site_id = $1 AND specific_actions::text LIKE '%ai_enriched%'",
+        site_id,
+    )
+
     return SiteHealthResponse(
         content_health_score=float(avg_health),
         total_posts=total_posts,
@@ -551,6 +564,8 @@ async def get_site_health(
         clusters=clusters,
         trends=trends,
         data_completeness=data_completeness,
+        modified_date_coverage=round(modified_date_coverage, 3),
+        ai_enriched_count=int(ai_enriched_count or 0),
     )
 
 

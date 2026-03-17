@@ -121,6 +121,7 @@ export interface Cluster {
   id: string;
   site_id: string;
   label: string | null;
+  description: string | null;
   ecosystem_state: EcosystemState | null;
   health_score: number | null;
   post_count: number;
@@ -157,7 +158,9 @@ export interface SiteHealth {
   content_efficiency_ratio: number;
   clusters: ClusterSummary[];
   trends: Record<string, number>; // { "30d": number, "60d": number, "90d": number }
-  data_completeness: number; // 0.0-1.0 fraction of available data signals
+  data_completeness: number
+  modified_date_coverage: number
+  ai_enriched_count: number; // 0.0-1.0 fraction of available data signals
 }
 
 // ─── Consolidation ──────────────────────────────

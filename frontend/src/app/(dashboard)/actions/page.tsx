@@ -119,17 +119,74 @@ function ActionCard({
         <div className="px-4 pb-4 border-t border-brand-border/50 pt-3">
           <p className="text-sm text-brand-text-muted">{rec.summary}</p>
 
-          {rec.specific_actions.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              <p className="text-xs font-medium uppercase tracking-wider text-brand-text-muted">Action Items</p>
-              {rec.specific_actions.map((action, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm text-brand-text">
-                  <span className="text-brand-accent mt-0.5 shrink-0">•</span>
-                  <span>{action}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* AI Enriched Guidance */}
+          {(() => {
+            // Check if specific_actions contains AI enrichment
+            const actionsRaw = rec.specific_actions as unknown;
+            if (actionsRaw && typeof actionsRaw === 'object' && !Array.isArray(actionsRaw)) {
+              const enriched = actionsRaw as { ai_enriched?: boolean; guidance?: Record<string, unknown>; original_actions?: string[] };
+              if (enriched.ai_enriched && enriched.guidance) {
+                const g = enriched.guidance as Record<string, unknown>;
+                return (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 text-xs font-medium">
+                        ✦ AI Analysis
+                      </span>
+                    </div>
+                    {Object.entries(g).map(([key, val]) => {
+                      if (!val) return null;
+                      const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                      if (Array.isArray(val)) {
+                        return (
+                          <div key={key}>
+                            <p className="text-xs font-medium text-brand-text-muted mb-1">{label}</p>
+                            {(val as string[]).map((item, i) => (
+                              <div key={i} className="flex items-start gap-2 text-sm text-brand-text mb-1">
+                                <span className="text-purple-400 mt-0.5 shrink-0">›</span>
+                                <span>{item}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={key}>
+                          <p className="text-xs font-medium text-brand-text-muted">{label}</p>
+                          <p className="text-sm text-brand-text mt-0.5">{String(val)}</p>
+                        </div>
+                      );
+                    })}
+                    {enriched.original_actions && enriched.original_actions.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-brand-border/30">
+                        <p className="text-xs text-brand-text-muted mb-1">Quick actions</p>
+                        {enriched.original_actions.map((action, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs text-brand-text-muted">
+                            <span className="text-brand-accent mt-0.5 shrink-0">•</span>
+                            <span>{action}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+            }
+
+            // Fallback: plain array
+            const actions = Array.isArray(actionsRaw) ? actionsRaw as string[] : [];
+            return actions.length > 0 ? (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-xs font-medium uppercase tracking-wider text-brand-text-muted">Action Items</p>
+                {actions.map((action, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm text-brand-text">
+                    <span className="text-brand-accent mt-0.5 shrink-0">•</span>
+                    <span>{action}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null;
+          })()}
 
           {rec.ai_generated_content && Object.keys(rec.ai_generated_content).length > 0 && (() => {
             const ai = rec.ai_generated_content as Record<string, string>;

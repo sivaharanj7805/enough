@@ -23,6 +23,7 @@ function ClusterCard({
   cluster: {
     id: string;
     label: string | null;
+    description?: string | null;
     ecosystem_state: EcosystemState | null;
     health_score: number | null;
     post_count: number;
@@ -47,7 +48,10 @@ function ClusterCard({
             <h3 className="text-sm font-semibold text-brand-text group-hover:text-brand-accent transition-colors line-clamp-1">
               {cluster.label || 'Unlabeled Cluster'}
             </h3>
-            {ecoInfo && (
+            {cluster.description && (
+              <p className="text-xs text-brand-text-muted mt-1 line-clamp-2">{cluster.description}</p>
+            )}
+            {ecoInfo && !cluster.description && (
               <Badge className="mt-1.5" color={ecoInfo.border}>
                 {ecoInfo.label}
               </Badge>

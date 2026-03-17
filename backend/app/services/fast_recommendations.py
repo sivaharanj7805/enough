@@ -292,10 +292,12 @@ async def generate_fast_recommendations(
             title, summary, actions, None,
         ))
 
-    # ── Link suggestion recommendations (top orphan + low-link posts) ──
+    # ── Link suggestion recommendations — candidate-aware orphan recs ──
+    # Use pgvector similarity to find the most relevant existing posts to link FROM
     orphan_posts = await db.fetch("""
-        SELECT p.id, p.title, p.url
+        SELECT p.id, p.title, p.url, pe.embedding
         FROM posts p
+        JOIN post_embeddings pe ON pe.post_id = p.id
         WHERE p.site_id = $1
         AND p.id NOT IN (
             SELECT DISTINCT target_post_id FROM internal_links 
@@ -305,24 +307,33 @@ async def generate_fast_recommendations(
     """, site_id)
 
     for orphan in orphan_posts:
-        # Find best link sources
+        # Find 5 most similar posts that already have inbound links (good link sources)
         link_sources = await db.fetch("""
-            SELECT ls.source_post_id, p.title, p.url, ls.similarity
-            FROM link_suggestions ls
-            JOIN posts p ON p.id = ls.source_post_id
-            WHERE ls.target_post_id = $1
-            ORDER BY ls.similarity DESC
+            SELECT p.id, p.title, p.url,
+                   1 - (pe.embedding <=> $2::vector) AS similarity
+            FROM posts p
+            JOIN post_embeddings pe ON pe.post_id = p.id
+            WHERE p.site_id = $1
+              AND p.id != $3
+              AND p.id IN (
+                  SELECT DISTINCT source_post_id FROM internal_links WHERE site_id = $1
+              )
+            ORDER BY pe.embedding <=> $2::vector
             LIMIT 5
-        """, orphan["id"])
+        """, site_id, orphan["embedding"], orphan["id"])
 
         if not link_sources:
             continue
 
-        source_list = [f"• {s['title'][:50]} ({s['url']})" for s in link_sources[:3]]
+        source_list = [
+            f"• \"{s['title'][:55]}\" — use anchor text related to the orphan topic"
+            for s in link_sources[:3]
+        ]
         actions = [
-            f"Add a link to '{orphan['title'][:50]}' from these posts:",
+            f"This post has 0 inbound internal links — it won't be crawled or ranked effectively.",
+            "Add a contextual link from these highly relevant posts:",
             *source_list,
-            "Use descriptive anchor text related to the target post's topic",
+            "Aim for anchor text that describes the target topic, not generic 'click here'.",
         ]
 
         key = (orphan["id"], "interlink")
@@ -331,8 +342,8 @@ async def generate_fast_recommendations(
             recs_to_insert.append((
                 orphan["id"], site_id, None, "interlink",
                 "high", 0.5, "medium",
-                f"Fix orphan: {orphan['title'][:60]}", 
-                f"This post has no inbound internal links. Add links from the {len(link_sources)} most related posts.",
+                f"Fix orphan: {orphan['title'][:60]}",
+                f"This post has no inbound internal links. Link to it from {len(link_sources)} related posts that cover similar topics.",
                 actions, None,
             ))
 

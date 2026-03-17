@@ -377,9 +377,16 @@ class ProblemDetector:
         # ── 1. Absolute thin content (content-type-aware thresholds) ──
         thin_rows = await db.fetch(
             """
-            SELECT id, title, url, word_count
-            FROM posts
-            WHERE site_id = $1 AND word_count > 0
+            SELECT p.id, p.title, p.url, p.word_count, p.headings, p.body_html,
+                   COALESCE(il.inbound_links, 0) AS inbound_links
+            FROM posts p
+            LEFT JOIN (
+                SELECT target_post_id, COUNT(*) AS inbound_links
+                FROM internal_links
+                WHERE target_post_id IN (SELECT id FROM posts WHERE site_id = $1)
+                GROUP BY target_post_id
+            ) il ON il.target_post_id = p.id
+            WHERE p.site_id = $1 AND p.word_count > 0
             """,
             site_id,
         )
@@ -397,6 +404,26 @@ class ProblemDetector:
                 threshold = 500  # Default
 
             if r["word_count"] >= threshold:
+                continue
+
+            # Multi-signal check: low word count alone is not enough if the post
+            # has good structure (headings + images + inbound links)
+            # A 600-word post with 3 H2s, images, and 8 inbound links is not thin
+            headings_json = r.get("headings") or "[]"
+            if isinstance(headings_json, str):
+                import json as _json
+                try:
+                    headings_list = _json.loads(headings_json)
+                except Exception:
+                    headings_list = []
+            else:
+                headings_list = headings_json or []
+            h2_count = sum(1 for h in headings_list if isinstance(h, dict) and h.get("level") in ("h2", "h3"))
+            has_images = "<img" in (r.get("body_html") or "")
+            inbound = r.get("inbound_links", 0) or 0
+
+            # If post has 2+ H2s AND images AND 5+ inbound links, it's probably not thin
+            if h2_count >= 2 and has_images and inbound >= 5:
                 continue
 
             await db.execute(

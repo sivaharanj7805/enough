@@ -358,10 +358,21 @@ export default function OverviewPage() {
           {health.data_completeness < 1.0 && (
             <div className="mt-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
               <p className="text-xs text-amber-400 text-center">
-                Based on {Math.round(health.data_completeness * 100)}% of available signals
+                Based on {Math.round(health.data_completeness * 100)}% of signals — Connect GSC for full scoring
               </p>
-              <p className="text-[10px] text-amber-400/70 text-center mt-0.5">
-                Connect Google Search Console for full scoring
+            </div>
+          )}
+          {health.ai_enriched_count > 0 && (
+            <div className="mt-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <p className="text-xs text-purple-400 text-center">
+                ✦ {health.ai_enriched_count} recommendations have AI-powered guidance
+              </p>
+            </div>
+          )}
+          {health.modified_date_coverage > 0 && (
+            <div className="mt-2 px-3 py-1.5 rounded-lg bg-brand-surface-hover border border-brand-border/50">
+              <p className="text-xs text-brand-text-muted text-center">
+                Freshness data: {Math.round(health.modified_date_coverage * 100)}% of posts
               </p>
             </div>
           )}

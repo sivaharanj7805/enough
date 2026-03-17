@@ -179,6 +179,7 @@ class ClusterResponse(BaseModel):
     id: UUID
     site_id: UUID
     label: str | None
+    description: str | None = None
     ecosystem_state: str | None
     health_score: float | None
     post_count: int
@@ -214,6 +215,8 @@ class SiteHealthResponse(BaseModel):
     clusters: list[ClusterSummary]
     trends: dict[str, float]
     data_completeness: float = 1.0  # 0.0-1.0, fraction of signals available
+    modified_date_coverage: float = 0.0  # fraction of posts with a known modified_date
+    ai_enriched_count: int = 0  # number of recommendations with AI guidance
 
 
 class PillarPostInfo(BaseModel):
