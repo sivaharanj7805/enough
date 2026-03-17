@@ -321,6 +321,49 @@ export interface RedirectStatusResponse {
   failed: number;
 }
 
+// ─── Problems ────────────────────────────────────
+export interface ContentProblem {
+  id: string;
+  post_id: string;
+  problem_type: string;
+  severity: string;
+  details: Record<string, unknown> | null;
+  detected_at: string;
+  resolved_at: string | null;
+}
+
+export interface ContentProblemSummary {
+  post_id: string;
+  title: string;
+  url: string;
+  problems: ContentProblem[];
+}
+
+// ─── Recommendations ─────────────────────────────
+export interface Recommendation {
+  id: string;
+  post_id: string;
+  problem_id: string | null;
+  recommendation_type: string;
+  priority: string;
+  estimated_effort_hours: number | null;
+  estimated_impact: string | null;
+  title: string;
+  summary: string;
+  specific_actions: string[];
+  ai_generated_content: Record<string, unknown> | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecommendationListResponse {
+  recommendations: Recommendation[];
+  total: number;
+  by_type: Record<string, number>;
+  by_priority: Record<string, number>;
+}
+
 // ─── Auth ────────────────────────────────────────
 export interface AuthUser {
   id: string;

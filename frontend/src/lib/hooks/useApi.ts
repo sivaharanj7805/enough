@@ -12,6 +12,12 @@ import type {
   ClusterNarrative,
   CalendarResponse,
   RedirectStatusResponse,
+  PostListResponse,
+  PostDetail,
+  ContentProblem,
+  ContentProblemSummary,
+  Recommendation,
+  RecommendationListResponse,
 } from '@/lib/types';
 import type { EcosystemVisualsResponse } from '@/lib/types/phase6';
 
@@ -70,6 +76,57 @@ export function useCalendar(siteId: string | null) {
 export function useRedirectStatus(siteId: string | null) {
   return useSWRFetch<RedirectStatusResponse>(
     siteId ? `/sites/${siteId}/redirects/status` : null
+  );
+}
+
+// ─── Posts ───────────────────────────────────────
+
+export function usePosts(siteId: string | null, limit = 50, offset = 0) {
+  return useSWRFetch<PostListResponse>(
+    siteId ? `/sites/${siteId}/posts?limit=${limit}&offset=${offset}` : null
+  );
+}
+
+export function usePostDetail(siteId: string | null, postId: string | null) {
+  return useSWRFetch<PostDetail>(
+    siteId && postId ? `/sites/${siteId}/posts/${postId}` : null
+  );
+}
+
+// ─── Problems ────────────────────────────────────
+
+export function useProblems(siteId: string | null, problemType?: string, severity?: string) {
+  const params = new URLSearchParams();
+  if (problemType) params.set('problem_type', problemType);
+  if (severity) params.set('severity', severity);
+  const qs = params.toString();
+  return useSWRFetch<ContentProblem[]>(
+    siteId ? `/sites/${siteId}/intelligence/problems${qs ? `?${qs}` : ''}` : null
+  );
+}
+
+export function usePostProblems(siteId: string | null, postId: string | null) {
+  return useSWRFetch<ContentProblemSummary>(
+    siteId && postId ? `/sites/${siteId}/intelligence/problems/${postId}` : null
+  );
+}
+
+// ─── Recommendations ─────────────────────────────
+
+export function useRecommendations(siteId: string | null, filters?: { type?: string; priority?: string; status?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.type) params.set('recommendation_type', filters.type);
+  if (filters?.priority) params.set('priority', filters.priority);
+  if (filters?.status) params.set('status', filters.status);
+  const qs = params.toString();
+  return useSWRFetch<RecommendationListResponse>(
+    siteId ? `/sites/${siteId}/intelligence/recommendations${qs ? `?${qs}` : ''}` : null
+  );
+}
+
+export function usePostRecommendations(siteId: string | null, postId: string | null) {
+  return useSWRFetch<Recommendation[]>(
+    siteId && postId ? `/sites/${siteId}/intelligence/recommendations/${postId}` : null
   );
 }
 

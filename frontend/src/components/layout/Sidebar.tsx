@@ -17,15 +17,25 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  LayoutDashboard,
+  FileText,
+  Layers,
+  AlertTriangle,
+  CheckSquare,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { SiteSelector } from './SiteSelector';
 
 const NAV_ITEMS = [
+  { href: '/overview', label: 'Overview', icon: LayoutDashboard },
+  { href: '/posts', label: 'Posts', icon: FileText },
+  { href: '/clusters', label: 'Clusters', icon: Layers },
+  { href: '/issues', label: 'Issues', icon: AlertTriangle },
+  { href: '/actions', label: 'Action Queue', icon: CheckSquare },
   { href: '/landscape', label: 'Landscape', icon: Map },
   { href: '/cannibalization', label: 'Cannibalization', icon: Network },
   { href: '/oracle', label: 'Oracle', icon: Sparkles },
-  { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+  { href: '/dashboard', label: 'Analytics', icon: BarChart3 },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/impact', label: 'Impact', icon: TrendingUp },
   { href: '/consolidation', label: 'Consolidation', icon: Wrench },
