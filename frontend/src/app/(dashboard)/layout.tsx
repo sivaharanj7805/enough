@@ -12,14 +12,17 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, token, loading } = useAuth();
   const router = useRouter();
 
+  // Allow access if Supabase user exists OR if a manual token is stored (backend JWT / demo mode)
+  const isAuthenticated = !!user || !!token;
+
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !isAuthenticated) {
       router.replace('/login');
     }
-  }, [user, loading, router]);
+  }, [isAuthenticated, loading, router]);
 
   if (loading) {
     return (
@@ -29,7 +32,7 @@ export default function DashboardLayout({
     );
   }
 
-  if (!user) return null;
+  if (!isAuthenticated) return null;
 
   return (
     <div className="flex h-screen overflow-hidden">

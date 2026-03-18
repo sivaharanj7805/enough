@@ -42,9 +42,13 @@ class SitemapCrawler:
         max_retries: int = 3,
         timeout_seconds: float = 30.0,
         on_progress: Callable[[int, int], None] | None = None,
+        url_patterns: list[str] | None = None,
     ):
         self.sitemap_url = sitemap_url
         self.domain = domain.lower()
+        # URL patterns to include (e.g. ["/blog/", "/resources/"])
+        # If None or empty, all URLs are included
+        self.url_patterns: list[str] = [p.lower() for p in url_patterns] if url_patterns else []
         self.rate_limiter = RateLimiter(requests_per_second=1.0 / delay_seconds)
         self.max_pages = max_pages
         self.concurrency = concurrency
@@ -61,6 +65,19 @@ class SitemapCrawler:
         """Crawl all URLs from the sitemap and extract content concurrently."""
         urls = await self._discover_urls()
         logger.info("Sitemap: found %d URLs for %s", len(urls), self.domain)
+
+        # Apply URL pattern filter (e.g. only /blog/ or /resources/)
+        if self.url_patterns:
+            before = len(urls)
+            from urllib.parse import urlparse as _urlparse
+            urls = [
+                u for u in urls
+                if any(pat in _urlparse(u).path.lower() for pat in self.url_patterns)
+            ]
+            logger.info(
+                "URL pattern filter (%s): %d → %d URLs",
+                ", ".join(self.url_patterns), before, len(urls),
+            )
 
         # Limit to max_pages
         if len(urls) > self.max_pages:
@@ -341,6 +358,16 @@ class SitemapCrawler:
             except (ValueError, TypeError):
                 pass
 
+        # Extract language from <html lang="..."> or hreflang meta
+        language: str | None = None
+        html_tag = soup.find("html")
+        if html_tag and html_tag.get("lang"):
+            language = str(html_tag["lang"]).split("-")[0].lower()[:10]  # e.g. "en" from "en-US"
+        if not language:
+            hreflang = soup.find("link", attrs={"rel": "alternate", "hreflang": True})
+            if hreflang and hreflang.get("hreflang") and hreflang["hreflang"] != "x-default":
+                language = str(hreflang["hreflang"]).split("-")[0].lower()[:10]
+
         # Extract modified_date from meta tags (trafilatura doesn't always get it)
         from datetime import datetime, timezone
         modified_meta = (
@@ -409,6 +436,7 @@ class SitemapCrawler:
             headings=headings,
             meta_description=meta_description,
             http_status=http_status,
+            language=language,
         )
 
     @staticmethod

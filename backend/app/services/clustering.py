@@ -260,16 +260,26 @@ class TopicClusterer:
         reduced = reducer_cluster.fit_transform(embeddings)
 
         # ── Step 2: HDBSCAN clustering ──
-        # Adaptive min_cluster_size based on site size
+        # Adaptive min_cluster_size — capped to avoid over-merging on large sites.
+        # Rule: start at n_posts//20 but hard-cap at 20 so HDBSCAN can still find
+        # meaningful sub-clusters on 1000+ post corpora.
         if n_posts < 20:
             min_cluster_size = max(2, n_posts // 5)
-            min_samples = 1  # Very permissive for small sites
+            min_samples = 1
         elif n_posts < 100:
             min_cluster_size = max(3, n_posts // 10)
-            min_samples = 2  # Slightly conservative
-        else:
+            min_samples = 2
+        elif n_posts < 500:
             min_cluster_size = max(5, n_posts // 20)
-            min_samples = 3  # More conservative for large sites
+            min_samples = 3
+        elif n_posts < 1000:
+            min_cluster_size = 12
+            min_samples = 3
+        else:
+            # Large sites (1000+): cap at 20 — lets HDBSCAN find dozens of clusters
+            # rather than collapsing everything into 3 mega-clusters
+            min_cluster_size = 20
+            min_samples = 5
 
         logger.info(
             "HDBSCAN: min_cluster_size=%d, min_samples=%d",

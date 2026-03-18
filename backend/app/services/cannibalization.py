@@ -250,7 +250,7 @@ class CannibalizationDetector:
         posts = await db.fetch(
             """
             SELECT p.id, p.title, p.url, p.word_count,
-                   p.content_hash, p.content_intent,
+                   p.content_hash, p.content_intent, p.language,
                    pe.embedding::text AS embedding_text
             FROM post_clusters pc
             JOIN posts p ON p.id = pc.post_id
@@ -263,6 +263,9 @@ class CannibalizationDetector:
 
         if len(posts) < 2:
             return 0
+
+        # Build a language map for cross-language filtering
+        lang_map: dict = {p["id"]: p["language"] for p in posts}
 
         # Get health scores for "stronger post" determination
         health_rows = await db.fetch(
@@ -367,6 +370,12 @@ class CannibalizationDetector:
             hash_a = post_a.get("content_hash")
             hash_b = post_b.get("content_hash")
             if hash_a and hash_b and hash_a == hash_b:
+                continue
+
+            # ── Skip cross-language pairs (e.g. EN vs UK tool pages) ──
+            lang_a = lang_map.get(pid_a)
+            lang_b = lang_map.get(pid_b)
+            if lang_a and lang_b and lang_a != lang_b:
                 continue
 
             # ── Signal 1: Embedding cosine similarity ──

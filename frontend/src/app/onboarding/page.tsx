@@ -30,6 +30,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<Step>('url');
   const [url, setUrl] = useState('');
   const [siteName, setSiteName] = useState('');
+  const [urlPatterns, setUrlPatterns] = useState('');
   const [siteId, setSiteId] = useState<string | null>(null);
   const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
   const [pipelineStage, setPipelineStage] = useState<string>('crawling');
@@ -102,10 +103,14 @@ export default function OnboardingPage() {
       setSiteId(site.id);
       setStep('crawling');
 
-      // Trigger full pipeline
+      // Trigger full pipeline (with optional URL path filter)
+      const patterns = urlPatterns.trim()
+        ? urlPatterns.split(',').map(p => p.trim()).filter(Boolean)
+        : [];
       await apiFetch(`/sites/${site.id}/pipeline`, {
         method: 'POST',
         token,
+        body: patterns.length ? JSON.stringify({ url_patterns: patterns }) : undefined,
       });
 
       // Poll for progress
@@ -169,6 +174,23 @@ export default function OnboardingPage() {
                   disabled={step === 'creating'}
                   className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
+                  URL path filter <span className="text-[#475569]">(optional — recommended for large sites)</span>
+                </label>
+                <input
+                  type="text"
+                  value={urlPatterns}
+                  onChange={(e) => setUrlPatterns(e.target.value)}
+                  placeholder="/blog/, /resources/ (comma-separated)"
+                  disabled={step === 'creating'}
+                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
+                />
+                <p className="text-[#475569] text-xs mt-1">
+                  Only analyze URLs containing these paths. Leave blank to analyze everything.
+                </p>
               </div>
 
               <button

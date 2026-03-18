@@ -197,6 +197,7 @@ class NormalizedPost:
     headings: list[dict[str, str]] = field(default_factory=list)
     meta_description: str | None = None
     http_status: int | None = None
+    language: str | None = None
 
     def __post_init__(self):
         if not self.word_count and self.body_text:
@@ -268,8 +269,8 @@ async def save_normalized_posts(
                     site_id, url, slug, title, body_text, body_html,
                     publish_date, modified_date, content_hash,
                     cms_categories, cms_tags, word_count,
-                    headings, meta_description, http_status
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    headings, meta_description, http_status, language
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 ON CONFLICT (site_id, url) DO UPDATE SET
                     title = EXCLUDED.title,
                     body_text = EXCLUDED.body_text,
@@ -282,6 +283,7 @@ async def save_normalized_posts(
                     headings = EXCLUDED.headings,
                     meta_description = EXCLUDED.meta_description,
                     http_status = EXCLUDED.http_status,
+                    language = EXCLUDED.language,
                     updated_at = NOW()
                 RETURNING id
                 """,
@@ -292,6 +294,7 @@ async def save_normalized_posts(
                 post.cms_categories, post.cms_tags,
                 post.word_count,
                 headings_json, post.meta_description, post.http_status,
+                post.language,
             )
 
             post_id = row["id"]

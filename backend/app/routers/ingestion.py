@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from pydantic import BaseModel
 
 from app.database import get_db, get_pool
 from app.dependencies import get_current_user_id, get_verified_site, verify_cron_secret
@@ -96,6 +97,7 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
                 max_retries=3,
                 timeout_seconds=30.0,
                 on_progress=on_progress,
+                url_patterns=site.get("url_patterns") or [],
             )
             normalized_posts = await crawler.crawl()
         else:
@@ -402,16 +404,30 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
             )
 
 
+class PipelineOptions(BaseModel):
+    url_patterns: list[str] | None = None  # e.g. ["/blog/", "/resources/"]
+
+
 @router.post("/{site_id}/pipeline", response_model=TaskTriggerResponse)
 async def trigger_full_pipeline(
     site_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
     background_tasks: BackgroundTasks,
+    options: PipelineOptions | None = None,
 ):
     """Trigger full pipeline: crawl → embed → cluster → health → recs.
-    Takes 10-40 min depending on site size. Poll /crawl/status for progress."""
+    Takes 10-40 min depending on site size. Poll /crawl/status for progress.
+    Optional body: { url_patterns: ["/blog/", "/resources/"] } to filter crawled URLs."""
     site = await _get_site_for_ingestion(site_id, user_id, db)
+    # Persist url_patterns to sites table so incremental refresh reuses them
+    if options and options.url_patterns is not None:
+        await db.execute(
+            "UPDATE sites SET url_patterns = $1 WHERE id = $2",
+            options.url_patterns, site_id,
+        )
+        site = dict(site)
+        site["url_patterns"] = options.url_patterns
     background_tasks.add_task(_run_full_pipeline, site_id, site)
     return TaskTriggerResponse(message="Full pipeline started — crawl → analyze → cluster → recommendations", site_id=site_id)
 

@@ -83,6 +83,21 @@ async def login(body: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
+@router.post("/magic-link")
+async def send_magic_link(body: LoginRequest):
+    """Send a magic link (passwordless) email via Supabase Auth."""
+    try:
+        client = get_supabase_client()
+        client.auth.sign_in_with_otp({
+            "email": body.email,
+            "options": {"should_create_user": True},
+        })
+        return {"message": "Magic link sent — check your email"}
+    except Exception as e:
+        logger.error("Magic link error: %s", e)
+        raise HTTPException(status_code=400, detail="Failed to send magic link")
+
+
 @router.get("/google")
 async def google_oauth_redirect(
     settings: Annotated[Settings, Depends(_settings)],
