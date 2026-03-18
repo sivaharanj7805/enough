@@ -45,6 +45,7 @@ export interface Post {
 
 /** Matches backend PostHealthResponse exactly */
 export interface PostHealth {
+  id?: string;
   post_id: string;
   title: string;
   url: string;

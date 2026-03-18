@@ -1,7 +1,7 @@
 /**
- * VegetationRenderer — SVG vegetation shapes for the landscape.
- * Each function returns an SVG group that represents a post type.
- * These are called from within D3's rendering pipeline.
+ * VegetationRenderer — SVG vegetation shapes + creature overlays for the landscape.
+ * Trees represent posts (Pillar Oak, Supporter Birch, Competitor Vine, Dead Weight Stump).
+ * Creatures represent active problems (Bloomlings, Rustmites, Foglings, Tanglevines).
  */
 
 import type { PostRole } from '@/lib/constants';
@@ -321,3 +321,146 @@ export function drawVegetation(
 
 // Re-export the type for D3 compatibility
 export type D3Selection = d3.Selection<SVGGElement, unknown, null, undefined>;
+
+// ── Creature type ─────────────────────────────────────────────────────────────
+export type CreatureType = 'bloomling' | 'rustmite' | 'fogling' | null;
+
+/**
+ * Bloomling — round bouncy creature with flower petals. Near healthy high-traffic posts.
+ * Clicking opens "growth opportunity" rec.
+ */
+export function drawBloomling(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  scale: number
+): void {
+  const r = 5 * scale;
+  const petalR = 2.5 * scale;
+  const petalDist = r + petalR * 0.8;
+
+  // Shadow
+  g.append('ellipse')
+    .attr('cx', 0).attr('cy', r + 1).attr('rx', r * 0.8).attr('ry', 2 * scale)
+    .attr('fill', 'rgba(0,0,0,0.2)');
+
+  // Petals (5 petals around body)
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    g.append('circle')
+      .attr('cx', Math.cos(angle) * petalDist)
+      .attr('cy', -r + Math.sin(angle) * petalDist)
+      .attr('r', petalR)
+      .attr('fill', '#4ade80')
+      .attr('opacity', 0.85);
+  }
+
+  // Body
+  g.append('circle')
+    .attr('cx', 0).attr('cy', -r).attr('r', r)
+    .attr('fill', '#86efac')
+    .attr('stroke', '#22c55e')
+    .attr('stroke-width', 1);
+
+  // Eyes
+  g.append('circle').attr('cx', -r * 0.3).attr('cy', -r - 0.5).attr('r', 1).attr('fill', '#14532d');
+  g.append('circle').attr('cx', r * 0.3).attr('cy', -r - 0.5).attr('r', 1).attr('fill', '#14532d');
+
+  // Smile
+  g.append('path')
+    .attr('d', `M${-r * 0.4},${-r + 1.5} Q0,${-r + 3} ${r * 0.4},${-r + 1.5}`)
+    .attr('fill', 'none').attr('stroke', '#14532d').attr('stroke-width', 0.8);
+
+  // Glow
+  g.append('circle')
+    .attr('cx', 0).attr('cy', -r).attr('r', r * 2)
+    .attr('fill', 'none')
+    .attr('stroke', '#22c55e')
+    .attr('stroke-width', 0.5)
+    .attr('opacity', 0.3);
+}
+
+/**
+ * Rustmite — small orange crab shape. Appears on posts with decay problems.
+ * Clicking opens the decay/content-update rec.
+ */
+export function drawRustmite(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  scale: number
+): void {
+  const s = scale * 0.9;
+
+  // Shadow
+  g.append('ellipse')
+    .attr('cx', 0).attr('cy', 2).attr('rx', 8 * s).attr('ry', 2 * s)
+    .attr('fill', 'rgba(0,0,0,0.2)');
+
+  // Legs (3 on each side)
+  const legColor = '#c2410c';
+  [[-1, -0.5], [-1, 0], [-1, 0.5], [1, -0.5], [1, 0], [1, 0.5]].forEach(([side, offset]) => {
+    const lx = side * 6 * s;
+    const ly = -3 * s + offset * 4 * s;
+    g.append('line')
+      .attr('x1', side * 4 * s).attr('y1', ly)
+      .attr('x2', lx).attr('y2', ly + 3 * s * side * -0.3)
+      .attr('stroke', legColor).attr('stroke-width', 1 * s)
+      .attr('stroke-linecap', 'round');
+  });
+
+  // Body
+  g.append('ellipse')
+    .attr('cx', 0).attr('cy', -3 * s).attr('rx', 5 * s).attr('ry', 3 * s)
+    .attr('fill', '#ea580c').attr('stroke', '#9a3412').attr('stroke-width', 0.5);
+
+  // Shell segments
+  g.append('line')
+    .attr('x1', -4 * s).attr('y1', -3 * s).attr('x2', 4 * s).attr('y2', -3 * s)
+    .attr('stroke', '#7c2d12').attr('stroke-width', 0.5).attr('opacity', 0.5);
+
+  // Eyes
+  g.append('circle').attr('cx', -2 * s).attr('cy', -5 * s).attr('r', 1.2 * s).attr('fill', '#fef08a');
+  g.append('circle').attr('cx', 2 * s).attr('cy', -5 * s).attr('r', 1.2 * s).attr('fill', '#fef08a');
+
+  // Claws
+  [[-5.5, -6.5], [5.5, -6.5]].forEach(([cx, cy]) => {
+    g.append('circle')
+      .attr('cx', cx * s).attr('cy', cy * s).attr('r', 2 * s)
+      .attr('fill', '#c2410c').attr('stroke', '#7c2d12').attr('stroke-width', 0.5);
+  });
+}
+
+/**
+ * Fogling — ghost wisp shape. Near orphan/low-health posts with SEO issues.
+ * Clicking opens the SEO optimization rec.
+ */
+export function drawFogling(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  scale: number
+): void {
+  const w = 8 * scale;
+  const h = 13 * scale;
+
+  // Glow aura
+  g.append('ellipse')
+    .attr('cx', 0).attr('cy', -h * 0.5).attr('rx', w * 1.5).attr('ry', h * 0.8)
+    .attr('fill', 'rgba(148, 163, 184, 0.08)');
+
+  // Ghost body — tapered at bottom, rounded top
+  g.append('path')
+    .attr('d', `
+      M${-w},${-h * 0.1}
+      Q${-w},${-h * 1.1} 0,${-h * 1.15}
+      Q${w},${-h * 1.1} ${w},${-h * 0.1}
+      Q${w * 0.6},${h * 0.15} ${w * 0.2},${-h * 0.05}
+      Q0,${h * 0.2} ${-w * 0.2},${-h * 0.05}
+      Q${-w * 0.6},${h * 0.15} ${-w},${-h * 0.1}
+      Z
+    `)
+    .attr('fill', 'rgba(148,163,184,0.35)')
+    .attr('stroke', 'rgba(203,213,225,0.4)')
+    .attr('stroke-width', 0.8);
+
+  // Eyes (hollow)
+  g.append('circle').attr('cx', -w * 0.3).attr('cy', -h * 0.75).attr('r', 1.5 * scale).attr('fill', 'rgba(30,41,59,0.7)');
+  g.append('circle').attr('cx', w * 0.3).attr('cy', -h * 0.75).attr('r', 1.5 * scale).attr('fill', 'rgba(30,41,59,0.7)');
+
+  // Floating motion will be handled via CSS animation class
+}

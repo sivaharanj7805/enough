@@ -8,12 +8,21 @@ import { LegendPanel } from './LegendPanel';
 import type { ClusterDetail } from '@/lib/types';
 import type { PostHealth } from '@/lib/types';
 import type { EcosystemState, PostRole, Trend } from '@/lib/constants';
+import type { CreatureType } from './VegetationRenderer';
+
+export interface CannPair {
+  post_a_id: string;
+  post_b_id: string;
+  cosine_similarity: number;
+}
 
 interface EcosystemCanvasProps {
   clusters: ClusterDetail[];
   onSelectPost: (post: PostHealth | null) => void;
   onZoomToCluster: (clusterId: string | null) => void;
   zoomedClusterId: string | null;
+  cannPairs?: CannPair[];
+  onClickCreature?: (post: PostHealth, creature: CreatureType) => void;
 }
 
 interface TooltipData {
@@ -36,6 +45,8 @@ export function EcosystemCanvas({
   onSelectPost,
   onZoomToCluster,
   zoomedClusterId,
+  cannPairs = [],
+  onClickCreature,
 }: EcosystemCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,6 +74,11 @@ export function EcosystemCanvas({
   const handleClickPost = useCallback((post: PostHealth) => {
     onSelectPost(post);
   }, [onSelectPost]);
+
+  const handleClickCreature = useCallback((post: PostHealth, creature: CreatureType) => {
+    onSelectPost(post);
+    if (onClickCreature) onClickCreature(post, creature);
+  }, [onSelectPost, onClickCreature]);
 
   const handleClickRegion = useCallback((regionId: string) => {
     onZoomToCluster(regionId);
@@ -166,9 +182,55 @@ export function EcosystemCanvas({
     });
 
     // Render regions
+    const postPositions = new Map<string, { x: number; y: number }>();
+
     regions.forEach((region) => {
-      renderRegion(g, region, handleHoverPost, handleClickPost, handleClickRegion);
+      renderRegion(g, region, handleHoverPost, handleClickPost, handleClickRegion, handleClickCreature);
+
+      // Record absolute positions for Tanglevine connections
+      const postCount = region.posts.length;
+      region.posts.forEach((post, i) => {
+        const angle = (i / Math.max(postCount, 1)) * Math.PI * 2;
+        const dist = region.radius * 0.3 + (i % 3) * region.radius * 0.15;
+        const px = region.x + Math.cos(angle) * dist;
+        const py = region.y + Math.sin(angle) * dist * 0.7;
+        postPositions.set(post.id ?? post.post_id, { x: px, y: py });
+      });
     });
+
+    // Draw Tanglevines — animated vine paths between cannibalizing post pairs
+    if (cannPairs.length > 0) {
+      const vineGroup = g.append('g').attr('class', 'tanglevines');
+
+      cannPairs.slice(0, 30).forEach((pair) => {
+        const posA = postPositions.get(pair.post_a_id);
+        const posB = postPositions.get(pair.post_b_id);
+        if (!posA || !posB) return;
+
+        const mx = (posA.x + posB.x) / 2 + (Math.random() - 0.5) * 40;
+        const my = (posA.y + posB.y) / 2 - 25;
+        const intensity = Math.min(1, (pair.cosine_similarity - 0.75) / 0.2);
+        const color = intensity > 0.7 ? '#ef4444' : intensity > 0.4 ? '#f97316' : '#eab308';
+        const opacity = 0.25 + intensity * 0.4;
+
+        vineGroup.append('path')
+          .attr('d', `M${posA.x},${posA.y} Q${mx},${my} ${posB.x},${posB.y}`)
+          .attr('fill', 'none')
+          .attr('stroke', color)
+          .attr('stroke-width', 1 + intensity * 1.5)
+          .attr('stroke-dasharray', '4 3')
+          .attr('opacity', opacity)
+          .attr('class', 'tanglevine')
+          .attr('stroke-linecap', 'round');
+
+        // Small vine knot at midpoint
+        vineGroup.append('circle')
+          .attr('cx', mx).attr('cy', my)
+          .attr('r', 2 + intensity * 2)
+          .attr('fill', color)
+          .attr('opacity', opacity * 0.8);
+      });
+    }
 
     // If zoomed to a cluster, zoom into it
     if (zoomedClusterId) {
@@ -187,7 +249,7 @@ export function EcosystemCanvas({
     return () => {
       svg.selectAll('*').remove();
     };
-  }, [clusters, zoomedClusterId, handleHoverPost, handleClickPost, handleClickRegion]);
+  }, [clusters, zoomedClusterId, handleHoverPost, handleClickPost, handleClickRegion, handleClickCreature, cannPairs]);
 
   return (
     <div ref={containerRef} className="relative h-full w-full landscape-canvas">

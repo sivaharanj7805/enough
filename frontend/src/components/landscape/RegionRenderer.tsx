@@ -5,7 +5,7 @@
 
 import * as d3 from 'd3';
 import { ECOSYSTEM_COLORS, type EcosystemState } from '@/lib/constants';
-import { drawVegetation, type VegetationConfig } from './VegetationRenderer';
+import { drawVegetation, drawBloomling, drawRustmite, drawFogling, type VegetationConfig, type CreatureType } from './VegetationRenderer';
 import type { PostHealth } from '@/lib/types';
 
 export interface RegionData {
@@ -17,6 +17,29 @@ export interface RegionData {
   x: number;
   y: number;
   radius: number;
+}
+
+/**
+ * Determine which creature (if any) should appear next to this post.
+ */
+function getCreatureType(post: PostHealth): CreatureType {
+  const role = post.role ?? 'dead_weight';
+  const score = post.composite_score ?? 0;
+  const trend = post.trend ?? 'stable';
+
+  // Bloomling: healthy pillar/supporter posts with traffic
+  if ((role === 'pillar' || role === 'supporter') && score >= 60 && (post.traffic_contribution ?? 0) > 0.001) {
+    return 'bloomling';
+  }
+  // Rustmite: declining posts
+  if (trend === 'declining' && score < 50) {
+    return 'rustmite';
+  }
+  // Fogling: low-health, low internal link score (orphan-ish, no PageRank)
+  if (score < 35 && (post.internal_link_score ?? 0) < 0.01) {
+    return 'fogling';
+  }
+  return null;
 }
 
 function scoreColor(score: number): string {
@@ -116,7 +139,7 @@ function drawGround(
 }
 
 /**
- * Render a complete cluster region with ground, vegetation, and labels.
+ * Render a complete cluster region with ground, vegetation, creatures, and labels.
  */
 export function renderRegion(
   parent: d3.Selection<SVGGElement, unknown, null, undefined>,
@@ -124,6 +147,7 @@ export function renderRegion(
   onHoverPost: (post: PostHealth | null, x: number, y: number) => void,
   onClickPost: (post: PostHealth) => void,
   onClickRegion: (regionId: string) => void,
+  onClickCreature?: (post: PostHealth, creature: CreatureType) => void,
 ): d3.Selection<SVGGElement, unknown, null, undefined> {
   const g = parent.append('g')
     .attr('transform', `translate(${region.x},${region.y})`)
@@ -176,6 +200,25 @@ export function renderRegion(
     };
 
     drawVegetation(vegGroup, config);
+
+    // Draw creature overlay (offset to the right of the tree)
+    const creature = getCreatureType(post);
+    if (creature) {
+      const creatureGroup = g.append('g')
+        .attr('transform', `translate(${px + 14},${py - 5})`)
+        .attr('cursor', 'pointer')
+        .attr('class', `creature creature-${creature}`)
+        .on('click', (event: MouseEvent) => {
+          event.stopPropagation();
+          if (onClickCreature) onClickCreature(post, creature);
+        });
+
+      const creatureScale = 0.7 + (config.traffic / (maxTraffic + 0.001)) * 0.4;
+
+      if (creature === 'bloomling') drawBloomling(creatureGroup, creatureScale);
+      else if (creature === 'rustmite') drawRustmite(creatureGroup, creatureScale);
+      else if (creature === 'fogling') drawFogling(creatureGroup, creatureScale);
+    }
   });
 
   // Label above region
