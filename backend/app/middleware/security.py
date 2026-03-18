@@ -56,8 +56,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "camera=(), microphone=(), geolocation=(), interest-cohort=()"
         )
 
-        # HSTS (enable in production with a real cert)
-        # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # HSTS — enabled; reverse proxy / load balancer should handle TLS termination
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
         # Content Security Policy (API returns JSON, no HTML rendering)
         response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
@@ -85,7 +85,12 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         content_length = request.headers.get("content-length")
 
-        if content_length and int(content_length) > self.max_bytes:
+        try:
+            content_length_int = int(content_length) if content_length else 0
+        except (ValueError, TypeError):
+            content_length_int = 0
+
+        if content_length_int > self.max_bytes:
             return JSONResponse(
                 status_code=413,
                 content={

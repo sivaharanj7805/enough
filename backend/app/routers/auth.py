@@ -2,11 +2,14 @@
 
 import logging
 import os
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse
 import httpx
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.config import get_settings, Settings
 from app.database import get_supabase_client
@@ -15,14 +18,21 @@ from app.models.schemas import RegisterRequest, LoginRequest, AuthResponse
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+limiter = Limiter(key_func=get_remote_address)
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 
 def _settings() -> Settings:
     return get_settings()
 
 
 @router.post("/register", response_model=AuthResponse)
-async def register(body: RegisterRequest, settings: Annotated[Settings, Depends(_settings)]):
+@limiter.limit("5/minute")
+async def register(request: Request, body: RegisterRequest, settings: Annotated[Settings, Depends(_settings)]):
     """Register a new user via Supabase Auth."""
+    if not _EMAIL_RE.match(body.email):
+        raise HTTPException(status_code=422, detail="Invalid email address format")
     try:
         client = get_supabase_client()
         result = client.auth.sign_up({
@@ -54,11 +64,12 @@ async def register(body: RegisterRequest, settings: Annotated[Settings, Depends(
         raise
     except Exception as e:
         logger.error("Registration error: %s", e)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Registration failed — check your email and password")
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: LoginRequest):
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginRequest):
     """Sign in with email/password."""
     try:
         client = get_supabase_client()
@@ -84,7 +95,8 @@ async def login(body: LoginRequest):
 
 
 @router.post("/magic-link")
-async def send_magic_link(body: LoginRequest):
+@limiter.limit("5/minute")
+async def send_magic_link(request: Request, body: LoginRequest):
     """Send a magic link (passwordless) email via Supabase Auth."""
     try:
         client = get_supabase_client()
@@ -129,6 +141,7 @@ async def google_oauth_redirect(
     ).hexdigest()[:16]
     state = f"{state_b64}.{state_sig}"
 
+    from urllib.parse import urlencode
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": settings.google_redirect_uri,
@@ -139,8 +152,7 @@ async def google_oauth_redirect(
         "state": state,
     }
     url = "https://accounts.google.com/o/oauth2/v2/auth"
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return RedirectResponse(url=f"{url}?{query}")
+    return RedirectResponse(url=f"{url}?{urlencode(params)}")
 
 
 @router.get("/google/callback")
@@ -191,7 +203,13 @@ async def google_oauth_callback(
                 except (json.JSONDecodeError, Exception):
                     pass
             else:
-                logger.warning("OAuth state signature mismatch — possible tampering")
+                logger.warning(
+                    "OAuth state signature mismatch — rejecting callback (possible tampering)"
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid OAuth state — please restart the authorization flow",
+                )
 
         # Auto-store tokens if we have a valid site_id
         if site_id and tokens.get("refresh_token"):

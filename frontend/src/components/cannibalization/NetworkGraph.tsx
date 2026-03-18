@@ -189,6 +189,9 @@ export function NetworkGraph({
 
     return () => {
       simulation.stop();
+      // Remove zoom handler attached to SVG element (not just child nodes)
+      svg.on('.zoom', null);
+      svg.selectAll('*').remove();
     };
   }, [posts, pairs, onSelectNode, onSelectEdge, severityFilter, clusterFilter]);
 
@@ -199,7 +202,12 @@ export function NetworkGraph({
 
   return (
     <div ref={containerRef} className="h-full w-full">
-      <svg ref={svgRef} className="h-full w-full" />
+      <svg
+        ref={svgRef}
+        className="h-full w-full"
+        role="img"
+        aria-label="Cannibalization network graph — posts connected by lines are competing for the same keywords"
+      />
     </div>
   );
 }

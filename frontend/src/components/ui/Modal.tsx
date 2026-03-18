@@ -22,14 +22,26 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
 
   if (!open) return null;
 
+  const titleId = title ? 'modal-title' : undefined;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} aria-hidden="true" />
       <div className="relative z-10 w-full max-w-lg rounded-xl border border-brand-border bg-brand-surface p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          {title && <h2 className="text-lg font-semibold text-brand-text">{title}</h2>}
+          {title && (
+            <h2 id={titleId} className="text-lg font-semibold text-brand-text">
+              {title}
+            </h2>
+          )}
           <button
             onClick={onClose}
+            aria-label="Close dialog"
             className="ml-auto rounded-lg p-1 text-brand-text-muted hover:bg-brand-surface-hover hover:text-brand-text"
           >
             <X size={18} />

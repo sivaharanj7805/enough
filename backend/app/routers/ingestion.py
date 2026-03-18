@@ -368,7 +368,7 @@ async def _pipeline_step(pool, site_id: UUID, step_name: str, status: str, fn) -
         return True
     except Exception as e:
         logger.error("Pipeline step '%s' failed for site %s: %s", step_name, site_id, e)
-        import traceback; traceback.print_exc()
+        logger.exception("Stack trace for above error")
         # Log step failure but don't abort — continue to next step
         try:
             async with pool.acquire() as db:
@@ -468,7 +468,7 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
 
     except Exception as e:
         logger.error("Full pipeline outer error for site %s: %s", site_id, e)
-        import traceback; traceback.print_exc()
+        logger.exception("Stack trace for above error")
         try:
             async with pool.acquire() as db:
                 await db.execute(
@@ -565,7 +565,7 @@ async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
 
     except Exception as e:
         logger.error("Incremental pipeline outer error for site %s: %s", site_id, e)
-        import traceback; traceback.print_exc()
+        logger.exception("Stack trace for above error")
         try:
             async with pool.acquire() as db:
                 await db.execute(

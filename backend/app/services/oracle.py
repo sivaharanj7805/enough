@@ -283,15 +283,17 @@ Reply in this exact JSON format:
             logger.error("Claude oracle verdict failed: %s", e)
             verdict = {
                 "confidence": "low",
-                "verdict": "publish",
-                "reasoning": f"Unable to generate AI analysis: {e}",
-                "recommendation": "Manual review recommended.",
+                # Conservative default: do NOT auto-approve when AI is unavailable.
+                # Returning "publish" on failure would create cannibalization silently.
+                "verdict": "review",
+                "reasoning": f"AI analysis unavailable — please review manually before publishing. Error: {e}",
+                "recommendation": "Manual review required — check for existing similar posts before publishing.",
             }
 
         # Build final response
         return {
             "confidence": verdict.get("confidence", "low"),
-            "verdict": verdict.get("verdict", "publish"),
+            "verdict": verdict.get("verdict", "review"),
             "reasoning": verdict.get("reasoning", ""),
             "similar_posts": similar_posts,
             "cluster_state": cluster_state,

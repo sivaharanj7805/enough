@@ -247,13 +247,20 @@ export function EcosystemCanvas({
     }
 
     return () => {
+      // Remove zoom handler from SVG element itself (not just child nodes)
+      svg.on('.zoom', null);
       svg.selectAll('*').remove();
     };
   }, [clusters, zoomedClusterId, handleHoverPost, handleClickPost, handleClickRegion, handleClickCreature, cannPairs]);
 
   return (
     <div ref={containerRef} className="relative h-full w-full landscape-canvas">
-      <svg ref={svgRef} className="h-full w-full" />
+      <svg
+        ref={svgRef}
+        className="h-full w-full"
+        role="img"
+        aria-label="Content ecosystem landscape — interactive visualization of your content clusters"
+      />
 
       {tooltip && (
         <LandscapeTooltip

@@ -45,7 +45,7 @@ COSINE_THRESHOLD_HIGH = 0.50    # High confidence cannibalization
 COSINE_THRESHOLD_CRITICAL = 0.60  # Near-duplicate content
 
 # Min shared queries for query-only cannibalization
-MIN_SHARED_QUERIES = 1
+MIN_SHARED_QUERIES = 3  # Require 3+ shared queries — single shared query is too weak a signal
 
 
 class CannibalizationDetector:
@@ -99,9 +99,12 @@ class CannibalizationDetector:
         p97 = float(np.percentile(sims, 97))
 
         # Floor: don't go below absolute minimums
-        flag = max(p85, 0.50)
-        high = max(p92, 0.70)
-        critical = max(p97, 0.85)
+        # Floors calibrated for text-embedding-3-small which produces lower absolute
+        # cosine similarities (~0.35-0.45 for same-topic content vs 0.60+ in ada-002).
+        # Original floors of 0.50/0.70/0.85 systematically missed real cannibalization.
+        flag = max(p85, 0.35)
+        high = max(p92, 0.45)
+        critical = max(p97, 0.55)
 
         logger.info(
             "Calibrated thresholds for site %s: flag=%.3f (p85), high=%.3f (p92), "

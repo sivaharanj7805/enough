@@ -22,7 +22,7 @@ if _sentry_dsn:
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
+from app.config import get_settings, validate_production
 from app.database import get_pool, close_pool
 from app.routers import auth, sites, ingestion, analytics, intelligence, actions, retention, google_integration, audit_report, og_image
 
@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     logger.info("Starting Enough backend...")
+    # Validate production configuration at startup — fail fast if misconfigured
+    validate_production()
     await get_pool()
     logger.info("Database pool ready")
     yield
@@ -135,6 +137,6 @@ async def health_check():
                 "service": "enough-backend",
                 "version": "0.1.0",
                 "database": "disconnected",
-                "error": str(e),
+                # Do not expose internal error details to clients
             },
         )
