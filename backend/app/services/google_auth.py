@@ -95,10 +95,16 @@ async def refresh_access_token(refresh_token: str) -> dict[str, Any]:
 async def get_valid_token(db, site_id, user_id: str | None = None) -> str | None:
     """Get a valid access token for a site, refreshing if needed."""
     import time
-    row = await db.fetchrow(
-        "SELECT google_tokens FROM sites WHERE id = $1 AND user_id = $2",
-        site_id, user_id,
-    )
+    if user_id:
+        row = await db.fetchrow(
+            "SELECT google_tokens FROM sites WHERE id = $1 AND user_id = $2",
+            site_id, user_id,
+        )
+    else:
+        row = await db.fetchrow(
+            "SELECT google_tokens FROM sites WHERE id = $1",
+            site_id,
+        )
     if not row or not row["google_tokens"]:
         return None
 
@@ -108,8 +114,14 @@ async def get_valid_token(db, site_id, user_id: str | None = None) -> str | None
         logger.warning("Failed to decrypt google_tokens for site %s", site_id)
         return None
 
+    # Guard against corrupted token data (e.g. error responses stored accidentally)
+    if "error" in token_data or "access_token" not in token_data and "refresh_token" not in token_data:
+        logger.warning("Corrupted token data for site %s — clearing", site_id)
+        await db.execute("UPDATE sites SET google_tokens = NULL WHERE id = $1", site_id)
+        return None
+
     expires_at = token_data.get("expires_at", 0)
-    if time.time() < expires_at - 60:
+    if time.time() < expires_at - 60 and token_data.get("access_token"):
         return token_data["access_token"]
 
     # Refresh
