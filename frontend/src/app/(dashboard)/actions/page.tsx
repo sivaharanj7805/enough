@@ -418,7 +418,13 @@ export default function ActionQueuePage() {
           <span>🔵 {statusCounts.in_progress} in progress</span>
           <span>✅ {statusCounts.completed} done</span>
           <span>⏭ {statusCounts.dismissed} dismissed</span>
-          {totalHours > 0 && <span className="ml-auto">~{totalHours.toFixed(0)}h estimated for current view</span>}
+          {totalHours > 0 && (
+            <span className="ml-auto">
+              {totalHours > 200
+                ? `200+ hrs estimated · prioritize top items first`
+                : `~${totalHours.toFixed(0)}h estimated for current view`}
+            </span>
+          )}
         </div>
       </Card>
 

@@ -25,7 +25,7 @@ export function EfficiencyRatio({ ratio, trend }: EfficiencyRatioProps) {
       </div>
       <div className="mt-2">
         <span className="text-4xl font-bold" style={{ color }}>
-          {ratio}
+          {ratio > 1 ? ratio.toFixed(0) : (ratio * 100).toFixed(1)}
         </span>
         <span className="text-lg text-brand-text-muted">%</span>
       </div>

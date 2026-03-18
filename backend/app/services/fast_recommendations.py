@@ -199,12 +199,15 @@ async def generate_fast_recommendations(
     await db.execute("DELETE FROM recommendations WHERE site_id = $1", site_id)
 
     # Fetch problems with post details
+    # Exclude very short pages (<100 words) — these are tool pages, redirects, index pages
+    # not actual blog content we can give recommendations on
     problems = await db.fetch("""
         SELECT cp.id as problem_id, cp.post_id, cp.problem_type, cp.severity, cp.details,
-               p.title, p.word_count, p.url, p.readability_score, p.content_intent
+               p.title, p.word_count, p.url, p.readability_score, p.content_intent, p.language
         FROM content_problems cp
         JOIN posts p ON p.id = cp.post_id
         WHERE cp.site_id = $1
+          AND (p.word_count IS NULL OR p.word_count >= 100)
         ORDER BY
             CASE cp.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
             cp.problem_type
@@ -304,11 +307,16 @@ async def generate_fast_recommendations(
     cann_pairs = await db.fetch("""
         SELECT cp.id, cp.post_a_id, cp.post_b_id, cp.cosine_similarity, cp.severity,
                pa.title as title_a, pa.url as url_a, pa.word_count as wc_a,
-               pb.title as title_b, pb.url as url_b, pb.word_count as wc_b
+               pa.language as lang_a,
+               pb.title as title_b, pb.url as url_b, pb.word_count as wc_b,
+               pb.language as lang_b
         FROM cannibalization_pairs cp
         JOIN posts pa ON pa.id = cp.post_a_id
         JOIN posts pb ON pb.id = cp.post_b_id
         WHERE pa.site_id = $1
+          AND (pa.word_count IS NULL OR pa.word_count >= 100)
+          AND (pb.word_count IS NULL OR pb.word_count >= 100)
+          AND (pa.language IS NULL OR pb.language IS NULL OR pa.language = pb.language)
         ORDER BY cp.cosine_similarity DESC
     """, site_id)
 

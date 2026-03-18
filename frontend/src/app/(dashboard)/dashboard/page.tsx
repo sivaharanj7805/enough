@@ -9,6 +9,7 @@ import { PostBreakdown } from '@/components/dashboard/PostBreakdown';
 import { TrendChart } from '@/components/dashboard/TrendChart';
 import { ClusterList } from '@/components/dashboard/ClusterList';
 import { AIReadinessCard } from '@/components/dashboard/AIReadinessCard';
+import { TopActionsCard } from '@/components/dashboard/TopActionsCard';
 import { Spinner } from '@/components/ui/Spinner';
 import { apiFetch } from '@/lib/api';
 import { mutate } from 'swr';
@@ -109,7 +110,10 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Row 2 — Post breakdown + AI Readiness side by side */}
+      {/* Row 2 — Top priorities (the "what to do now" card — reduces overwhelm) */}
+      {currentSite?.id && <TopActionsCard siteId={currentSite.id} />}
+
+      {/* Row 3 — Post breakdown + AI Readiness side by side */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="md:col-span-2">
           <PostBreakdown

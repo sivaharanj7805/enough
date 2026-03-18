@@ -169,6 +169,7 @@ class HealthScorer:
         weights = compute_dynamic_weights(has_ga4, has_gsc)
 
         # ── Batch 1: Posts in cluster ──
+        # Minimum 100 words — excludes tool pages, redirects, index pages
         post_rows = await db.fetch(
             """
             SELECT p.id, p.title, p.url, p.publish_date, p.modified_date,
@@ -176,6 +177,7 @@ class HealthScorer:
             FROM post_clusters pc
             JOIN posts p ON p.id = pc.post_id
             WHERE pc.cluster_id = $1
+              AND (p.word_count IS NULL OR p.word_count >= 100)
             """,
             cluster_id,
         )
@@ -760,13 +762,14 @@ def _assign_role(
     """
     if not has_traffic_data:
         # Derive role from composite score (content quality signals only)
+        # Use stricter thresholds so not everything becomes "pillar"
         if is_cannibalizing:
             return "competitor"
-        if composite >= 60:
+        if composite >= 70:
             return "pillar"
-        if composite >= 35:
+        if composite >= 45:
             return "supporter"
-        if composite >= 15:
+        if composite >= 20:
             return "at_risk"
         return "dead_weight"
 

@@ -480,9 +480,21 @@ async def get_site_health(
     roles = {r["role"]: r["cnt"] for r in role_counts}
 
     active_posts = roles.get("pillar", 0) + roles.get("supporter", 0)
-    cannibalistic_posts = roles.get("competitor", 0)
     dead_posts = roles.get("dead_weight", 0)
-    passive_posts = total_posts - active_posts - cannibalistic_posts - dead_posts
+    # Count distinct posts involved in cannibalization pairs
+    cannibalistic_posts = await db.fetchval(
+        """
+        SELECT COUNT(DISTINCT post_id) FROM (
+            SELECT post_a_id AS post_id FROM cannibalization_pairs cp
+            JOIN posts p ON p.id = cp.post_a_id WHERE p.site_id = $1
+            UNION
+            SELECT post_b_id FROM cannibalization_pairs cp
+            JOIN posts p ON p.id = cp.post_b_id WHERE p.site_id = $1
+        ) s
+        """,
+        site_id,
+    ) or 0
+    passive_posts = max(0, total_posts - active_posts - dead_posts)
 
     # Content health score (average composite)
     avg_health = await db.fetchval(
@@ -560,7 +572,7 @@ async def get_site_health(
         passive_posts=passive_posts,
         cannibalistic_posts=cannibalistic_posts,
         dead_posts=dead_posts,
-        content_efficiency_ratio=round(efficiency, 3),
+        content_efficiency_ratio=round(efficiency * 100, 1),
         clusters=clusters,
         trends=trends,
         data_completeness=data_completeness,

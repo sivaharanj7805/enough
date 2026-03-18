@@ -214,7 +214,8 @@ export default function IssuesDashboardPage() {
                     )}
                     {details?.word_count != null && (
                       <p className="text-xs text-brand-text-muted mt-1">
-                        Word count: {String(details.word_count)} · Threshold: {String(details.threshold || '—')}
+                        Word count: {String(details.word_count)}
+                        {details.threshold != null ? ` · Target: ${String(details.threshold)}+ words` : ' · Below recommended length'}
                       </p>
                     )}
                     {details?.readability_score != null && (

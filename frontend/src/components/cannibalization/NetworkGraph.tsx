@@ -101,15 +101,15 @@ export function NetworkGraph({
       });
     svg.call(zoom);
 
+    const maxTraffic = Math.max(...nodes.map((n) => n.traffic), 1);
+    const radiusScale = (traffic: number) => 8 + (traffic / maxTraffic) * 24;
+
     // Simulation
     const simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink<NetworkNode, NetworkLink>(links).id((d) => d.id).distance(120))
       .force('charge', d3.forceManyBody().strength(-300))
       .force('center', d3.forceCenter(width / 2, height / 2))
       .force('collision', d3.forceCollide().radius((d) => radiusScale((d as NetworkNode).traffic) + 10));
-
-    const maxTraffic = Math.max(...nodes.map((n) => n.traffic), 1);
-    const radiusScale = (traffic: number) => 8 + (traffic / maxTraffic) * 24;
 
     // Links
     const linkElements = g
