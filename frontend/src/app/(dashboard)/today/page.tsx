@@ -141,7 +141,7 @@ function PriorityCard({ rec, index }: { rec: Recommendation; index: number }) {
           )}
           <Link
             href="/explore?tab=recommendations"
-            className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-[#22c55e] hover:text-[#16a34a] transition-colors"
+            className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-[#3b82f6] hover:text-[#2563eb] transition-colors"
           >
             View full recommendation <ArrowRight size={12} />
           </Link>
@@ -210,16 +210,16 @@ export default function TodayPage() {
     return (
       <div className="max-w-3xl mx-auto space-y-4 py-2">
         {/* Demo banner */}
-        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#22c55e]/5 border border-[#22c55e]/20">
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#3b82f6]/5 border border-[#3b82f6]/20">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#22c55e]">Demo</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#3b82f6]">Demo</span>
             <p className="text-sm text-[#94a3b8]">
               Showing Close.com — 958 posts analyzed. Connect your blog to see your own data.
             </p>
           </div>
           <Link
             href="/onboarding"
-            className="flex-shrink-0 text-xs font-medium text-[#22c55e] hover:text-[#16a34a] transition-colors ml-4"
+            className="flex-shrink-0 text-xs font-medium text-[#3b82f6] hover:text-[#2563eb] transition-colors ml-4"
           >
             Analyze my blog →
           </Link>
@@ -260,7 +260,7 @@ export default function TodayPage() {
           </p>
           <Link
             href="/onboarding"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#22c55e] text-[#0a0f1a] font-semibold text-sm hover:bg-[#16a34a] transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#3b82f6] text-white font-semibold text-sm hover:bg-[#2563eb] transition-colors"
           >
             Analyze my blog <ArrowRight size={14} />
           </Link>
@@ -361,12 +361,12 @@ export default function TodayPage() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <TrendingUp size={15} className="text-[#22c55e]" />
+            <TrendingUp size={15} className="text-[#3b82f6]" />
             <h2 className="text-sm font-semibold text-[#e2e8f0]">Your top priorities</h2>
           </div>
           <Link
             href="/explore?tab=recommendations"
-            className="text-xs text-[#64748b] hover:text-[#22c55e] transition-colors flex items-center gap-1"
+            className="text-xs text-[#64748b] hover:text-[#3b82f6] transition-colors flex items-center gap-1"
           >
             All {totalRecs} actions <ArrowRight size={11} />
           </Link>

@@ -51,8 +51,8 @@ export default function DashboardLayout({
       <button
         onClick={() => setOracleOpen(true)}
         className="fixed bottom-6 right-6 z-30 flex items-center gap-2 px-4 py-3 rounded-full
-                   bg-[#22c55e] text-[#0a0f1a] font-semibold text-sm shadow-lg
-                   hover:bg-[#16a34a] transition-all duration-200 hover:shadow-[#22c55e]/20
+                   bg-[#3b82f6] text-white font-semibold text-sm shadow-lg
+                   hover:bg-[#2563eb] transition-all duration-200 hover:shadow-[#3b82f6]/20
                    hover:shadow-xl hover:scale-105"
         title="Ask Oracle anything"
       >

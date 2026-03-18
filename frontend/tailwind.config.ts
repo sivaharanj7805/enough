@@ -18,8 +18,8 @@ const config: Config = {
           "border-hover": "#374151",
           text: "#e2e8f0",
           "text-muted": "#94a3b8",
-          accent: "#22c55e",
-          "accent-hover": "#16a34a",
+          accent: "#3b82f6",
+          "accent-hover": "#2563eb",
         },
         ecosystem: {
           forest: "#1a4731",

@@ -205,7 +205,7 @@ export default function OnboardingPage() {
               <button
                 onClick={() => void handleSubmit()}
                 disabled={!url.trim() || step === 'creating'}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#22c55e] text-black font-semibold py-3 text-sm hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#3b82f6] text-white font-semibold py-3 text-sm hover:bg-[#2563eb] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {step === 'creating' ? (
                   <><Loader2 size={16} className="animate-spin" /> Creating site...</>
@@ -323,7 +323,7 @@ export default function OnboardingPage() {
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => router.push(`/overview?site=${siteId}`)}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#22c55e] text-black font-semibold py-3 text-sm hover:bg-[#16a34a] transition-colors"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#3b82f6] text-white font-semibold py-3 text-sm hover:bg-[#2563eb] transition-colors"
               >
                 View Dashboard <ArrowRight size={16} />
               </button>

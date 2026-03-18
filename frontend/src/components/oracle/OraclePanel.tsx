@@ -98,7 +98,7 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e293b]">
           <div className="flex items-center gap-2.5">
-            <Sparkles size={18} className="text-[#22c55e]" />
+            <Sparkles size={18} className="text-[#3b82f6]" />
             <div>
               <p className="text-sm font-semibold text-[#e2e8f0]">Oracle</p>
               <p className="text-xs text-[#64748b]">Ask anything about your content</p>
@@ -137,7 +137,7 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
                       void handleSubmit(s);
                     }}
                     className="text-xs px-3 py-1.5 rounded-full bg-[#1e293b] text-[#94a3b8]
-                               hover:bg-[#22c55e]/10 hover:text-[#22c55e] transition-colors border border-[#334155]"
+                               hover:bg-[#22c55e]/10 hover:text-[#3b82f6] transition-colors border border-[#334155]"
                   >
                     {s}
                   </button>
@@ -194,8 +194,8 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
             <button
               onClick={() => void handleSubmit(input)}
               disabled={!input.trim() || loading}
-              className="flex-shrink-0 p-2.5 rounded-xl bg-[#22c55e] text-[#0a0f1a]
-                         hover:bg-[#16a34a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex-shrink-0 p-2.5 rounded-xl bg-[#3b82f6] text-white
+                         hover:bg-[#2563eb] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send size={15} />
             </button>

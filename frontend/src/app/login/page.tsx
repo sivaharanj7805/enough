@@ -48,7 +48,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-10">
-          <span className="text-3xl font-bold tracking-widest text-[#22c55e]">ENOUGH</span>
+          <span className="text-3xl font-bold tracking-widest text-[#3b82f6]">ENOUGH</span>
           <p className="text-[#64748b] text-sm mt-1">Content Ecosystem Intelligence</p>
         </div>
 
@@ -79,7 +79,7 @@ export default function LoginPage() {
               <p className="text-[#e2e8f0] font-medium">Check your inbox</p>
               <p className="text-[#64748b] text-sm mt-1">
                 We sent a magic link to{' '}
-                <span className="text-[#22c55e]">{email}</span>
+                <span className="text-[#3b82f6]">{email}</span>
               </p>
               <button
                 onClick={() => setStatus('idle')}
@@ -105,7 +105,7 @@ export default function LoginPage() {
                   placeholder="you@company.com"
                   className="w-full px-3 py-2.5 rounded-lg bg-[#0a0f1a] border border-[#1e293b]
                              text-[#e2e8f0] placeholder-[#334155] text-sm
-                             focus:outline-none focus:border-[#22c55e] transition-colors"
+                             focus:outline-none focus:border-[#3b82f6] transition-colors"
                 />
               </div>
 
@@ -122,7 +122,7 @@ export default function LoginPage() {
                     placeholder="••••••••"
                     className="w-full px-3 py-2.5 rounded-lg bg-[#0a0f1a] border border-[#1e293b]
                                text-[#e2e8f0] placeholder-[#334155] text-sm
-                               focus:outline-none focus:border-[#22c55e] transition-colors"
+                               focus:outline-none focus:border-[#3b82f6] transition-colors"
                   />
                 </div>
               )}
@@ -136,8 +136,8 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={status === 'loading'}
-                className="w-full py-2.5 rounded-lg bg-[#22c55e] text-[#0a0f1a] font-semibold
-                           text-sm hover:bg-[#16a34a] transition-colors
+                className="w-full py-2.5 rounded-lg bg-[#3b82f6] text-white font-semibold
+                           text-sm hover:bg-[#2563eb] transition-colors
                            disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {status === 'loading'
@@ -151,7 +151,7 @@ export default function LoginPage() {
 
           <p className="text-center text-xs text-[#334155] mt-6">
             No account?{' '}
-            <a href="/signup" className="text-[#22c55e] hover:underline">
+            <a href="/signup" className="text-[#3b82f6] hover:underline">
               Create one free →
             </a>
             {' · '}

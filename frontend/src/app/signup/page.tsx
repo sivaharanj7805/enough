@@ -42,7 +42,7 @@ export default function SignupPage() {
     <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-10">
-          <span className="text-3xl font-bold tracking-widest text-[#22c55e]">ENOUGH</span>
+          <span className="text-3xl font-bold tracking-widest text-[#3b82f6]">ENOUGH</span>
           <p className="text-[#64748b] text-sm mt-1">Content Ecosystem Intelligence</p>
         </div>
 
@@ -53,12 +53,12 @@ export default function SignupPage() {
               <p className="text-[#e2e8f0] font-medium">Verify your email</p>
               <p className="text-[#64748b] text-sm mt-2">
                 We sent a confirmation link to{' '}
-                <span className="text-[#22c55e]">{email}</span>.
+                <span className="text-[#3b82f6]">{email}</span>.
                 Click it to activate your account.
               </p>
               <a
                 href="/login"
-                className="mt-4 inline-block text-sm text-[#22c55e] hover:underline"
+                className="mt-4 inline-block text-sm text-[#3b82f6] hover:underline"
               >
                 Back to sign in →
               </a>
@@ -78,7 +78,7 @@ export default function SignupPage() {
                     required
                     placeholder="you@company.com"
                     className="w-full px-3 py-2.5 rounded-lg bg-[#0a0f1a] border border-[#1e293b] text-[#e2e8f0]
-                               placeholder-[#334155] text-sm focus:outline-none focus:border-[#22c55e] transition-colors"
+                               placeholder-[#334155] text-sm focus:outline-none focus:border-[#3b82f6] transition-colors"
                   />
                 </div>
                 <div>
@@ -90,7 +90,7 @@ export default function SignupPage() {
                     required
                     placeholder="8+ characters"
                     className="w-full px-3 py-2.5 rounded-lg bg-[#0a0f1a] border border-[#1e293b] text-[#e2e8f0]
-                               placeholder-[#334155] text-sm focus:outline-none focus:border-[#22c55e] transition-colors"
+                               placeholder-[#334155] text-sm focus:outline-none focus:border-[#3b82f6] transition-colors"
                   />
                 </div>
                 <div>
@@ -102,7 +102,7 @@ export default function SignupPage() {
                     required
                     placeholder="Same password again"
                     className="w-full px-3 py-2.5 rounded-lg bg-[#0a0f1a] border border-[#1e293b] text-[#e2e8f0]
-                               placeholder-[#334155] text-sm focus:outline-none focus:border-[#22c55e] transition-colors"
+                               placeholder-[#334155] text-sm focus:outline-none focus:border-[#3b82f6] transition-colors"
                   />
                 </div>
 
@@ -113,8 +113,8 @@ export default function SignupPage() {
                 <button
                   type="submit"
                   disabled={status === 'loading'}
-                  className="w-full py-2.5 rounded-lg bg-[#22c55e] text-[#0a0f1a] font-semibold text-sm
-                             hover:bg-[#16a34a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-2.5 rounded-lg bg-[#3b82f6] text-white font-semibold text-sm
+                             hover:bg-[#2563eb] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {status === 'loading' ? 'Creating account…' : 'Create account'}
                 </button>
@@ -122,7 +122,7 @@ export default function SignupPage() {
 
               <p className="text-center text-xs text-[#334155] mt-6">
                 Already have an account?{' '}
-                <a href="/login" className="text-[#22c55e] hover:underline">Sign in →</a>
+                <a href="/login" className="text-[#3b82f6] hover:underline">Sign in →</a>
               </p>
             </>
           )}
