@@ -1,6 +1,7 @@
 """Authentication endpoints using Supabase Auth."""
 
 import logging
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
@@ -177,17 +178,44 @@ async def google_oauth_callback(
             else:
                 logger.warning("OAuth state signature mismatch — possible tampering")
 
-        return {
-            "access_token": tokens.get("access_token"),
-            "refresh_token": tokens.get("refresh_token"),
-            "expires_in": tokens.get("expires_in"),
-            "site_id": site_id,
-            "message": (
-                f"Token ready for site {site_id}. Call PUT /sites/{site_id}/google-token."
-                if site_id
-                else "Use PUT /sites/{site_id}/google-token to store the refresh_token."
-            ),
-        }
+        # Auto-store tokens if we have a valid site_id
+        if site_id and tokens.get("refresh_token"):
+            import time
+            from app.database import get_pool
+            from app.services.google_auth import encrypt_token
+            try:
+                from uuid import UUID
+                site_uuid = UUID(site_id)
+                token_data = dict(tokens)
+                token_data["expires_at"] = time.time() + tokens.get("expires_in", 3600)
+                encrypted = encrypt_token(token_data)
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE sites SET google_tokens = $1 WHERE id = $2",
+                        encrypted, site_uuid,
+                    )
+                logger.info("Auto-stored Google tokens for site %s", site_id)
+            except Exception as store_err:
+                logger.error("Failed to auto-store tokens: %s", store_err)
+
+        # Redirect to frontend settings with status
+        frontend_url = settings.frontend_url
+        if site_id and tokens.get("refresh_token"):
+            return RedirectResponse(f"{frontend_url}/settings?google_connected=1&site_id={site_id}")
+        else:
+            # Fallback: return tokens as JSON so user can manually store
+            return {
+                "access_token": tokens.get("access_token"),
+                "refresh_token": tokens.get("refresh_token"),
+                "expires_in": tokens.get("expires_in"),
+                "site_id": site_id,
+                "message": (
+                    f"Token ready for site {site_id}. Call PUT /sites/{site_id}/google-token."
+                    if site_id
+                    else "Use PUT /sites/{site_id}/google-token to store the refresh_token."
+                ),
+            }
     except httpx.HTTPStatusError as e:
         logger.error("Google OAuth token exchange failed: %s", e.response.text)
         raise HTTPException(status_code=400, detail="OAuth token exchange failed")

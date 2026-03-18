@@ -84,17 +84,11 @@ export default function SettingsPage() {
     if (error) showMessage('error', `Google connection failed: ${error}`);
   }, [siteId]);
 
-  const handleConnect = async () => {
+  const handleConnect = () => {
     if (!siteId) return;
-    try {
-      const data = await apiFetch<{ auth_url: string }>(
-        `/sites/${siteId}/google/connect`,
-        { token },
-      );
-      window.location.href = data.auth_url;
-    } catch (e) {
-      showMessage('error', 'Failed to start Google connection');
-    }
+    // Use the existing auth/google endpoint which handles state + redirect
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'https://pst-leaving-otherwise-roles.trycloudflare.com';
+    window.location.href = `${apiBase}/v1/auth/google?site_id=${siteId}`;
   };
 
   const handleDisconnect = async () => {
