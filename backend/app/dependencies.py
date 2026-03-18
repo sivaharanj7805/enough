@@ -25,29 +25,28 @@ async def get_current_user_id(authorization: Annotated[str, Header()]) -> str:
     if not token:
         raise HTTPException(status_code=401, detail="Missing authorization token")
 
-    # Try JWT validation first
+    # Try Supabase JWT validation
     try:
         import jwt
         from app.config import get_settings
 
         settings = get_settings()
-        if settings.supabase_key and settings.supabase_url:
-            # Supabase JWTs are signed with the JWT secret (service key for verification)
-            # In production, use the JWKS endpoint or the JWT secret from Supabase dashboard
+        jwt_secret = settings.supabase_jwt_secret or settings.secret_key
+
+        if jwt_secret and jwt_secret != "change-me-in-production":
             decoded = jwt.decode(
                 token,
-                settings.secret_key,
+                jwt_secret,
                 algorithms=["HS256"],
-                options={"verify_exp": True},
+                options={"verify_exp": True, "verify_aud": False},
             )
             user_id = decoded.get("sub")
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Invalid token: no sub claim")
-            return user_id
+            if user_id:
+                return user_id
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(status_code=401, detail="Token expired — please sign in again")
     except jwt.InvalidTokenError:
-        # Fall through to dev mode
+        # Not a valid JWT — fall through to UUID dev fallback
         pass
     except ImportError:
         pass

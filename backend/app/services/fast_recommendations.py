@@ -108,6 +108,80 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         "effort_hours": 0.5,
         "priority_fn": lambda d: "high",
     },
+    # ── 2026 AI-era SEO templates ─────────────────────────────────────────────
+    "low_ai_citability": {
+        "recommendation_type": "improve_ai_citability",
+        "title_tpl": "Improve AI citability: {title}",
+        "summary_tpl": (
+            "AI Citability Score: {citability_score}/100. "
+            "This post lacks the signals AI systems use when selecting content to cite or quote. "
+            "AI-cited content gets traffic even when traditional clicks decline."
+        ),
+        "actions_tpl": [
+            "Add at least one data table comparing options, benchmarks, or statistics",
+            "Include first-person experience language: 'In our testing...', 'When we implemented...'",
+            "Add 2-3 original statistics with specific numbers (not just citing others)",
+            "Start key H2 sections with a definition paragraph (40-80 words: '[Topic] is...')",
+            "Include a numbered step sequence (ordered list with 4+ steps)",
+        ],
+        "effort_hours": 2.0,
+        "priority_fn": lambda d: "high" if d.get("citability_score", 50) < 20 else "medium",
+    },
+    "weak_eeat": {
+        "recommendation_type": "strengthen_eeat",
+        "title_tpl": "Strengthen E-E-A-T signals: {title}",
+        "summary_tpl": (
+            "Weak E-E-A-T signals (score: {eeat_score}/100). "
+            "96% of AI Overview citations come from high E-E-A-T content. "
+            "Trust signals — author credentials, dates, citations — are now ranking factors."
+        ),
+        "actions_tpl": [
+            "Add a visible author byline with the author's name",
+            "Create an author bio section with credentials, title, and experience",
+            "Add Author schema markup (JSON-LD with @type: Person, name, jobTitle, url)",
+            "Display a visible publish/last-updated date using a <time> element",
+            "Add 2-3 links to credible external sources (.gov, .edu, peer-reviewed journals)",
+        ],
+        "effort_hours": 1.0,
+        "priority_fn": lambda d: "high" if d.get("eeat_score", 50) < 20 else "medium",
+    },
+    "missing_schema": {
+        "recommendation_type": "add_schema",
+        "title_tpl": "Add JSON-LD schema markup: {title}",
+        "summary_tpl": (
+            "No structured data detected on this page. "
+            "Pages with Article or FAQ schema are significantly more likely to appear in AI Overviews "
+            "and rich results. This is one of the highest-ROI technical SEO fixes available."
+        ),
+        "actions_tpl": [
+            "Add Article JSON-LD with: @type, headline, datePublished, dateModified, author (@type: Person, name), image",
+            "If post has Q&A content: add FAQPage schema with Question + Answer pairs",
+            "If post is a tutorial: add HowTo schema with Step objects",
+            "Validate schema at schema.org/validator after adding",
+            "Add Organization schema to your site's homepage if not already present",
+        ],
+        "effort_hours": 0.5,
+        "priority_fn": lambda d: "high",
+    },
+    "poor_ai_structure": {
+        "recommendation_type": "improve_ai_structure",
+        "title_tpl": "Restructure for AI extraction: {title}",
+        "summary_tpl": (
+            "AI Extraction Score: {extraction_score}/100. "
+            "This post doesn't answer its primary query in the first 100 words, "
+            "and H2 sections don't lead with direct answers. "
+            "AI systems prefer content that front-loads answers and uses clear structure."
+        ),
+        "actions_tpl": [
+            "Move the core answer to the first 100 words — state what the post covers immediately",
+            "Rewrite each H2 section to start with a 1-2 sentence direct answer before elaborating",
+            "Add a concise TL;DR or key takeaways section at the top",
+            "Convert any long prose answers to numbered lists or bullet points",
+            "Add an FAQ section at the bottom addressing 3-5 common questions on this topic",
+        ],
+        "effort_hours": 1.5,
+        "priority_fn": lambda d: "medium",
+    },
 }
 
 
@@ -196,6 +270,11 @@ async def generate_fast_recommendations(
             "cluster_avg": cluster_avg,
             "title_length": len(prob["title"] or ""),
             "readability_score": prob["readability_score"] or 0,
+            # AI-era fields (from problem details metadata)
+            "citability_score": int(details.get("citability_score", 0)),
+            "eeat_score": int(details.get("eeat_score", 0)),
+            "schema_score": int(details.get("schema_score", 0)),
+            "extraction_score": int(details.get("extraction_score", 0)),
         }
 
         try:

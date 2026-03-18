@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
     supabase_service_key: str = ""
+    supabase_jwt_secret: str = ""  # From: Supabase dashboard → Settings → API → JWT secret
     database_url: str = ""
 
     # Google OAuth

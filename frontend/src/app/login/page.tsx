@@ -151,8 +151,12 @@ export default function LoginPage() {
 
           <p className="text-center text-xs text-[#334155] mt-6">
             No account?{' '}
-            <a href="/onboarding" className="text-[#22c55e] hover:underline">
-              Analyze your blog for free →
+            <a href="/signup" className="text-[#22c55e] hover:underline">
+              Create one free →
+            </a>
+            {' · '}
+            <a href="/onboarding" className="text-[#64748b] hover:underline">
+              Try without signing up
             </a>
           </p>
         </div>

@@ -314,94 +314,132 @@ async def _get_site_for_ingestion(
 
 # ── Full pipeline trigger (crawl → analyze → cluster → recs) ─────────────────
 
-async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
-    """Background: crawl → embed → cluster → health → problems → recs."""
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    pool = await get_pool()
+async def _pipeline_step(pool, site_id: UUID, step_name: str, status: str, fn) -> bool:
+    """Run one pipeline step with status update + error recovery.
 
-    async with pool.acquire() as db:
-        await db.execute(
-            """UPDATE crawl_jobs SET status='analyzing', updated_at=NOW() WHERE site_id=$1""",
-            site_id,
-        )
-
+    Returns True on success, False on failure (pipeline continues to next step).
+    """
     try:
-        # Step 1: crawl
-        await _run_crawl(site_id, site)
-
-        # Check crawl succeeded
-        async with pool.acquire() as db:
-            crawl = await db.fetchrow("SELECT status, posts_processed FROM crawl_jobs WHERE site_id=$1", site_id)
-        if not crawl or crawl["status"] != "completed":
-            return
-
-        # Step 2: embeddings (sequential, memory-safe)
-        async with pool.acquire() as db:
-            await db.execute("UPDATE crawl_jobs SET status='embedding', updated_at=NOW() WHERE site_id=$1", site_id)
-        from app.services.embeddings import EmbeddingsService
-        emb = EmbeddingsService()
-        async with pool.acquire() as db:
-            await emb.generate_embeddings(db, site_id)
-
-        # Step 3: readability
-        async with pool.acquire() as db:
-            await db.execute("UPDATE crawl_jobs SET status='analyzing', updated_at=NOW() WHERE site_id=$1", site_id)
-        from app.services.readability import ReadabilityService
-        async with pool.acquire() as db:
-            await ReadabilityService().compute_readability(db, site_id)
-
-        # Step 4: pagerank
-        from app.services.pagerank import PageRankService
-        async with pool.acquire() as db:
-            await PageRankService().compute_pagerank(db, site_id)
-
-        # Step 5: intent
-        from app.services.fast_intent import classify_site_intent
-        async with pool.acquire() as db:
-            await classify_site_intent(db, site_id)
-
-        # Step 6: clustering + Claude labels (skip_labeling=False → labels inline)
-        from app.services.clustering import TopicClusterer
-        async with pool.acquire() as db:
-            await db.execute("UPDATE crawl_jobs SET status='clustering', updated_at=NOW() WHERE site_id=$1", site_id)
-        async with pool.acquire() as db:
-            clusterer = TopicClusterer()
-            await clusterer.cluster_site(db, site_id, skip_labeling=False)
-
-        # Step 8: health scoring
-        from app.services.health_scoring import HealthScoringService
-        async with pool.acquire() as db:
-            await HealthScoringService().score_site(db, site_id)
-
-        # Step 9: cannibalization
-        from app.services.cannibalization import CannibalizationService
-        async with pool.acquire() as db:
-            await CannibalizationService().detect_cannibalization(db, site_id)
-
-        # Step 10: problem detection
-        from app.services.problem_detection import ProblemDetectionService
-        async with pool.acquire() as db:
-            await ProblemDetectionService().detect_problems(db, site_id)
-
-        # Step 11: recommendations
-        from app.services.fast_recommendations import generate_fast_recommendations
-        async with pool.acquire() as db:
-            await generate_fast_recommendations(db, site_id)
-
         async with pool.acquire() as db:
             await db.execute(
-                "UPDATE crawl_jobs SET status='completed', updated_at=NOW() WHERE site_id=$1", site_id
+                "UPDATE crawl_jobs SET status=$1, updated_at=NOW() WHERE site_id=$2",
+                status, site_id,
+            )
+        async with pool.acquire() as db:
+            await fn(db)
+        logger.info("Pipeline step '%s' complete for site %s", step_name, site_id)
+        return True
+    except Exception as e:
+        logger.error("Pipeline step '%s' failed for site %s: %s", step_name, site_id, e)
+        import traceback; traceback.print_exc()
+        # Log step failure but don't abort — continue to next step
+        try:
+            async with pool.acquire() as db:
+                await db.execute(
+                    """UPDATE crawl_jobs SET
+                        error = COALESCE(error, '') || $1,
+                        updated_at = NOW()
+                       WHERE site_id = $2""",
+                    f"[{step_name}]: {str(e)[:200]}; ", site_id,
+                )
+        except Exception:
+            pass
+        return False
+
+
+async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
+    """Background: crawl → embed → cluster → health → problems → recs.
+
+    Each step is independently error-handled. A failing step logs the error
+    and continues to the next step rather than aborting the whole pipeline.
+    """
+    pool = await get_pool()
+
+    try:
+        # Step 1: crawl (owns its own status updates)
+        await _run_crawl(site_id, site)
+
+        # Verify crawl produced posts
+        async with pool.acquire() as db:
+            crawl = await db.fetchrow(
+                "SELECT status, posts_processed FROM crawl_jobs WHERE site_id=$1", site_id
+            )
+        if not crawl or crawl["status"] == "failed":
+            logger.error("Crawl failed for site %s — aborting pipeline", site_id)
+            return
+        if (crawl["posts_processed"] or 0) == 0:
+            async with pool.acquire() as db:
+                await db.execute(
+                    "UPDATE crawl_jobs SET status='failed', error='No posts found in sitemap', updated_at=NOW() WHERE site_id=$1",
+                    site_id,
+                )
+            return
+
+        # Step 2: embeddings
+        from app.services.embeddings import EmbeddingPipeline
+        await _pipeline_step(pool, site_id, "embeddings", "embedding",
+                             lambda db: EmbeddingPipeline().generate_for_site(db, site_id))
+
+        # Step 3: readability
+        from app.services.readability import ReadabilityScorer
+        await _pipeline_step(pool, site_id, "readability", "analyzing",
+                             lambda db: ReadabilityScorer().score_site(db, site_id))
+
+        # Step 4: pagerank
+        from app.services.pagerank import InternalPageRank
+        await _pipeline_step(pool, site_id, "pagerank", "analyzing",
+                             lambda db: InternalPageRank().compute_for_site(db, site_id))
+
+        # Step 5: intent classification
+        from app.services.fast_intent import classify_site_fast
+        await _pipeline_step(pool, site_id, "intent", "analyzing",
+                             lambda db: classify_site_fast(db, site_id))
+
+        # Step 6: clustering + Claude labels
+        from app.services.clustering import TopicClusterer
+        await _pipeline_step(pool, site_id, "clustering", "clustering",
+                             lambda db: TopicClusterer().cluster_site(db, site_id, skip_labeling=False))
+
+        # Step 7: health scoring
+        from app.services.health_scoring import HealthScorer
+        await _pipeline_step(pool, site_id, "health_scoring", "analyzing",
+                             lambda db: HealthScorer().score_site(db, site_id))
+
+        # Step 8: cannibalization
+        from app.services.cannibalization import CannibalizationDetector
+        await _pipeline_step(pool, site_id, "cannibalization", "analyzing",
+                             lambda db: CannibalizationDetector().detect_for_site(db, site_id))
+
+        # Step 9: problem detection
+        from app.services.problem_detection import ProblemDetector
+        await _pipeline_step(pool, site_id, "problem_detection", "analyzing",
+                             lambda db: ProblemDetector().detect_all(db, site_id))
+
+        # Step 10: recommendations
+        from app.services.fast_recommendations import generate_fast_recommendations
+        await _pipeline_step(pool, site_id, "recommendations", "analyzing",
+                             lambda db: generate_fast_recommendations(db, site_id))
+
+        # Mark complete
+        async with pool.acquire() as db:
+            await db.execute(
+                """UPDATE crawl_jobs SET status='completed', completed_at=NOW(), updated_at=NOW()
+                   WHERE site_id=$1""",
+                site_id,
             )
         logger.info("Full pipeline complete for site %s", site_id)
 
     except Exception as e:
-        logger.error("Full pipeline failed for site %s: %s", site_id, e)
-        async with pool.acquire() as db:
-            await db.execute(
-                "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
-                str(e)[:500], site_id,
-            )
+        logger.error("Full pipeline outer error for site %s: %s", site_id, e)
+        import traceback; traceback.print_exc()
+        try:
+            async with pool.acquire() as db:
+                await db.execute(
+                    "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
+                    str(e)[:500], site_id,
+                )
+        except Exception:
+            pass
 
 
 class PipelineOptions(BaseModel):
@@ -435,58 +473,51 @@ async def trigger_full_pipeline(
 # ── Incremental refresh (re-crawl new/changed posts only, then re-analyze) ────
 
 async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
-    """Background: crawl only changed posts → embed new ones → re-score site."""
+    """Background: crawl only changed posts → embed new ones → re-score site.
+    Each step independently error-handled — failures log and continue."""
     pool = await get_pool()
 
-    async with pool.acquire() as db:
-        prev_count = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id=$1", site_id) or 0
-        await db.execute(
-            "UPDATE crawl_jobs SET status='crawling', started_at=NOW(), updated_at=NOW() WHERE site_id=$1",
-            site_id,
-        )
-
     try:
-        # Step 1: crawl (upsert — unchanged posts keep their content_hash, no reprocess)
+        async with pool.acquire() as db:
+            prev_count = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id=$1", site_id) or 0
+
+        # Step 1: crawl (upsert — unchanged posts keep content_hash, skip reprocessing)
         await _run_crawl(site_id, site)
 
         async with pool.acquire() as db:
             new_count = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id=$1", site_id) or 0
-            added = max(0, new_count - prev_count)
+        added = max(0, new_count - prev_count)
+        logger.info("Incremental crawl: %d new/updated posts for site %s", added, site_id)
 
-        # Step 2: embed only new/changed posts (EmbeddingPipeline skips unchanged via content_hash)
-        async with pool.acquire() as db:
-            await db.execute("UPDATE crawl_jobs SET status='embedding', updated_at=NOW() WHERE site_id=$1", site_id)
-        async with pool.acquire() as db:
-            from app.services.embeddings import EmbeddingPipeline
-            await EmbeddingPipeline().generate_for_site(db, site_id)
+        # Step 2: embed only new/changed posts (skips unchanged via content_hash)
+        from app.services.embeddings import EmbeddingPipeline
+        await _pipeline_step(pool, site_id, "embeddings", "embedding",
+                             lambda db: EmbeddingPipeline().generate_for_site(db, site_id))
 
-        # Steps 3-7: always re-run analysis (fast, <2 min for any site size)
-        async with pool.acquire() as db:
-            await db.execute("UPDATE crawl_jobs SET status='analyzing', updated_at=NOW() WHERE site_id=$1", site_id)
+        # Steps 3-7: always re-run analysis (fast — no embedding cost for unchanged posts)
+        from app.services.fast_intent import classify_site_fast
+        await _pipeline_step(pool, site_id, "intent", "analyzing",
+                             lambda db: classify_site_fast(db, site_id))
 
-        async with pool.acquire() as db:
-            from app.services.fast_intent import classify_site_fast
-            await classify_site_fast(db, site_id)
+        from app.services.pagerank import InternalPageRank
+        await _pipeline_step(pool, site_id, "pagerank", "analyzing",
+                             lambda db: InternalPageRank().compute_for_site(db, site_id))
 
-        async with pool.acquire() as db:
-            from app.services.pagerank import InternalPageRank
-            await InternalPageRank().compute_for_site(db, site_id)
+        from app.services.health_scoring import HealthScorer
+        await _pipeline_step(pool, site_id, "health_scoring", "analyzing",
+                             lambda db: HealthScorer().score_site(db, site_id))
 
-        async with pool.acquire() as db:
-            from app.services.health_scoring import HealthScorer
-            await HealthScorer().score_site(db, site_id)
+        from app.services.cannibalization import CannibalizationDetector
+        await _pipeline_step(pool, site_id, "cannibalization", "analyzing",
+                             lambda db: CannibalizationDetector().detect_for_site(db, site_id))
 
-        async with pool.acquire() as db:
-            from app.services.cannibalization import CannibalizationDetector
-            await CannibalizationDetector().detect_for_site(db, site_id)
+        from app.services.problem_detection import ProblemDetector
+        await _pipeline_step(pool, site_id, "problem_detection", "analyzing",
+                             lambda db: ProblemDetector().detect_all(db, site_id))
 
-        async with pool.acquire() as db:
-            from app.services.problem_detection import ProblemDetector
-            await ProblemDetector().detect_all(db, site_id)
-
-        async with pool.acquire() as db:
-            from app.services.fast_recommendations import generate_fast_recommendations
-            await generate_fast_recommendations(db, site_id)
+        from app.services.fast_recommendations import generate_fast_recommendations
+        await _pipeline_step(pool, site_id, "recommendations", "analyzing",
+                             lambda db: generate_fast_recommendations(db, site_id))
 
         async with pool.acquire() as db:
             await db.execute(
@@ -496,12 +527,16 @@ async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
         logger.info("Incremental pipeline complete for site %s (added %d posts)", site_id, added)
 
     except Exception as e:
-        logger.error("Incremental pipeline failed for site %s: %s", site_id, e)
-        async with pool.acquire() as db:
-            await db.execute(
-                "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
-                str(e)[:500], site_id,
-            )
+        logger.error("Incremental pipeline outer error for site %s: %s", site_id, e)
+        import traceback; traceback.print_exc()
+        try:
+            async with pool.acquire() as db:
+                await db.execute(
+                    "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
+                    str(e)[:500], site_id,
+                )
+        except Exception:
+            pass
 
 
 @router.post("/{site_id}/pipeline/refresh", response_model=TaskTriggerResponse)

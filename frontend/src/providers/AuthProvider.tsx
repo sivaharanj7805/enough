@@ -61,6 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
+      // On SIGNED_IN via magic link, clear any old localStorage token
+      if (s && typeof window !== 'undefined') {
+        localStorage.removeItem('enough_access_token');
+        localStorage.removeItem('enough_user_id');
+      }
       setLoading(false);
     });
 

@@ -1,17 +1,24 @@
 'use client';
 
 import { useSite } from '@/lib/hooks/useSite';
-import { useSiteHealth } from '@/lib/hooks/useApi';
+import { useSiteHealth, useAIScores } from '@/lib/hooks/useApi';
+import { useAuth } from '@/lib/hooks/useAuth';
 import { HealthScoreCard } from '@/components/dashboard/HealthScoreCard';
 import { EfficiencyRatio } from '@/components/dashboard/EfficiencyRatio';
 import { PostBreakdown } from '@/components/dashboard/PostBreakdown';
 import { TrendChart } from '@/components/dashboard/TrendChart';
 import { ClusterList } from '@/components/dashboard/ClusterList';
+import { AIReadinessCard } from '@/components/dashboard/AIReadinessCard';
 import { Spinner } from '@/components/ui/Spinner';
+import { apiFetch } from '@/lib/api';
+import { mutate } from 'swr';
 
 export default function DashboardPage() {
   const { currentSite } = useSite();
   const { data, isLoading, error } = useSiteHealth(currentSite?.id ?? null);
+  const { data: aiScores, isLoading: aiLoading } = useAIScores(currentSite?.id ?? null);
+  const { session } = useAuth();
+  const token = session?.access_token ?? (typeof window !== 'undefined' ? localStorage.getItem('enough_access_token') : null);
 
   if (isLoading) {
     return (
@@ -51,6 +58,35 @@ export default function DashboardPage() {
     pageviews: value,
   }));
 
+  const handleRunAIScan = async () => {
+    if (!currentSite?.id || !token) return;
+    try {
+      await apiFetch(`/sites/${currentSite.id}/intelligence/ai-readiness`, {
+        method: 'POST',
+        token: token ?? undefined,
+      });
+      // Refetch AI scores after ~2 min
+      setTimeout(() => {
+        void mutate(`/sites/${currentSite.id}/intelligence/ai-scores`);
+      }, 120_000);
+    } catch {
+      // silent — button just triggers background task
+    }
+  };
+
+  // Build AI scores object compatible with AIReadinessCard
+  const aiScoresForCard = aiScores && aiScores.total_scored > 0
+    ? {
+        total_scored: aiScores.total_scored,
+        avg_citability: aiScores.avg_citability ?? 0,
+        avg_eeat: aiScores.avg_eeat ?? 0,
+        avg_schema: aiScores.avg_schema ?? 0,
+        avg_extraction: aiScores.avg_extraction ?? 0,
+        pct_has_schema: aiScores.pct_has_schema ?? 0,
+        pct_ai_ready: aiScores.pct_ai_ready ?? 0,
+      }
+    : null;
+
   return (
     <div className="space-y-6">
       {/* Row 1 — Hero metrics */}
@@ -73,13 +109,24 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Row 2 — Post breakdown */}
-      <PostBreakdown
-        active={data.active_posts}
-        passive={data.passive_posts}
-        cannibal={data.cannibalistic_posts}
-        dead={data.dead_posts}
-      />
+      {/* Row 2 — Post breakdown + AI Readiness side by side */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="md:col-span-2">
+          <PostBreakdown
+            active={data.active_posts}
+            passive={data.passive_posts}
+            cannibal={data.cannibalistic_posts}
+            dead={data.dead_posts}
+          />
+        </div>
+        <div>
+          <AIReadinessCard
+            scores={aiScoresForCard}
+            loading={aiLoading}
+            onRunScan={() => void handleRunAIScan()}
+          />
+        </div>
+      </div>
 
       {/* Row 3 — Trend chart */}
       <TrendChart data={trendData} />
