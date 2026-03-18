@@ -445,6 +445,25 @@ export default function SettingsPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                <RefreshCw size={13} className="text-blue-400" /> Incremental Refresh
+              </p>
+              <p className="text-xs text-brand-text-muted mt-0.5">Re-crawl new/changed posts only, then re-analyze. Much faster than full pipeline on re-runs.</p>
+            </div>
+            <button
+              onClick={() => {
+                if (!siteId) return;
+                void apiFetch(`/sites/${siteId}/pipeline/refresh`, { method: 'POST', token })
+                  .then(() => showMessage('success', 'Incremental refresh started'));
+              }}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors"
+            >
+              Run
+            </button>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
                 <Layers size={13} className="text-orange-400" /> Confirm Chunk Overlap
               </p>
               <p className="text-xs text-brand-text-muted mt-0.5">Verify cannibalization pairs at section level using H2/H3 chunk embeddings. Runs in background (~5 min).</p>

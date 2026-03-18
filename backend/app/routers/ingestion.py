@@ -414,3 +414,92 @@ async def trigger_full_pipeline(
     site = await _get_site_for_ingestion(site_id, user_id, db)
     background_tasks.add_task(_run_full_pipeline, site_id, site)
     return TaskTriggerResponse(message="Full pipeline started — crawl → analyze → cluster → recommendations", site_id=site_id)
+
+
+# ── Incremental refresh (re-crawl new/changed posts only, then re-analyze) ────
+
+async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
+    """Background: crawl only changed posts → embed new ones → re-score site."""
+    pool = await get_pool()
+
+    async with pool.acquire() as db:
+        prev_count = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id=$1", site_id) or 0
+        await db.execute(
+            "UPDATE crawl_jobs SET status='crawling', started_at=NOW(), updated_at=NOW() WHERE site_id=$1",
+            site_id,
+        )
+
+    try:
+        # Step 1: crawl (upsert — unchanged posts keep their content_hash, no reprocess)
+        await _run_crawl(site_id, site)
+
+        async with pool.acquire() as db:
+            new_count = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id=$1", site_id) or 0
+            added = max(0, new_count - prev_count)
+
+        # Step 2: embed only new/changed posts (EmbeddingPipeline skips unchanged via content_hash)
+        async with pool.acquire() as db:
+            await db.execute("UPDATE crawl_jobs SET status='embedding', updated_at=NOW() WHERE site_id=$1", site_id)
+        async with pool.acquire() as db:
+            from app.services.embeddings import EmbeddingPipeline
+            await EmbeddingPipeline().generate_for_site(db, site_id)
+
+        # Steps 3-7: always re-run analysis (fast, <2 min for any site size)
+        async with pool.acquire() as db:
+            await db.execute("UPDATE crawl_jobs SET status='analyzing', updated_at=NOW() WHERE site_id=$1", site_id)
+
+        async with pool.acquire() as db:
+            from app.services.fast_intent import classify_site_fast
+            await classify_site_fast(db, site_id)
+
+        async with pool.acquire() as db:
+            from app.services.pagerank import InternalPageRank
+            await InternalPageRank().compute_for_site(db, site_id)
+
+        async with pool.acquire() as db:
+            from app.services.health_scoring import HealthScorer
+            await HealthScorer().score_site(db, site_id)
+
+        async with pool.acquire() as db:
+            from app.services.cannibalization import CannibalizationDetector
+            await CannibalizationDetector().detect_for_site(db, site_id)
+
+        async with pool.acquire() as db:
+            from app.services.problem_detection import ProblemDetector
+            await ProblemDetector().detect_all(db, site_id)
+
+        async with pool.acquire() as db:
+            from app.services.fast_recommendations import generate_fast_recommendations
+            await generate_fast_recommendations(db, site_id)
+
+        async with pool.acquire() as db:
+            await db.execute(
+                "UPDATE crawl_jobs SET status='completed', completed_at=NOW(), updated_at=NOW() WHERE site_id=$1",
+                site_id,
+            )
+        logger.info("Incremental pipeline complete for site %s (added %d posts)", site_id, added)
+
+    except Exception as e:
+        logger.error("Incremental pipeline failed for site %s: %s", site_id, e)
+        async with pool.acquire() as db:
+            await db.execute(
+                "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
+                str(e)[:500], site_id,
+            )
+
+
+@router.post("/{site_id}/pipeline/refresh", response_model=TaskTriggerResponse)
+async def trigger_incremental_refresh(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    """Incremental refresh: re-crawl changed posts only, embed new ones, re-analyze.
+    Much faster than full pipeline on re-runs — only processes what changed."""
+    site = await _get_site_for_ingestion(site_id, user_id, db)
+    background_tasks.add_task(_run_incremental_pipeline, site_id, site)
+    return TaskTriggerResponse(
+        message="Incremental refresh started — only new/changed posts will be re-processed",
+        site_id=site_id,
+    )
