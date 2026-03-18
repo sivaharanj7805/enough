@@ -1204,6 +1204,57 @@ async def quick_scan(
     return {"message": "Quick scan started — refreshes health, problems, and recommendations (~30s)", "status": "running"}
 
 
+# ── AI Readiness Scan ─────────────────────────────────────────────────────────
+
+@router.post("/{site_id}/intelligence/ai-readiness")
+async def ai_readiness_scan(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    """Run AI-era readiness scoring for all posts (2026 SEO signals).
+
+    Scores each post on:
+    - AI Citability Score: likelihood AI systems will cite this post (tables, data, experience)
+    - E-E-A-T Score: author signals, dates, credentials, credible citations
+    - Schema Score: JSON-LD structured data completeness
+    - Extraction Score: content structure optimised for AI answer extraction
+
+    Then runs problem detection to flag low scores as actionable issues.
+    Zero new API calls — pure content analysis on already-crawled HTML.
+    ~1-3 min depending on site size."""
+    await _verify_site(site_id, user_id, db)
+
+    async def _run():
+        import time
+        t0 = time.time()
+        pool = await get_pool()
+        try:
+            from app.services.ai_citability import AICitabilityService
+            from app.services.problem_detection import ProblemDetector
+
+            async with pool.acquire() as conn:
+                result = await AICitabilityService().score_site(conn, site_id)
+                logger.info("AI scoring done: %s", result)
+
+            async with pool.acquire() as conn:
+                pd = ProblemDetector()
+                await pd._detect_ai_readiness_issues(conn, site_id)
+
+            logger.info("AI readiness scan complete for %s in %.1fs", site_id, time.time() - t0)
+        except Exception as e:
+            logger.error("AI readiness scan failed for %s: %s", site_id, e)
+            import traceback; traceback.print_exc()
+
+    background_tasks.add_task(_run)
+    return {
+        "message": "AI readiness scan started — scoring all posts for 2026 SEO signals (~1-3 min)",
+        "status": "running",
+        "signals": ["ai_citability", "eeat", "schema_markup", "extraction_structure"],
+    }
+
+
 # ── Chunk-level cannibalization confirmation ──────────────────────────────────
 
 @router.post("/{site_id}/intelligence/cannibalization/confirm-chunks")
@@ -1245,3 +1296,57 @@ async def claude_classify_intent(
 
     background_tasks.add_task(_run)
     return {"message": "Claude intent classification started in background", "status": "running"}
+
+
+@router.get("/{site_id}/intelligence/ai-scores")
+async def get_ai_scores(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get aggregate AI readiness scores for the site dashboard card."""
+    await _verify_site(site_id, user_id, db)
+
+    row = await db.fetchrow(
+        """
+        SELECT
+            COUNT(phs.post_id) FILTER (WHERE phs.ai_citability_score IS NOT NULL) AS total_scored,
+            ROUND(AVG(phs.ai_citability_score)::numeric, 1) AS avg_citability,
+            ROUND(AVG(phs.eeat_score)::numeric, 1) AS avg_eeat,
+            ROUND(AVG(phs.schema_score)::numeric, 1) AS avg_schema,
+            ROUND(AVG(phs.extraction_score)::numeric, 1) AS avg_extraction,
+            ROUND(
+                (COUNT(*) FILTER (WHERE phs.schema_score > 0))::numeric /
+                NULLIF(COUNT(*), 0) * 100, 1
+            ) AS pct_has_schema,
+            ROUND(
+                (COUNT(*) FILTER (WHERE phs.ai_citability_score >= 60))::numeric /
+                NULLIF(COUNT(*) FILTER (WHERE phs.ai_citability_score IS NOT NULL), 0) * 100, 1
+            ) AS pct_ai_ready
+        FROM post_health_scores phs
+        JOIN posts p ON p.id = phs.post_id
+        WHERE p.site_id = $1
+        """,
+        site_id,
+    )
+
+    if not row or not row["total_scored"]:
+        return {
+            "total_scored": 0,
+            "avg_citability": None,
+            "avg_eeat": None,
+            "avg_schema": None,
+            "avg_extraction": None,
+            "pct_has_schema": None,
+            "pct_ai_ready": None,
+        }
+
+    return {
+        "total_scored": int(row["total_scored"] or 0),
+        "avg_citability": float(row["avg_citability"] or 0),
+        "avg_eeat": float(row["avg_eeat"] or 0),
+        "avg_schema": float(row["avg_schema"] or 0),
+        "avg_extraction": float(row["avg_extraction"] or 0),
+        "pct_has_schema": float(row["pct_has_schema"] or 0),
+        "pct_ai_ready": float(row["pct_ai_ready"] or 0),
+    }

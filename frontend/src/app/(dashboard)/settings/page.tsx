@@ -18,6 +18,7 @@ import {
   Zap,
   Brain,
   Layers,
+  Sparkles,
 } from 'lucide-react';
 
 interface GoogleStatus {
@@ -494,6 +495,27 @@ export default function SettingsPage() {
                   .then(() => showMessage('success', 'Claude intent classification started'));
               }}
               className="shrink-0 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors"
+            >
+              Run
+            </button>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                <Sparkles size={13} className="text-amber-400" /> AI Readiness Scan
+              </p>
+              <p className="text-xs text-brand-text-muted mt-0.5">
+                Score every post for 2026 SEO: AI Citability, E-E-A-T signals, Schema markup, and AI Extraction structure. No API calls — pure content analysis (~1-3 min).
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                if (!siteId) return;
+                void apiFetch(`/sites/${siteId}/intelligence/ai-readiness`, { method: 'POST', token })
+                  .then(() => showMessage('success', 'AI readiness scan started — check back in ~2 min'));
+              }}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors"
             >
               Run
             </button>

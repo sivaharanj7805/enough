@@ -53,6 +53,13 @@ interface AuditReport {
   orphan_count: number;
   thin_content_count: number;
   exact_duplicate_count: number;
+  // AI Readiness (optional — null if scan not yet run)
+  ai_citability_score: number | null;
+  ai_eeat_score: number | null;
+  ai_schema_score: number | null;
+  ai_extraction_score: number | null;
+  ai_pct_ready: number | null;
+  ai_pct_schema: number | null;
   top_clusters: AuditCluster[];
   top_cann_pairs: AuditCannPair[];
   top_recs: AuditRec[];
@@ -199,6 +206,42 @@ export default function ReportPage({ params }: { params: Promise<{ siteId: strin
             ))}
           </div>
         </div>
+
+        {/* AI Readiness section — shown if scan has been run */}
+        {report.ai_citability_score !== null && (
+          <div className="rounded-xl bg-[#111827] border border-amber-500/20 p-6">
+            <h2 className="text-base font-semibold text-[#e2e8f0] mb-1 flex items-center gap-2">
+              ✦ AI Readiness <span className="text-xs font-normal text-amber-400 ml-1">2026 SEO</span>
+            </h2>
+            <p className="text-xs text-[#64748b] mb-4">How well this content is positioned for AI-powered search</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {[
+                { label: 'AI Citability', score: report.ai_citability_score, color: '#f59e0b' },
+                { label: 'E-E-A-T Signals', score: report.ai_eeat_score, color: '#60a5fa' },
+                { label: 'Schema Markup', score: report.ai_schema_score, color: '#a78bfa' },
+                { label: 'AI Extraction', score: report.ai_extraction_score, color: '#22c55e' },
+              ].map(({ label, score, color }) => (
+                <div key={label} className="bg-[#0a0f1a] rounded-lg p-3">
+                  <p className="text-[10px] text-[#64748b] mb-1">{label}</p>
+                  <p className="text-xl font-bold" style={{ color }}>{score !== null ? Math.round(score) : '—'}<span className="text-xs text-[#475569]">/100</span></p>
+                  <div className="mt-1.5 h-1 rounded-full bg-[#1e293b] overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${score ?? 0}%`, backgroundColor: color }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-4 text-center pt-3 border-t border-[#1e293b]">
+              <div className="flex-1">
+                <p className="text-lg font-bold text-[#22c55e]">{report.ai_pct_ready ?? 0}%</p>
+                <p className="text-[10px] text-[#64748b]">AI-Ready Posts</p>
+              </div>
+              <div className="flex-1">
+                <p className="text-lg font-bold text-amber-400">{report.ai_pct_schema ?? 0}%</p>
+                <p className="text-[10px] text-[#64748b]">Have Schema</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Key findings */}
         {report.key_findings.length > 0 && (

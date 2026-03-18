@@ -69,6 +69,13 @@ class AuditReport(BaseModel):
     orphan_count: int
     thin_content_count: int
     exact_duplicate_count: int
+    # AI Readiness (2026 SEO) — optional, None if scan not yet run
+    ai_citability_score: float | None = None
+    ai_eeat_score: float | None = None
+    ai_schema_score: float | None = None
+    ai_extraction_score: float | None = None
+    ai_pct_ready: float | None = None
+    ai_pct_schema: float | None = None
     # Top findings
     top_clusters: list[AuditCluster]
     top_cann_pairs: list[AuditCannPair]
@@ -266,6 +273,38 @@ async def get_audit_report(
     else:
         headline = f"Analyzed {total_posts} posts across {cluster_count} topic clusters — {problem_count} issues detected"
 
+    # AI Readiness scores (optional — None if scan not yet run)
+    ai_row = await db.fetchrow(
+        """
+        SELECT
+            ROUND(AVG(ai_citability_score)::numeric, 1) AS avg_cite,
+            ROUND(AVG(eeat_score)::numeric, 1) AS avg_eeat,
+            ROUND(AVG(schema_score)::numeric, 1) AS avg_schema,
+            ROUND(AVG(extraction_score)::numeric, 1) AS avg_extract,
+            ROUND(COUNT(*) FILTER (WHERE ai_citability_score >= 60)::numeric /
+                  NULLIF(COUNT(*) FILTER (WHERE ai_citability_score IS NOT NULL), 0) * 100, 1) AS pct_ready,
+            ROUND(COUNT(*) FILTER (WHERE schema_score > 0)::numeric /
+                  NULLIF(COUNT(*), 0) * 100, 1) AS pct_schema
+        FROM post_health_scores phs
+        JOIN posts p ON p.id = phs.post_id
+        WHERE p.site_id = $1 AND ai_citability_score IS NOT NULL
+        """,
+        site_id,
+    )
+    ai_cite = float(ai_row["avg_cite"]) if ai_row and ai_row["avg_cite"] is not None else None
+    ai_eeat = float(ai_row["avg_eeat"]) if ai_row and ai_row["avg_eeat"] is not None else None
+    ai_schema = float(ai_row["avg_schema"]) if ai_row and ai_row["avg_schema"] is not None else None
+    ai_extract = float(ai_row["avg_extract"]) if ai_row and ai_row["avg_extract"] is not None else None
+    ai_pct_ready = float(ai_row["pct_ready"]) if ai_row and ai_row["pct_ready"] is not None else None
+    ai_pct_schema = float(ai_row["pct_schema"]) if ai_row and ai_row["pct_schema"] is not None else None
+
+    # Add AI readiness to key findings if scan was run
+    if ai_cite is not None:
+        if ai_cite < 40:
+            key_findings.append(f"Only {ai_pct_ready}% of posts are AI-citable — content lacks data tables, original stats, and experience markers that AI systems prefer to cite")
+        if ai_pct_schema is not None and ai_pct_schema < 30:
+            key_findings.append(f"{100 - ai_pct_schema:.0f}% of posts have no schema markup — missing Article/FAQ JSON-LD that dramatically increases AI Overview citations")
+
     return AuditReport(
         site_name=site["name"] or site["domain"],
         site_domain=site["domain"] or "",
@@ -279,6 +318,12 @@ async def get_audit_report(
         orphan_count=int(orphan_count),
         thin_content_count=int(thin_count),
         exact_duplicate_count=int(exact_dup_count),
+        ai_citability_score=ai_cite,
+        ai_eeat_score=ai_eeat,
+        ai_schema_score=ai_schema,
+        ai_extraction_score=ai_extract,
+        ai_pct_ready=ai_pct_ready,
+        ai_pct_schema=ai_pct_schema,
         top_clusters=top_clusters,
         top_cann_pairs=top_cann,
         top_recs=top_recs,

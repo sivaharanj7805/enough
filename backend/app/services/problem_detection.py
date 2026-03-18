@@ -93,6 +93,9 @@ class ProblemDetector:
         # Velocity decline: needs publish dates (crawl-based)
         counts["velocity"] = await self._detect_velocity_decline(db, site_id)
 
+        # AI readiness: 2026 SEO signals — runs if ai_citability_score already computed
+        counts["ai_readiness"] = await self._detect_ai_readiness_issues(db, site_id)
+
         # Group related problems — if a post has both thin_content AND thin_below_cluster_avg,
         # mark them as related in details
         await self._group_related_problems(db, site_id)
@@ -100,13 +103,67 @@ class ProblemDetector:
         total = sum(counts.values())
         logger.info(
             "Problem detection complete for site %s — %d total problems "
-            "(decay=%d, thin=%d, seo=%d, orphan=%d, readability=%d, velocity=%d) "
+            "(decay=%d, thin=%d, seo=%d, orphan=%d, readability=%d, velocity=%d, ai=%d) "
             "[ga4=%s, gsc=%s]",
             site_id, total, counts["decay"], counts["thin"],
             counts["seo"], counts["orphan"], counts["readability"],
-            counts["velocity"], has_ga4, has_gsc,
+            counts["velocity"], counts["ai_readiness"], has_ga4, has_gsc,
         )
         return counts
+
+    async def _detect_ai_readiness_issues(
+        self, db: asyncpg.Connection, site_id: UUID,
+    ) -> int:
+        """Detect AI-era SEO problems: low citability, weak E-E-A-T, missing schema, poor structure."""
+        # Only run if AI scores have been computed
+        scored_count = await db.fetchval(
+            """SELECT COUNT(*) FROM post_health_scores phs
+               JOIN posts p ON p.id = phs.post_id
+               WHERE p.site_id = $1 AND phs.ai_citability_score IS NOT NULL""",
+            site_id,
+        )
+        if not scored_count:
+            logger.info("Skipping AI readiness problems — scores not yet computed for site %s", site_id)
+            return 0
+
+        rows = await db.fetch(
+            """SELECT phs.post_id, p.title,
+                      phs.ai_citability_score, phs.eeat_score,
+                      phs.schema_score, phs.extraction_score, phs.ai_signals
+               FROM post_health_scores phs
+               JOIN posts p ON p.id = phs.post_id
+               WHERE p.site_id = $1
+                 AND phs.ai_citability_score IS NOT NULL""",
+            site_id,
+        )
+
+        from app.services.ai_citability import generate_ai_problems
+        count = 0
+        for row in rows:
+            signals = row["ai_signals"] or {}
+            if isinstance(signals, str):
+                import json as _json
+                signals = _json.loads(signals)
+
+            problems = generate_ai_problems(
+                post_id=row["post_id"],
+                title=row["title"] or "",
+                cite=float(row["ai_citability_score"] or 0),
+                eeat=float(row["eeat_score"] or 0),
+                schema=float(row["schema_score"] or 0),
+                extract=float(row["extraction_score"] or 0),
+                signals=signals,
+            )
+            for p in problems:
+                await self._insert_problem(
+                    db, p["post_id"], site_id,
+                    p["problem_type"], p["severity"],
+                    p.get("metadata", {}),
+                )
+                count += 1
+
+        logger.info("AI readiness problems: %d issues detected for site %s", count, site_id)
+        return count
 
     @staticmethod
     async def _group_related_problems(db: asyncpg.Connection, site_id: UUID) -> None:
