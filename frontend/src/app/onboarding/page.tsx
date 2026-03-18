@@ -1,357 +1,290 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Globe, BarChart3, Search, Sparkles, Check, ArrowRight } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Card } from '@/components/ui/Card';
-import { Spinner } from '@/components/ui/Spinner';
-import { useAuth } from '@/lib/hooks/useAuth';
+import { ArrowRight, Globe, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
-import type { Site } from '@/lib/types';
+import { useAuth } from '@/lib/hooks/useAuth';
 
-/** Local build status for the onboarding animation (not the backend PipelineStatus). */
-interface BuildStatus {
-  stage: string;
-  progress: number;
-  message: string;
-  completed: boolean;
-  error: string | null;
+type Step = 'url' | 'creating' | 'crawling' | 'analyzing' | 'done' | 'error';
+
+interface CrawlStatus {
+  status: string;
+  posts_found: number;
+  posts_processed: number;
 }
 
-type CmsType = 'wordpress' | 'other';
+const PIPELINE_STAGES = [
+  { key: 'crawling', label: 'Crawling posts', emoji: '🕷️' },
+  { key: 'embedding', label: 'Generating embeddings', emoji: '🧠' },
+  { key: 'analyzing', label: 'Running analysis', emoji: '🔬' },
+  { key: 'clustering', label: 'Clustering topics', emoji: '🗂️' },
+  { key: 'completed', label: 'Building recommendations', emoji: '✦' },
+];
 
-interface StepProps {
-  onNext: () => void;
-  onSkip?: () => void;
-}
+export default function OnboardingPage() {
+  const router = useRouter();
+  const auth = useAuth();
+  const token = auth.session?.access_token;
 
-function StepIndicator({ current, total }: { current: number; total: number }) {
-  return (
-    <div className="flex items-center justify-center gap-2 mb-8">
-      {Array.from({ length: total }, (_, i) => (
-        <div
-          key={i}
-          className={`h-2 rounded-full transition-all ${
-            i < current
-              ? 'w-8 bg-brand-accent'
-              : i === current
-              ? 'w-8 bg-brand-accent/50'
-              : 'w-2 bg-brand-border'
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
+  const [step, setStep] = useState<Step>('url');
+  const [url, setUrl] = useState('');
+  const [siteName, setSiteName] = useState('');
+  const [siteId, setSiteId] = useState<string | null>(null);
+  const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
+  const [pipelineStage, setPipelineStage] = useState<string>('crawling');
+  const [error, setError] = useState<string | null>(null);
 
-function AddSiteStep({ onComplete }: { onComplete: (site: Site) => void }) {
-  const [name, setName] = useState('');
-  const [domain, setDomain] = useState('');
-  const [cmsType, setCmsType] = useState<CmsType>('wordpress');
-  const [sitemapUrl, setSitemapUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const { session } = useAuth();
-
-  async function handleSubmit() {
-    setError('');
-    setLoading(true);
+  const extractDomain = (input: string): string => {
     try {
-      const site = await apiFetch<Site>('/sites', {
+      const u = new URL(input.startsWith('http') ? input : `https://${input}`);
+      return u.hostname.replace(/^www\./, '');
+    } catch {
+      return input.replace(/^www\./, '').split('/')[0];
+    }
+  };
+
+  const pollStatus = async (id: string) => {
+    let attempts = 0;
+    const maxAttempts = 300; // 25 min max
+
+    while (attempts < maxAttempts) {
+      await new Promise((r) => setTimeout(r, 5000));
+      attempts++;
+
+      try {
+        const status = await apiFetch<CrawlStatus>(
+          `/sites/${id}/crawl/status`,
+          { token },
+        );
+        setCrawlStatus(status);
+        setPipelineStage(status.status);
+
+        if (status.status === 'completed') {
+          setStep('done');
+          return;
+        }
+        if (status.status === 'failed') {
+          setError('Pipeline failed. Check that your blog has a sitemap.xml.');
+          setStep('error');
+          return;
+        }
+      } catch {
+        // poll failure is ok, keep trying
+      }
+    }
+    setError('Analysis is taking longer than expected. Check back in a few minutes.');
+    setStep('error');
+  };
+
+  const handleSubmit = async () => {
+    if (!url.trim()) return;
+    setError(null);
+    setStep('creating');
+
+    const domain = extractDomain(url);
+    const name = siteName.trim() || domain;
+    const sitemapUrl = url.startsWith('http') ? url : `https://${url}`;
+
+    try {
+      // Create site
+      const site = await apiFetch<{ id: string; name: string }>('/sites', {
         method: 'POST',
-        token: session?.access_token,
+        token,
         body: JSON.stringify({
           name,
           domain,
-          cms_type: cmsType,
-          sitemap_url: sitemapUrl || null,
+          cms_type: 'sitemap',
+          sitemap_url: sitemapUrl.includes('sitemap') ? sitemapUrl : null,
         }),
       });
-      onComplete(site);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add site');
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  return (
-    <Card>
-      <div className="space-y-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="rounded-lg bg-brand-accent/10 p-2">
-            <Globe size={24} className="text-brand-accent" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-brand-text">Add Your Site</h2>
-            <p className="text-sm text-brand-text-muted">Tell us about your content</p>
-          </div>
-        </div>
+      setSiteId(site.id);
+      setStep('crawling');
 
-        {error && (
-          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
-            {error}
-          </div>
-        )}
-
-        <Input
-          id="site-name"
-          label="Site Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="My Blog"
-        />
-
-        <Input
-          id="domain"
-          label="Domain"
-          value={domain}
-          onChange={(e) => setDomain(e.target.value)}
-          placeholder="example.com"
-        />
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-brand-text">CMS</label>
-          <div className="flex gap-3">
-            {(['wordpress', 'other'] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => setCmsType(type)}
-                className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
-                  cmsType === type
-                    ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                    : 'border-brand-border text-brand-text-muted hover:border-brand-border-hover'
-                }`}
-              >
-                {type === 'wordpress' ? 'WordPress' : 'Other'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Input
-          id="sitemap"
-          label={cmsType === 'wordpress' ? 'Site URL' : 'Sitemap URL'}
-          value={sitemapUrl}
-          onChange={(e) => setSitemapUrl(e.target.value)}
-          placeholder={cmsType === 'wordpress' ? 'https://example.com' : 'https://example.com/sitemap.xml'}
-        />
-
-        <Button
-          className="w-full"
-          loading={loading}
-          disabled={!name || !domain}
-          onClick={() => void handleSubmit()}
-        >
-          Add Site
-          <ArrowRight size={16} />
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-function ConnectStep({ icon: Icon, title, description, onNext, onSkip }: StepProps & {
-  icon: typeof BarChart3;
-  title: string;
-  description: string;
-}) {
-  const [loading, setLoading] = useState(false);
-  const [connected, setConnected] = useState(false);
-
-  function handleConnect() {
-    setLoading(true);
-    // In production, this would trigger Google OAuth
-    setTimeout(() => {
-      setLoading(false);
-      setConnected(true);
-    }, 1500);
-  }
-
-  return (
-    <Card>
-      <div className="space-y-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="rounded-lg bg-brand-accent/10 p-2">
-            <Icon size={24} className="text-brand-accent" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-brand-text">{title}</h2>
-            <p className="text-sm text-brand-text-muted">{description}</p>
-          </div>
-        </div>
-
-        {connected ? (
-          <div className="flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-sm text-green-400">
-            <Check size={18} />
-            Connected successfully
-          </div>
-        ) : (
-          <Button
-            className="w-full"
-            loading={loading}
-            onClick={handleConnect}
-          >
-            Connect with Google
-          </Button>
-        )}
-
-        <div className="flex gap-3">
-          {onSkip && !connected && (
-            <Button variant="ghost" className="flex-1" onClick={onSkip}>
-              Skip for now
-            </Button>
-          )}
-          {connected && (
-            <Button className="flex-1" onClick={onNext}>
-              Continue
-              <ArrowRight size={16} />
-            </Button>
-          )}
-          {onSkip && !connected && (
-            <Button variant="secondary" className="flex-1" onClick={onNext}>
-              Continue
-              <ArrowRight size={16} />
-            </Button>
-          )}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function BuildingStep({ siteId }: { siteId: string }) {
-  const router = useRouter();
-  const { session } = useAuth();
-  const [status, setStatus] = useState<BuildStatus>({
-    stage: 'crawling',
-    progress: 0,
-    message: 'Starting ecosystem analysis...',
-    completed: false,
-    error: null,
-  });
-  const [started, setStarted] = useState(false);
-
-  const startBuild = useCallback(async () => {
-    if (started) return;
-    setStarted(true);
-
-    try {
-      await apiFetch(`/sites/${siteId}/intelligence/run-all`, {
+      // Trigger full pipeline
+      await apiFetch(`/sites/${site.id}/pipeline`, {
         method: 'POST',
-        token: session?.access_token,
+        token,
       });
-    } catch {
-      // Pipeline may already be running
+
+      // Poll for progress
+      void pollStatus(site.id);
+
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+      setStep('error');
     }
+  };
 
-    const stages = [
-      { stage: 'crawling', message: 'Crawling content...', progress: 20 },
-      { stage: 'analytics', message: 'Syncing analytics data...', progress: 40 },
-      { stage: 'embeddings', message: 'Generating embeddings...', progress: 60 },
-      { stage: 'analyzing', message: 'Analyzing your ecosystem...', progress: 80 },
-      { stage: 'complete', message: 'Your ecosystem is ready!', progress: 100 },
-    ];
-
-    for (const s of stages) {
-      await new Promise((r) => setTimeout(r, 2000));
-      setStatus({
-        stage: s.stage,
-        progress: s.progress,
-        message: s.message,
-        completed: s.stage === 'complete',
-        error: null,
-      });
-    }
-  }, [siteId, session?.access_token, started]);
-
-  // Auto-start on mount
-  useState(() => {
-    void startBuild();
-  });
+  const currentStageIndex = PIPELINE_STAGES.findIndex((s) => s.key === pipelineStage);
 
   return (
-    <Card>
-      <div className="space-y-6 text-center">
-        <div className="rounded-lg bg-brand-accent/10 p-3 inline-block">
-          <Sparkles size={32} className="text-brand-accent" />
+    <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center p-6">
+      <div className="w-full max-w-lg">
+        {/* Logo */}
+        <div className="text-center mb-10">
+          <h1 className="text-2xl font-bold text-[#e2e8f0]">enough</h1>
+          <p className="text-sm text-[#64748b] mt-1">Content Ecosystem Intelligence</p>
         </div>
 
-        <div>
-          <h2 className="text-lg font-semibold text-brand-text">
-            {status.completed ? '🎉 Your Ecosystem is Ready!' : 'Building Your Ecosystem...'}
-          </h2>
-          <p className="mt-2 text-sm text-brand-text-muted">{status.message}</p>
-        </div>
+        {/* Step: URL entry */}
+        {(step === 'url' || step === 'creating') && (
+          <div className="rounded-2xl bg-[#111827] border border-[#1e293b] p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-[#22c55e]/10 flex items-center justify-center">
+                <Globe size={20} className="text-[#22c55e]" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-[#e2e8f0]">Connect your blog</h2>
+                <p className="text-sm text-[#64748b]">We'll analyze every post and find what to fix</p>
+              </div>
+            </div>
 
-        <div className="w-full">
-          <div className="h-2 rounded-full bg-brand-surface-hover overflow-hidden">
-            <div
-              className="h-full rounded-full bg-brand-accent transition-all duration-1000"
-              style={{ width: `${status.progress}%` }}
-            />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
+                  Blog URL or sitemap URL
+                </label>
+                <input
+                  type="text"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
+                  placeholder="https://yourblog.com/sitemap.xml"
+                  disabled={step === 'creating'}
+                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
+                  Site name <span className="text-[#475569]">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={siteName}
+                  onChange={(e) => setSiteName(e.target.value)}
+                  placeholder="My Blog"
+                  disabled={step === 'creating'}
+                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
+                />
+              </div>
+
+              <button
+                onClick={() => void handleSubmit()}
+                disabled={!url.trim() || step === 'creating'}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#22c55e] text-black font-semibold py-3 text-sm hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {step === 'creating' ? (
+                  <><Loader2 size={16} className="animate-spin" /> Creating site...</>
+                ) : (
+                  <>Analyze my blog <ArrowRight size={16} /></>
+                )}
+              </button>
+            </div>
+
+            <p className="mt-4 text-xs text-center text-[#475569]">
+              Takes 10–40 min depending on blog size. We'll analyze every post.
+            </p>
           </div>
-          <p className="mt-2 text-xs text-brand-text-muted">{status.progress}%</p>
-        </div>
-
-        {!status.completed && <Spinner className="mx-auto" />}
-
-        {status.completed && (
-          <Button
-            className="w-full"
-            onClick={() => router.push('/landscape')}
-          >
-            Explore Your Landscape
-            <ArrowRight size={16} />
-          </Button>
-        )}
-      </div>
-    </Card>
-  );
-}
-
-export default function OnboardingPage() {
-  const [step, setStep] = useState(0);
-  const [siteId, setSiteId] = useState<string | null>(null);
-
-  return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <StepIndicator current={step} total={4} />
-
-        {step === 0 && (
-          <AddSiteStep
-            onComplete={(site) => {
-              setSiteId(site.id);
-              setStep(1);
-            }}
-          />
         )}
 
-        {step === 1 && (
-          <ConnectStep
-            icon={BarChart3}
-            title="Connect Google Analytics"
-            description="Import traffic data to understand content performance"
-            onNext={() => setStep(2)}
-            onSkip={() => setStep(2)}
-          />
+        {/* Step: Pipeline running */}
+        {(step === 'crawling' || step === 'analyzing') && (
+          <div className="rounded-2xl bg-[#111827] border border-[#1e293b] p-8">
+            <div className="text-center mb-8">
+              <div className="text-4xl mb-3">🔬</div>
+              <h2 className="text-lg font-semibold text-[#e2e8f0]">Analyzing your blog</h2>
+              <p className="text-sm text-[#64748b] mt-1">
+                {crawlStatus?.posts_found
+                  ? `Found ${crawlStatus.posts_found} posts — processing ${crawlStatus.posts_processed || 0} so far`
+                  : 'Discovering posts...'}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {PIPELINE_STAGES.map((stage, i) => {
+                const isDone = i < currentStageIndex;
+                const isActive = stage.key === pipelineStage || (pipelineStage === 'completed' && i === PIPELINE_STAGES.length - 1);
+                const isPending = i > currentStageIndex;
+
+                return (
+                  <div
+                    key={stage.key}
+                    className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
+                      isActive ? 'bg-[#22c55e]/10 border border-[#22c55e]/30' :
+                      isDone ? 'bg-[#0a0f1a]/50' : 'opacity-40'
+                    }`}
+                  >
+                    <span className="text-lg w-6 text-center">
+                      {isDone ? '✓' : isActive ? stage.emoji : '○'}
+                    </span>
+                    <span className={`text-sm font-medium ${
+                      isDone ? 'text-[#22c55e]' :
+                      isActive ? 'text-[#e2e8f0]' : 'text-[#475569]'
+                    }`}>
+                      {stage.label}
+                    </span>
+                    {isActive && !isPending && (
+                      <Loader2 size={14} className="ml-auto animate-spin text-[#22c55e]" />
+                    )}
+                    {isDone && (
+                      <CheckCircle size={14} className="ml-auto text-[#22c55e]" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="mt-6 text-xs text-center text-[#475569]">
+              You can close this tab — we'll finish in the background. Come back in ~20 min.
+            </p>
+          </div>
         )}
 
-        {step === 2 && (
-          <ConnectStep
-            icon={Search}
-            title="Connect Search Console"
-            description="Import search queries and rankings"
-            onNext={() => setStep(3)}
-            onSkip={() => setStep(3)}
-          />
+        {/* Step: Done */}
+        {step === 'done' && siteId && (
+          <div className="rounded-2xl bg-[#111827] border border-[#22c55e]/30 p-8 text-center">
+            <div className="text-5xl mb-4">🎉</div>
+            <h2 className="text-xl font-bold text-[#e2e8f0] mb-2">Analysis complete</h2>
+            <p className="text-sm text-[#64748b] mb-6">
+              {crawlStatus?.posts_processed
+                ? `Analyzed ${crawlStatus.posts_processed} posts. Here's what we found.`
+                : 'Your content ecosystem is ready.'}
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => router.push(`/overview?site=${siteId}`)}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#22c55e] text-black font-semibold py-3 text-sm hover:bg-[#16a34a] transition-colors"
+              >
+                View Dashboard <ArrowRight size={16} />
+              </button>
+              <button
+                onClick={() => router.push(`/report/${siteId}`)}
+                className="w-full flex items-center justify-center gap-2 rounded-xl border border-[#1e293b] text-[#94a3b8] py-3 text-sm hover:bg-[#1e293b] transition-colors"
+              >
+                View Shareable Report
+              </button>
+            </div>
+          </div>
         )}
 
-        {step === 3 && siteId && <BuildingStep siteId={siteId} />}
+        {/* Step: Error */}
+        {step === 'error' && (
+          <div className="rounded-2xl bg-[#111827] border border-red-500/30 p-8 text-center">
+            <AlertCircle size={40} className="mx-auto mb-4 text-red-400" />
+            <h2 className="text-lg font-semibold text-[#e2e8f0] mb-2">Something went wrong</h2>
+            <p className="text-sm text-[#64748b] mb-6">{error}</p>
+            <button
+              onClick={() => { setStep('url'); setError(null); }}
+              className="px-6 py-2.5 rounded-xl bg-[#111827] border border-[#1e293b] text-sm text-[#94a3b8] hover:bg-[#1e293b] transition-colors"
+            >
+              Try again
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

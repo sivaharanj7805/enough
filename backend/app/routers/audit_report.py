@@ -1,0 +1,289 @@
+"""Shareable audit report endpoint.
+
+Returns a structured JSON report for a site that can be rendered
+as a public shareable page or exported to PDF.
+"""
+from __future__ import annotations
+
+import logging
+from uuid import UUID
+from typing import Annotated
+
+import asyncpg
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from app.database import get_db
+from app.dependencies import get_current_user_id
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+class AuditTopPost(BaseModel):
+    title: str
+    url: str
+    health_score: int
+    role: str
+    issue: str | None = None
+
+
+class AuditCannPair(BaseModel):
+    post_a_title: str
+    post_a_url: str
+    post_b_title: str
+    post_b_url: str
+    overlap_score: float
+    severity: str
+    recommendation: str | None = None
+
+
+class AuditCluster(BaseModel):
+    label: str
+    description: str | None
+    post_count: int
+    health_score: int
+    ecosystem_state: str
+
+
+class AuditRec(BaseModel):
+    title: str
+    summary: str | None
+    rec_type: str
+    post_title: str
+    post_url: str
+    priority: float
+
+
+class AuditReport(BaseModel):
+    site_name: str
+    site_domain: str
+    total_posts: int
+    analyzed_at: str | None
+    overall_health: int
+    # Counts
+    cluster_count: int
+    problem_count: int
+    rec_count: int
+    cann_pair_count: int
+    orphan_count: int
+    thin_content_count: int
+    exact_duplicate_count: int
+    # Top findings
+    top_clusters: list[AuditCluster]
+    top_cann_pairs: list[AuditCannPair]
+    top_recs: list[AuditRec]
+    worst_posts: list[AuditTopPost]
+    best_posts: list[AuditTopPost]
+    # Summary text
+    headline: str
+    key_findings: list[str]
+
+
+@router.get("/{site_id}/audit-report", response_model=AuditReport)
+async def get_audit_report(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Generate a shareable audit report for the site."""
+    # Verify ownership
+    site = await db.fetchrow(
+        "SELECT id, name, domain, last_crawl_at FROM sites WHERE id = $1 AND user_id = $2",
+        site_id, user_id,
+    )
+    if not site:
+        raise HTTPException(404, "Site not found")
+
+    # Core counts
+    total_posts = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id = $1", site_id) or 0
+    overall_health = await db.fetchval(
+        "SELECT AVG(composite_score) FROM post_health_scores phs JOIN posts p ON p.id = phs.post_id WHERE p.site_id = $1",
+        site_id,
+    ) or 0
+    cluster_count = await db.fetchval(
+        "SELECT COUNT(*) FROM clusters WHERE site_id = $1 AND parent_cluster_id IS NULL", site_id
+    ) or 0
+    problem_count = await db.fetchval(
+        "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id WHERE p.site_id = $1",
+        site_id,
+    ) or 0
+    rec_count = await db.fetchval("SELECT COUNT(*) FROM recommendations WHERE site_id = $1", site_id) or 0
+    cann_pair_count = await db.fetchval(
+        "SELECT COUNT(*) FROM cannibalization_pairs cp JOIN clusters cl ON cl.id = cp.cluster_id WHERE cl.site_id = $1",
+        site_id,
+    ) or 0
+    orphan_count = await db.fetchval(
+        "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id "
+        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan_post'",
+        site_id,
+    ) or 0
+    thin_count = await db.fetchval(
+        "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id "
+        "WHERE p.site_id = $1 AND cp.problem_type = 'thin_content'",
+        site_id,
+    ) or 0
+    exact_dup_count = await db.fetchval(
+        "SELECT COUNT(*) FROM cannibalization_pairs cp JOIN clusters cl ON cl.id = cp.cluster_id "
+        "WHERE cl.site_id = $1 AND cp.cosine_similarity >= 0.99",
+        site_id,
+    ) or 0
+
+    # Top clusters (by health score, leaf only)
+    cluster_rows = await db.fetch(
+        """SELECT label, description, post_count, health_score, ecosystem_state
+           FROM clusters WHERE site_id = $1 
+           ORDER BY health_score DESC NULLS LAST LIMIT 6""",
+        site_id,
+    )
+    top_clusters = [
+        AuditCluster(
+            label=r["label"] or "Unnamed Cluster",
+            description=r["description"],
+            post_count=r["post_count"] or 0,
+            health_score=round(r["health_score"] or 0),
+            ecosystem_state=r["ecosystem_state"] or "seedbed",
+        )
+        for r in cluster_rows
+    ]
+
+    # Top cann pairs
+    cann_rows = await db.fetch(
+        """SELECT pa.title AS a_title, pa.url AS a_url,
+                  pb.title AS b_title, pb.url AS b_url,
+                  cp.cosine_similarity, cp.severity,
+                  r.title AS rec_title
+           FROM cannibalization_pairs cp
+           JOIN clusters cl ON cl.id = cp.cluster_id
+           JOIN posts pa ON pa.id = cp.post_a_id
+           JOIN posts pb ON pb.id = cp.post_b_id
+           LEFT JOIN recommendations r ON r.post_id = cp.post_a_id AND r.site_id = cl.site_id
+               AND r.recommendation_type IN ('merge', 'differentiate', 'redirect')
+           WHERE cl.site_id = $1
+           ORDER BY cp.cosine_similarity DESC
+           LIMIT 8""",
+        site_id,
+    )
+    top_cann = [
+        AuditCannPair(
+            post_a_title=r["a_title"] or "",
+            post_a_url=r["a_url"] or "",
+            post_b_title=r["b_title"] or "",
+            post_b_url=r["b_url"] or "",
+            overlap_score=round(r["cosine_similarity"] or 0, 3),
+            severity=r["severity"] or "medium",
+            recommendation=r["rec_title"],
+        )
+        for r in cann_rows
+    ]
+
+    # Top recommendations
+    rec_rows = await db.fetch(
+        """SELECT r.title, r.summary, r.recommendation_type, r.priority,
+                  p.title AS post_title, p.url AS post_url
+           FROM recommendations r
+           JOIN posts p ON p.id = r.post_id
+           WHERE r.site_id = $1
+           ORDER BY CASE r.priority WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC
+           LIMIT 8""",
+        site_id,
+    )
+    top_recs = [
+        AuditRec(
+            title=r["title"] or "",
+            summary=r["summary"],
+            rec_type=r["recommendation_type"] or "",
+            post_title=r["post_title"] or "",
+            post_url=r["post_url"] or "",
+            priority={'critical': 4.0, 'high': 3.0, 'medium': 2.0, 'low': 1.0}.get(r["priority"] or 'low', 1.0),
+        )
+        for r in rec_rows
+    ]
+
+    # Worst posts (lowest health)
+    worst_rows = await db.fetch(
+        """SELECT p.title, p.url, phs.composite_score, phs.role,
+                  cp.problem_type
+           FROM posts p
+           JOIN post_health_scores phs ON phs.post_id = p.id
+           LEFT JOIN content_problems cp ON cp.post_id = p.id
+           WHERE p.site_id = $1
+           ORDER BY phs.composite_score ASC NULLS LAST
+           LIMIT 5""",
+        site_id,
+    )
+    worst_posts = [
+        AuditTopPost(
+            title=r["title"] or "",
+            url=r["url"] or "",
+            health_score=round(r["composite_score"] or 0),
+            role=r["role"] or "dead_weight",
+            issue=r["problem_type"],
+        )
+        for r in worst_rows
+    ]
+
+    # Best posts (highest health, pillar only)
+    best_rows = await db.fetch(
+        """SELECT p.title, p.url, phs.composite_score, phs.role
+           FROM posts p
+           JOIN post_health_scores phs ON phs.post_id = p.id
+           WHERE p.site_id = $1 AND phs.role = 'pillar'
+           ORDER BY phs.composite_score DESC
+           LIMIT 5""",
+        site_id,
+    )
+    best_posts = [
+        AuditTopPost(
+            title=r["title"] or "",
+            url=r["url"] or "",
+            health_score=round(r["composite_score"] or 0),
+            role=r["role"] or "pillar",
+        )
+        for r in best_rows
+    ]
+
+    # Generate key findings
+    key_findings: list[str] = []
+    if cann_pair_count > 0:
+        key_findings.append(f"{cann_pair_count} posts are cannibalizing each other for the same keywords")
+    if exact_dup_count > 0:
+        key_findings.append(f"{exact_dup_count} near-exact duplicate URL pairs detected (likely from URL migrations)")
+    if orphan_count > 0:
+        key_findings.append(f"{orphan_count} orphan posts have no inbound internal links — invisible to Google's crawler")
+    if thin_count > 0:
+        key_findings.append(f"{thin_count} posts are too thin relative to cluster average — at risk of ranking poorly")
+    if overall_health < 40:
+        key_findings.append(f"Overall content health is {round(overall_health)}/100 — significant optimization opportunity")
+    elif overall_health >= 65:
+        key_findings.append(f"Content health is {round(overall_health)}/100 — above average with targeted improvement opportunities")
+
+    # Headline
+    if cann_pair_count >= 50:
+        headline = f"Found {cann_pair_count} cannibalizing post pairs across {cluster_count} topic clusters — significant consolidation opportunity"
+    elif rec_count >= 100:
+        headline = f"Generated {rec_count} specific recommendations across {total_posts} posts — here are your top priorities"
+    else:
+        headline = f"Analyzed {total_posts} posts across {cluster_count} topic clusters — {problem_count} issues detected"
+
+    return AuditReport(
+        site_name=site["name"] or site["domain"],
+        site_domain=site["domain"] or "",
+        total_posts=int(total_posts),
+        analyzed_at=str(site["last_crawl_at"]) if site["last_crawl_at"] else None,
+        overall_health=round(overall_health),
+        cluster_count=int(cluster_count),
+        problem_count=int(problem_count),
+        rec_count=int(rec_count),
+        cann_pair_count=int(cann_pair_count),
+        orphan_count=int(orphan_count),
+        thin_content_count=int(thin_count),
+        exact_duplicate_count=int(exact_dup_count),
+        top_clusters=top_clusters,
+        top_cann_pairs=top_cann,
+        top_recs=top_recs,
+        worst_posts=worst_posts,
+        best_posts=best_posts,
+        headline=headline,
+        key_findings=key_findings,
+    )

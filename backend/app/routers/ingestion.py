@@ -308,3 +308,109 @@ async def _get_site_for_ingestion(
     if not row:
         raise HTTPException(status_code=404, detail="Site not found")
     return dict(row)
+
+
+# ── Full pipeline trigger (crawl → analyze → cluster → recs) ─────────────────
+
+async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
+    """Background: crawl → embed → cluster → health → problems → recs."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    pool = await get_pool()
+
+    async with pool.acquire() as db:
+        await db.execute(
+            """UPDATE crawl_jobs SET status='analyzing', updated_at=NOW() WHERE site_id=$1""",
+            site_id,
+        )
+
+    try:
+        # Step 1: crawl
+        await _run_crawl(site_id, site)
+
+        # Check crawl succeeded
+        async with pool.acquire() as db:
+            crawl = await db.fetchrow("SELECT status, posts_processed FROM crawl_jobs WHERE site_id=$1", site_id)
+        if not crawl or crawl["status"] != "completed":
+            return
+
+        # Step 2: embeddings (sequential, memory-safe)
+        async with pool.acquire() as db:
+            await db.execute("UPDATE crawl_jobs SET status='embedding', updated_at=NOW() WHERE site_id=$1", site_id)
+        from app.services.embeddings import EmbeddingsService
+        emb = EmbeddingsService()
+        async with pool.acquire() as db:
+            await emb.generate_embeddings(db, site_id)
+
+        # Step 3: readability
+        async with pool.acquire() as db:
+            await db.execute("UPDATE crawl_jobs SET status='analyzing', updated_at=NOW() WHERE site_id=$1", site_id)
+        from app.services.readability import ReadabilityService
+        async with pool.acquire() as db:
+            await ReadabilityService().compute_readability(db, site_id)
+
+        # Step 4: pagerank
+        from app.services.pagerank import PageRankService
+        async with pool.acquire() as db:
+            await PageRankService().compute_pagerank(db, site_id)
+
+        # Step 5: intent
+        from app.services.fast_intent import classify_site_intent
+        async with pool.acquire() as db:
+            await classify_site_intent(db, site_id)
+
+        # Step 6: clustering + Claude labels (skip_labeling=False → labels inline)
+        from app.services.clustering import TopicClusterer
+        async with pool.acquire() as db:
+            await db.execute("UPDATE crawl_jobs SET status='clustering', updated_at=NOW() WHERE site_id=$1", site_id)
+        async with pool.acquire() as db:
+            clusterer = TopicClusterer()
+            await clusterer.cluster_site(db, site_id, skip_labeling=False)
+
+        # Step 8: health scoring
+        from app.services.health_scoring import HealthScoringService
+        async with pool.acquire() as db:
+            await HealthScoringService().score_site(db, site_id)
+
+        # Step 9: cannibalization
+        from app.services.cannibalization import CannibalizationService
+        async with pool.acquire() as db:
+            await CannibalizationService().detect_cannibalization(db, site_id)
+
+        # Step 10: problem detection
+        from app.services.problem_detection import ProblemDetectionService
+        async with pool.acquire() as db:
+            await ProblemDetectionService().detect_problems(db, site_id)
+
+        # Step 11: recommendations
+        from app.services.fast_recommendations import generate_fast_recommendations
+        async with pool.acquire() as db:
+            await generate_fast_recommendations(db, site_id)
+
+        async with pool.acquire() as db:
+            await db.execute(
+                "UPDATE crawl_jobs SET status='completed', updated_at=NOW() WHERE site_id=$1", site_id
+            )
+        logger.info("Full pipeline complete for site %s", site_id)
+
+    except Exception as e:
+        logger.error("Full pipeline failed for site %s: %s", site_id, e)
+        async with pool.acquire() as db:
+            await db.execute(
+                "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
+                str(e)[:500], site_id,
+            )
+
+
+@router.post("/{site_id}/pipeline", response_model=TaskTriggerResponse)
+async def trigger_full_pipeline(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    """Trigger full pipeline: crawl → embed → cluster → health → recs.
+    Takes 10-40 min depending on site size. Poll /crawl/status for progress."""
+    site = await _get_site_for_ingestion(site_id, user_id, db)
+    background_tasks.add_task(_run_full_pipeline, site_id, site)
+    return TaskTriggerResponse(message="Full pipeline started — crawl → analyze → cluster → recommendations", site_id=site_id)
