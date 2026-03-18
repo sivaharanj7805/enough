@@ -22,6 +22,7 @@ import {
   Layers,
   AlertTriangle,
   CheckSquare,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { SiteSelector } from './SiteSelector';
@@ -42,6 +43,7 @@ const NAV_ITEMS = [
 ];
 
 const BOTTOM_NAV_ITEMS = [
+  { href: '/settings', label: 'Settings', icon: Settings },
   { href: '/profile', label: 'Profile', icon: User },
   { href: '/billing', label: 'Billing', icon: CreditCard },
 ];

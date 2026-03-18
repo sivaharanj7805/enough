@@ -307,6 +307,27 @@ class TopicClusterer:
         else:
             self._cluster_silhouettes = {}
 
+        # ── Step 2b: Assign noise posts to nearest cluster ──
+        if n_noise > 0 and n_clusters > 0:
+            from sklearn.metrics.pairwise import euclidean_distances
+            noise_mask = labels == -1
+            non_noise_mask = labels != -1
+            if non_noise_mask.sum() > 0:
+                # Compute centroids of each cluster
+                unique_clusters = sorted(set(labels[non_noise_mask]))
+                centroids = np.array([
+                    reduced[labels == c].mean(axis=0)
+                    for c in unique_clusters
+                ])
+                # For each noise point, find nearest centroid
+                noise_indices = np.where(noise_mask)[0]
+                noise_reduced = reduced[noise_indices]
+                dists = euclidean_distances(noise_reduced, centroids)
+                nearest = np.argmin(dists, axis=1)
+                for i, idx in enumerate(noise_indices):
+                    labels[idx] = unique_clusters[nearest[i]]
+                logger.info("Assigned %d noise posts to nearest clusters", n_noise)
+
         # ── Step 3: UMAP reduction for 2D visualization ──
         logger.info("UMAP 2D: %d dims → 2 dims for map positions", embeddings.shape[1])
         reducer_2d = umap.UMAP(

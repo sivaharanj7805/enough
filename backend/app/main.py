@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import get_pool, close_pool
-from app.routers import auth, sites, ingestion, analytics, intelligence, actions, retention
+from app.routers import auth, sites, ingestion, analytics, intelligence, actions, retention, google_integration
 
 # Configure logging
 logging.basicConfig(
@@ -87,6 +87,7 @@ v1_router.include_router(analytics.router, prefix="/sites", tags=["Analytics"])
 v1_router.include_router(intelligence.router, prefix="/sites", tags=["Intelligence"])
 v1_router.include_router(actions.router, prefix="/sites", tags=["Actions"])
 v1_router.include_router(retention.router, tags=["Retention"])
+v1_router.include_router(google_integration.router, tags=["Google"])
 
 app.include_router(v1_router)
 
