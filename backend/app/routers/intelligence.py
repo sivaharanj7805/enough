@@ -1148,3 +1148,100 @@ async def get_ecosystem_visuals(
         raise HTTPException(status_code=500, detail="Failed to compute ecosystem visuals")
 
     return EcosystemVisualsResponse(**result)
+
+
+# ── On-demand enrichment ──────────────────────────────────────────────────────
+
+@router.post("/{site_id}/intelligence/recommendations/{rec_id}/enrich")
+async def enrich_recommendation_on_demand(
+    site_id: UUID,
+    rec_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Enrich a single recommendation with Claude AI guidance (~3 seconds)."""
+    await _verify_site(site_id, user_id, db)
+    from app.services.on_demand_enrichment import enrich_recommendation
+    result = await enrich_recommendation(db, rec_id, site_id)
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+# ── Quick scan (health + problems + recs only, ~30s) ─────────────────────────
+
+@router.post("/{site_id}/intelligence/quick-scan")
+async def quick_scan(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    """Re-run health scoring + problem detection + recommendations only (~30s).
+    Does NOT re-crawl or re-cluster. Use this for fast refreshes."""
+    await _verify_site(site_id, user_id, db)
+
+    async def _run():
+        import time
+        t0 = time.time()
+        try:
+            from app.services.health_scoring import HealthScoringService
+            from app.services.problem_detection import ProblemDetectionService
+            from app.services.fast_recommendations import generate_fast_recommendations
+
+            hs = HealthScoringService()
+            await hs.score_site(db, site_id)
+
+            pd = ProblemDetectionService()
+            await pd.detect_problems(db, site_id)
+
+            await generate_fast_recommendations(db, site_id)
+            logger.info("Quick scan complete for %s in %.1fs", site_id, time.time() - t0)
+        except Exception as e:
+            logger.error("Quick scan failed for %s: %s", site_id, e)
+
+    background_tasks.add_task(_run)
+    return {"message": "Quick scan started — refreshes health, problems, and recommendations (~30s)", "status": "running"}
+
+
+# ── Chunk-level cannibalization confirmation ──────────────────────────────────
+
+@router.post("/{site_id}/intelligence/cannibalization/confirm-chunks")
+async def confirm_chunk_overlap(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    """Confirm or deny cannibalization pairs using chunk-level embedding similarity.
+    Runs in background — checks each pair's section-level overlap."""
+    await _verify_site(site_id, user_id, db)
+
+    async def _run():
+        from app.services.chunk_cannibalization import confirm_chunk_overlap as _confirm
+        result = await _confirm(db, site_id)
+        logger.info("Chunk confirmation for %s: %s", site_id, result)
+
+    background_tasks.add_task(_run)
+    return {"message": "Chunk-level cannibalization confirmation started in background", "status": "running"}
+
+
+# ── Claude intent for ambiguous posts ────────────────────────────────────────
+
+@router.post("/{site_id}/intelligence/intent/claude-classify")
+async def claude_classify_intent(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    """Re-classify ambiguous posts using Claude for accurate intent signals."""
+    await _verify_site(site_id, user_id, db)
+
+    async def _run():
+        from app.services.claude_intent import classify_ambiguous_posts
+        result = await classify_ambiguous_posts(db, site_id)
+        logger.info("Claude intent for %s: %s", site_id, result)
+
+    background_tasks.add_task(_run)
+    return {"message": "Claude intent classification started in background", "status": "running"}

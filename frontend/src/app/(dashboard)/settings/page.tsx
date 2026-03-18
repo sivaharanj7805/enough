@@ -11,11 +11,13 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
-  ExternalLink,
   Settings,
   Database,
   TrendingUp,
   Search,
+  Zap,
+  Brain,
+  Layers,
 } from 'lucide-react';
 
 interface GoogleStatus {
@@ -412,6 +414,72 @@ export default function SettingsPage() {
         {!googleStatus?.connected && (
           <p className="text-sm text-brand-text-muted">Connect your Google account above to configure GA4.</p>
         )}
+      </Card>
+
+      {/* Intelligence Upgrades */}
+      <Card>
+        <h3 className="text-sm font-semibold text-brand-text mb-3 flex items-center gap-2">
+          <Zap size={16} className="text-brand-accent" />
+          Intelligence Upgrades
+        </h3>
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                <Zap size={13} className="text-brand-accent" /> Quick Scan
+              </p>
+              <p className="text-xs text-brand-text-muted mt-0.5">Re-run health scoring + problem detection + recommendations (~30s). No re-crawl.</p>
+            </div>
+            <button
+              onClick={() => {
+                if (!siteId) return;
+                void apiFetch(`/sites/${siteId}/intelligence/quick-scan`, { method: 'POST', token })
+                  .then(() => showMessage('success', 'Quick scan started — refresh in ~30s'));
+              }}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-brand-accent/10 text-brand-accent text-xs font-medium hover:bg-brand-accent/20 transition-colors"
+            >
+              Run
+            </button>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                <Layers size={13} className="text-orange-400" /> Confirm Chunk Overlap
+              </p>
+              <p className="text-xs text-brand-text-muted mt-0.5">Verify cannibalization pairs at section level using H2/H3 chunk embeddings. Runs in background (~5 min).</p>
+            </div>
+            <button
+              onClick={() => {
+                if (!siteId) return;
+                void apiFetch(`/sites/${siteId}/intelligence/cannibalization/confirm-chunks`, { method: 'POST', token })
+                  .then(() => showMessage('success', 'Chunk confirmation started in background'));
+              }}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-400 text-xs font-medium hover:bg-orange-500/20 transition-colors"
+            >
+              Run
+            </button>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                <Brain size={13} className="text-purple-400" /> Claude Intent Classification
+              </p>
+              <p className="text-xs text-brand-text-muted mt-0.5">Re-classify ambiguous posts with Claude AI instead of keyword matching. Runs in background (~2 min).</p>
+            </div>
+            <button
+              onClick={() => {
+                if (!siteId) return;
+                void apiFetch(`/sites/${siteId}/intelligence/intent/claude-classify`, { method: 'POST', token })
+                  .then(() => showMessage('success', 'Claude intent classification started'));
+              }}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors"
+            >
+              Run
+            </button>
+          </div>
+        </div>
       </Card>
 
       {/* What this unlocks */}

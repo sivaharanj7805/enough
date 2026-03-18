@@ -1,95 +1,193 @@
-"""Chunk-level cannibalization detection.
+"""Chunk-level cannibalization confirmation.
 
-Compares content chunks across posts to find section-level overlap.
-More precise than whole-post similarity — catches cases like
-"Post A's 'Pricing' section says the same thing as Post B's 'Cost' section."
+For existing post-level cannibalization pairs, confirms or denies overlap
+using H2/H3-split chunk embeddings. Catches section-level overlap that
+post-level similarity misses.
+
+Memory-efficient: processes chunks sequentially, ~5K total for 958 posts.
 """
-
 from __future__ import annotations
 
-import asyncpg
+import asyncio
 import logging
+import os
+import re
+import time
+from typing import Any
 from uuid import UUID
+
+import asyncpg
+import numpy as np
+import openai
 
 logger = logging.getLogger(__name__)
 
-CHUNK_SIMILARITY_THRESHOLD = 0.85
+EMBED_MODEL = "text-embedding-3-small"
+CHUNK_OVERLAP_THRESHOLD = 0.88  # Chunk-level similarity above this = confirmed overlap
 
 
-async def detect_chunk_overlap(
-    db: asyncpg.Connection,
-    post_a_id: UUID,
-    post_b_id: UUID,
-    threshold: float = CHUNK_SIMILARITY_THRESHOLD,
-) -> list[dict]:
-    """Find overlapping chunks between two posts using pgvector cosine.
+def split_into_chunks(body_html: str, title: str) -> list[str]:
+    """Split post into H2/H3 sections. Returns list of text chunks."""
+    if not body_html:
+        return [title] if title else []
 
-    Returns list of chunk pairs with similarity > threshold.
-    """
-    pairs = await db.fetch("""
-        SELECT ca.id as chunk_a_id, cb.id as chunk_b_id,
-               ca.heading as heading_a, cb.heading as heading_b,
-               ca.chunk_index as idx_a, cb.chunk_index as idx_b,
-               1 - (cea.embedding <=> ceb.embedding) as similarity
-        FROM content_chunks ca
-        JOIN chunk_embeddings cea ON ca.id = cea.chunk_id
-        JOIN content_chunks cb ON cb.post_id = $2
-        JOIN chunk_embeddings ceb ON cb.id = ceb.chunk_id
-        WHERE ca.post_id = $1
-          AND 1 - (cea.embedding <=> ceb.embedding) > $3
-        ORDER BY similarity DESC
-        LIMIT 10
-    """, post_a_id, post_b_id, threshold)
+    # Remove script/style tags
+    clean = re.sub(r"<script[^>]*>.*?</script>", "", body_html, flags=re.DOTALL | re.IGNORECASE)
+    clean = re.sub(r"<style[^>]*>.*?</style>", "", clean, flags=re.DOTALL | re.IGNORECASE)
 
-    return [
-        {
-            "heading_a": r["heading_a"] or f"Section {r['idx_a']}",
-            "heading_b": r["heading_b"] or f"Section {r['idx_b']}",
-            "similarity": float(r["similarity"]),
-        }
-        for r in pairs
-    ]
+    # Find H2/H3 boundaries
+    heading_pattern = re.compile(r"<h[23][^>]*>(.*?)</h[23]>", re.IGNORECASE | re.DOTALL)
+    headings = [(m.start(), re.sub(r"<[^>]+>", "", m.group(1)).strip()) for m in heading_pattern.finditer(clean)]
+
+    if not headings:
+        # No headings — treat whole post as one chunk
+        text = re.sub(r"<[^>]+>", " ", clean)
+        text = re.sub(r"\s+", " ", text).strip()
+        return [f"{title}: {text[:800]}"] if text else [title]
+
+    chunks = []
+    # First chunk: intro (content before first heading)
+    intro_end = headings[0][0]
+    intro_html = clean[:intro_end]
+    intro_text = re.sub(r"<[^>]+>", " ", intro_html)
+    intro_text = re.sub(r"\s+", " ", intro_text).strip()
+    if len(intro_text) > 100:
+        chunks.append(f"{title} [intro]: {intro_text[:600]}")
+
+    # Section chunks
+    for i, (heading_pos, heading_text) in enumerate(headings):
+        # Content from this heading to the next (or end)
+        next_pos = headings[i + 1][0] if i + 1 < len(headings) else len(clean)
+        # Find the heading tag end
+        tag_end = clean.find(">", heading_pos) + 1
+        section_html = clean[tag_end:next_pos]
+        section_text = re.sub(r"<[^>]+>", " ", section_html)
+        section_text = re.sub(r"\s+", " ", section_text).strip()
+
+        if len(section_text) > 80:
+            chunk_text = f"{heading_text}: {section_text[:700]}"
+            chunks.append(chunk_text)
+
+    return chunks if chunks else [title]
 
 
-async def detect_chunk_cannibalization_for_site(
+async def embed_chunks(texts: list[str], client: openai.AsyncOpenAI) -> list[list[float]]:
+    """Embed a list of text chunks. Returns list of embedding vectors."""
+    if not texts:
+        return []
+    resp = await client.embeddings.create(
+        model=EMBED_MODEL,
+        input=[t[:1000] for t in texts],  # cap per chunk
+    )
+    return [item.embedding for item in resp.data]
+
+
+async def confirm_chunk_overlap(
     db: asyncpg.Connection,
     site_id: UUID,
-    max_pairs: int = 100,
-    threshold: float = CHUNK_SIMILARITY_THRESHOLD,
-) -> list[dict]:
-    """Find section-level overlap across all post pairs in a site.
-
-    Only checks pairs already flagged as cannibalization pairs (post-level).
-    Returns enriched data with specific section overlaps.
+    pair_limit: int = 200,
+) -> dict:
     """
-    # Get existing cannibalization pairs
+    For existing cannibalization pairs, check chunk-level overlap to confirm/deny.
+
+    Returns stats dict. Updates cannibalization_pairs with chunk_overlap_confirmed field.
+    """
+    # Check if chunk_overlap_confirmed column exists
+    try:
+        await db.execute(
+            "ALTER TABLE cannibalization_pairs ADD COLUMN IF NOT EXISTS chunk_overlap_confirmed BOOLEAN"
+        )
+        await db.execute(
+            "ALTER TABLE cannibalization_pairs ADD COLUMN IF NOT EXISTS chunk_similarity FLOAT"
+        )
+    except Exception as e:
+        logger.warning("Column add: %s", e)
+
+    client = openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+    # Get unconfirmed cann pairs for this site
     pairs = await db.fetch("""
-        SELECT cp.post_a_id, cp.post_b_id,
-               pa.title as title_a, pb.title as title_b,
-               cp.cosine_similarity
+        SELECT cp.id, cp.post_a_id, cp.post_b_id, cp.cosine_similarity
         FROM cannibalization_pairs cp
-        JOIN posts pa ON cp.post_a_id = pa.id
-        JOIN posts pb ON cp.post_b_id = pb.id
-        WHERE pa.site_id = $1
+        JOIN clusters cl ON cl.id = cp.cluster_id
+        WHERE cl.site_id = $1
+          AND cp.chunk_overlap_confirmed IS NULL
+          AND cp.cosine_similarity >= 0.75
         ORDER BY cp.cosine_similarity DESC
         LIMIT $2
-    """, site_id, max_pairs)
+    """, site_id, pair_limit)
 
-    results = []
+    if not pairs:
+        return {"confirmed": 0, "denied": 0, "skipped": 0, "message": "No pairs to check"}
+
+    logger.info("Checking chunk-level overlap for %d pairs", len(pairs))
+    t0 = time.time()
+    confirmed = 0
+    denied = 0
+    errors = 0
+
     for pair in pairs:
-        chunk_overlaps = await detect_chunk_overlap(
-            db, pair["post_a_id"], pair["post_b_id"], threshold,
-        )
-        if chunk_overlaps:
-            results.append({
-                "post_a": pair["title_a"],
-                "post_b": pair["title_b"],
-                "post_similarity": float(pair["cosine_similarity"]),
-                "overlapping_sections": chunk_overlaps,
-            })
+        try:
+            # Fetch both posts' HTML
+            post_a = await db.fetchrow(
+                "SELECT title, body_html FROM posts WHERE id = $1", pair["post_a_id"]
+            )
+            post_b = await db.fetchrow(
+                "SELECT title, body_html FROM posts WHERE id = $1", pair["post_b_id"]
+            )
 
+            if not post_a or not post_b:
+                continue
+
+            chunks_a = split_into_chunks(post_a["body_html"] or "", post_a["title"] or "")
+            chunks_b = split_into_chunks(post_b["body_html"] or "", post_b["title"] or "")
+
+            if not chunks_a or not chunks_b:
+                continue
+
+            # Embed all chunks for both posts in one batch
+            all_chunks = chunks_a + chunks_b
+            embeddings = await embed_chunks(all_chunks, client)
+
+            emb_a = np.array(embeddings[:len(chunks_a)])
+            emb_b = np.array(embeddings[len(chunks_a):])
+
+            # Normalize
+            emb_a = emb_a / (np.linalg.norm(emb_a, axis=1, keepdims=True) + 1e-9)
+            emb_b = emb_b / (np.linalg.norm(emb_b, axis=1, keepdims=True) + 1e-9)
+
+            # Max pairwise similarity
+            sim_matrix = emb_a @ emb_b.T
+            max_chunk_sim = float(sim_matrix.max())
+
+            is_confirmed = max_chunk_sim >= CHUNK_OVERLAP_THRESHOLD
+
+            await db.execute("""
+                UPDATE cannibalization_pairs
+                SET chunk_overlap_confirmed = $1, chunk_similarity = $2
+                WHERE id = $3
+            """, is_confirmed, max_chunk_sim, pair["id"])
+
+            if is_confirmed:
+                confirmed += 1
+            else:
+                denied += 1
+
+            await asyncio.sleep(0.1)  # Rate limit
+
+        except Exception as e:
+            logger.error("Chunk check failed for pair %s: %s", pair["id"], e)
+            errors += 1
+
+    elapsed = time.time() - t0
     logger.info(
-        "Chunk cannibalization: found %d pairs with section-level overlap (site %s)",
-        len(results), site_id,
+        "Chunk confirmation done in %.1fs: confirmed=%d, denied=%d, errors=%d",
+        elapsed, confirmed, denied, errors
     )
-    return results
+    return {
+        "confirmed": confirmed,
+        "denied": denied,
+        "errors": errors,
+        "elapsed_seconds": round(elapsed, 1),
+        "pairs_checked": len(pairs),
+    }

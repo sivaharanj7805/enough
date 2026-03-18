@@ -67,6 +67,25 @@ function ActionCard({
   const typeInfo = TYPE_CONFIG[rec.recommendation_type] || { label: rec.recommendation_type, icon: Lightbulb, color: '#6b7280' };
   const statusInfo = STATUS_CONFIG[rec.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.pending;
 
+  const [enriching, setEnriching] = useState(false);
+  const [enriched, setEnriched] = useState<Record<string, unknown> | null>(null);
+
+  const handleEnrich = useCallback(async () => {
+    setEnriching(true);
+    try {
+      const result = await apiFetch<{ enriched?: boolean; already_enriched?: boolean; guidance?: Record<string, unknown> }>(
+        `/sites/${siteId}/intelligence/recommendations/${rec.id}/enrich`,
+        { method: 'POST', token },
+      );
+      if (result.guidance) setEnriched(result.guidance);
+      mutate((key: unknown) => Array.isArray(key) && typeof key[0] === 'string' && key[0].includes('recommendations'));
+    } catch {
+      // Fail silently
+    } finally {
+      setEnriching(false);
+    }
+  }, [siteId, rec.id, token]);
+
   const handleStatusUpdate = useCallback(
     async (status: string) => {
       try {
@@ -211,6 +230,57 @@ function ActionCard({
               </div>
             );
           })()}
+
+          {/* On-demand AI Enrichment */}
+          {!enriched && (() => {
+            const actionsRaw = rec.specific_actions as unknown;
+            const isEnriched = actionsRaw && typeof actionsRaw === 'object' && !Array.isArray(actionsRaw) && (actionsRaw as Record<string, unknown>).ai_enriched;
+            return !isEnriched ? (
+              <div className="mt-3">
+                <button
+                  onClick={() => void handleEnrich()}
+                  disabled={enriching}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                >
+                  {enriching ? (
+                    <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                  ) : <span>✦</span>}
+                  {enriching ? 'Getting AI analysis...' : 'Get AI Analysis'}
+                </button>
+              </div>
+            ) : null;
+          })()}
+
+          {enriched && (
+            <div className="mt-3 rounded-lg bg-purple-500/5 border border-purple-500/20 p-3 space-y-2">
+              <p className="text-xs font-medium text-purple-400">✦ AI Analysis (just generated)</p>
+              {Object.entries(enriched).map(([key, val]) => {
+                if (!val) return null;
+                const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                if (Array.isArray(val)) {
+                  return (
+                    <div key={key}>
+                      <p className="text-xs font-medium text-brand-text-muted mb-1">{label}</p>
+                      {(val as string[]).map((item, i) => (
+                        <div key={i} className="flex gap-2 text-xs text-brand-text mb-0.5">
+                          <span className="text-purple-400 shrink-0">›</span><span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+                return (
+                  <div key={key}>
+                    <p className="text-xs font-medium text-brand-text-muted">{label}</p>
+                    <p className="text-xs text-brand-text">{String(val)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Status Actions */}
           <div className="mt-4 flex items-center gap-2 flex-wrap">
