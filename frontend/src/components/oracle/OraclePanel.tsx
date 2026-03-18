@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Sparkles, X, Send, RotateCcw, Loader2 } from 'lucide-react';
+import { Sparkles, X, Send, RotateCcw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useSite } from '@/lib/hooks/useSite';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -147,9 +147,17 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
           )}
 
           {loading && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Loader2 size={24} className="text-[#22c55e] animate-spin" />
-              <p className="text-sm text-[#64748b]">Analyzing your content ecosystem…</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+              <div className="flex gap-1.5">
+                {[0, 1, 2].map(i => (
+                  <div
+                    key={i}
+                    className="oracle-pulse w-2.5 h-2.5 rounded-full bg-[#22c55e]"
+                    style={{ animationDelay: `${i * 0.2}s` }}
+                  />
+                ))}
+              </div>
+              <p className="text-sm text-[#64748b]">Reading your content ecosystem…</p>
             </div>
           )}
 

@@ -76,10 +76,10 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={clsx(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                'nav-item flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                 active
                   ? 'bg-brand-accent/10 text-brand-accent'
-                  : 'text-brand-text-muted hover:bg-brand-surface-hover hover:text-brand-text'
+                  : 'text-brand-text-muted hover:text-brand-text'
               )}
             >
               <item.icon size={20} className="flex-shrink-0" />

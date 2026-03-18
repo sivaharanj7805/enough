@@ -218,6 +218,9 @@ export default function OnboardingPage() {
             <p className="mt-4 text-xs text-center text-[#475569]">
               Takes 10–40 min depending on blog size. We'll analyze every post.
             </p>
+            <p className="mt-2 text-xs text-center text-[#334155]">
+              🔒 Read-only — Enough never modifies your content or blog.
+            </p>
           </div>
         )}
 

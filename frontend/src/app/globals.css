@@ -47,3 +47,100 @@ body {
   position: absolute;
   z-index: 50;
 }
+
+/* ── Micro-interactions & Animations ── */
+
+/* Health score counter — smooth number tick */
+@keyframes score-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.score-animate { animation: score-in 0.4s ease-out forwards; }
+
+/* Recommendation card collapse */
+@keyframes card-dismiss {
+  0%   { opacity: 1; transform: translateY(0); max-height: 200px; }
+  100% { opacity: 0; transform: translateY(-8px); max-height: 0; overflow: hidden; }
+}
+.card-dismiss { animation: card-dismiss 0.25s ease-in forwards; }
+
+/* Card slide-in */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card-in { animation: card-in 0.3s ease-out forwards; }
+
+/* Oracle thinking pulse */
+@keyframes oracle-think {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50%       { opacity: 1;   transform: scale(1); }
+}
+.oracle-pulse { animation: oracle-think 1.4s ease-in-out infinite; }
+
+/* Cluster node hover pulse */
+@keyframes node-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.08); }
+}
+.node-pulse:hover { animation: node-pulse 0.6s ease-in-out; }
+
+/* Success checkmark pop */
+@keyframes check-pop {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.check-pop { animation: check-pop 0.3s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+/* Subtle confetti burst (when rec completed) — CSS-only, 3 dots */
+@keyframes confetti-a {
+  0%   { transform: translate(0,0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-12px, -18px) rotate(90deg); opacity: 0; }
+}
+@keyframes confetti-b {
+  0%   { transform: translate(0,0); opacity: 1; }
+  100% { transform: translate(12px, -16px); opacity: 0; }
+}
+@keyframes confetti-c {
+  0%   { transform: translate(0,0); opacity: 1; }
+  100% { transform: translate(2px, -20px); opacity: 0; }
+}
+
+/* Sidebar nav hover highlight slide */
+.nav-item { position: relative; overflow: hidden; }
+.nav-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(34,197,94,0.06);
+  transform: translateX(-100%);
+  transition: transform 0.15s ease;
+  border-radius: inherit;
+}
+.nav-item:hover::before { transform: translateX(0); }
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #1f2937 25%, #2d3748 50%, #1f2937 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* Health ring entrance */
+@keyframes ring-fill {
+  from { stroke-dasharray: 0 1000; }
+}
+.ring-animate { animation: ring-fill 1s ease-out forwards; }
+
+/* Undo toast slide-in */
+@keyframes toast-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.toast-in { animation: toast-in 0.2s ease-out forwards; }

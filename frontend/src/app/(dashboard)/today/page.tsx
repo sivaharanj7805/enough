@@ -5,7 +5,6 @@ import { useSite } from '@/lib/hooks/useSite';
 import { useSiteHealth, useRecommendations, useAIScores } from '@/lib/hooks/useApi';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
-import { Spinner } from '@/components/ui/Spinner';
 import { Card } from '@/components/ui/Card';
 import Link from 'next/link';
 import { mutate } from 'swr';
@@ -48,7 +47,7 @@ function HealthRing({ score }: { score: number }) {
   const color = score >= 70 ? '#22c55e' : score >= 45 ? '#eab308' : '#ef4444';
 
   return (
-    <div className="relative flex items-center justify-center" style={{ width: 140, height: 140 }}>
+    <div className="relative flex items-center justify-center score-animate" style={{ width: 140, height: 140 }}>
       <svg width={140} height={140} className="-rotate-90">
         <circle cx={70} cy={70} r={r} fill="none" stroke="#1e293b" strokeWidth={10} />
         <circle
@@ -56,7 +55,8 @@ function HealthRing({ score }: { score: number }) {
           stroke={color} strokeWidth={10}
           strokeDasharray={`${filled} ${circ - filled}`}
           strokeLinecap="round"
-          style={{ transition: 'stroke-dasharray 0.8s ease' }}
+          className="ring-animate"
+          style={{ transition: 'stroke-dasharray 1s ease-out' }}
         />
       </svg>
       <div className="absolute text-center">
@@ -67,14 +67,21 @@ function HealthRing({ score }: { score: number }) {
   );
 }
 
+const CONFIDENCE_STYLE: Record<string, { label: string; cls: string }> = {
+  high:     { label: 'High confidence', cls: 'text-[#22c55e] bg-[#22c55e]/10' },
+  medium:   { label: 'Worth investigating', cls: 'text-[#eab308] bg-[#eab308]/10' },
+  low:      { label: 'Moderate confidence', cls: 'text-[#94a3b8] bg-[#94a3b8]/10' },
+};
+
 function PriorityCard({ rec, index }: { rec: Recommendation; index: number }) {
   const [expanded, setExpanded] = useState(index === 0);
   const color = PRIORITY_COLOR[rec.priority] ?? '#64748b';
+  const conf = rec.confidence ? CONFIDENCE_STYLE[rec.confidence] ?? CONFIDENCE_STYLE.medium : null;
 
   return (
     <div
-      className="rounded-xl border bg-[#111827] overflow-hidden transition-colors hover:border-[#334155]"
-      style={{ borderColor: index === 0 ? color + '40' : '#1e293b' }}
+      className="rounded-xl border bg-[#111827] overflow-hidden transition-colors hover:border-[#334155] card-in"
+      style={{ borderColor: index === 0 ? color + '40' : '#1e293b', animationDelay: `${index * 60}ms` }}
     >
       <button
         onClick={() => setExpanded((e) => !e)}
@@ -100,12 +107,19 @@ function PriorityCard({ rec, index }: { rec: Recommendation; index: number }) {
             </span>
           </div>
           <p className="text-sm font-medium text-[#e2e8f0] mt-1.5 leading-snug">{rec.title}</p>
-          {rec.estimated_effort_hours != null && (
-            <div className="flex items-center gap-1 mt-1.5 text-xs text-[#64748b]">
-              <Clock size={11} />
-              <span>{rec.estimated_effort_hours}h estimated</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            {rec.estimated_effort_hours != null && (
+              <div className="flex items-center gap-1 text-xs text-[#64748b]">
+                <Clock size={11} />
+                <span>{rec.estimated_effort_hours}h effort</span>
+              </div>
+            )}
+            {conf && (
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${conf.cls}`}>
+                {conf.label}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex-shrink-0 text-[#64748b]">
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -171,27 +185,88 @@ export default function TodayPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Spinner size="lg" />
+      <div className="max-w-3xl mx-auto space-y-6 py-2">
+        {/* Hero skeleton */}
+        <div className="flex items-center gap-8 p-6 rounded-2xl bg-[#111827] border border-[#1e293b]">
+          <div className="skeleton w-[140px] h-[140px] rounded-full flex-shrink-0" />
+          <div className="flex-1 space-y-3">
+            <div className="skeleton h-3 w-24 rounded" />
+            <div className="skeleton h-7 w-3/4 rounded" />
+            <div className="skeleton h-4 w-1/2 rounded" />
+            <div className="flex gap-6 mt-2">
+              {[1,2,3,4].map(i => <div key={i} className="skeleton h-10 w-14 rounded" />)}
+            </div>
+          </div>
+        </div>
+        {/* Cards skeleton */}
+        {[1,2,3].map(i => (
+          <div key={i} className="skeleton h-20 w-full rounded-xl" />
+        ))}
       </div>
     );
   }
 
   if (!health) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center max-w-sm">
-          <div className="text-5xl mb-4">🌱</div>
-          <p className="text-lg font-semibold text-[#e2e8f0]">No site analyzed yet</p>
-          <p className="text-sm text-[#64748b] mt-2 mb-6">
-            Connect a site and run the ecosystem analysis to see your content intelligence.
+      <div className="max-w-3xl mx-auto space-y-4 py-2">
+        {/* Demo banner */}
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#22c55e]/5 border border-[#22c55e]/20">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#22c55e]">Demo</span>
+            <p className="text-sm text-[#94a3b8]">
+              Showing Close.com — 958 posts analyzed. Connect your blog to see your own data.
+            </p>
+          </div>
+          <Link
+            href="/onboarding"
+            className="flex-shrink-0 text-xs font-medium text-[#22c55e] hover:text-[#16a34a] transition-colors ml-4"
+          >
+            Analyze my blog →
+          </Link>
+        </div>
+
+        {/* Demo health hero */}
+        <div className="flex items-center gap-8 p-6 rounded-2xl bg-[#111827] border border-[#1e293b]">
+          <HealthRing score={45} />
+          <div className="flex-1">
+            <p className="text-xs font-semibold uppercase tracking-widest text-[#64748b] mb-1">Content Health · Demo</p>
+            <h1 className="text-2xl font-bold text-[#e2e8f0] leading-tight">
+              958 posts across 31 topic clusters.
+            </h1>
+            <p className="text-sm text-[#64748b] mt-1.5">
+              <span className="text-[#f97316] font-medium">200+ urgent issues</span>
+              {' '}need attention · 724 total actions
+            </p>
+            <div className="flex flex-wrap gap-4 mt-4">
+              {[
+                { v: 724, l: 'Active', c: '#e2e8f0' },
+                { v: 200, l: 'Cannibalizing', c: '#f97316' },
+                { v: 179, l: 'Orphans', c: '#64748b' },
+                { v: 0,   l: 'Schema markup', c: '#ef4444' },
+              ].map(({ v, l, c }) => (
+                <div key={l} className="text-center">
+                  <div className="text-xl font-bold" style={{ color: c }}>{v}</div>
+                  <div className="text-[11px] text-[#64748b]">{l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Demo CTA */}
+        <div className="text-center py-8">
+          <p className="text-[#64748b] text-sm mb-4">
+            This is a live analysis of Close.com&apos;s blog. Your site may look very different.
           </p>
           <Link
-            href="/settings"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#22c55e] text-[#0a0f1a] font-semibold text-sm hover:bg-[#16a34a] transition-colors"
+            href="/onboarding"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#22c55e] text-[#0a0f1a] font-semibold text-sm hover:bg-[#16a34a] transition-colors"
           >
-            Connect a site <ArrowRight size={14} />
+            Analyze my blog <ArrowRight size={14} />
           </Link>
+          <p className="mt-3 text-xs text-[#334155]">
+            🔒 Read-only — we never modify your content
+          </p>
         </div>
       </div>
     );

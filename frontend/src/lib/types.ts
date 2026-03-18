@@ -358,6 +358,7 @@ export interface Recommendation {
   specific_actions: string[];
   ai_generated_content: Record<string, unknown> | null;
   status: string;
+  confidence?: string | null;
   created_at: string;
   updated_at: string;
 }
