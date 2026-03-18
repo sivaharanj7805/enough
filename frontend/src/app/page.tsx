@@ -32,7 +32,7 @@ function LandingPage() {
               Log in
             </Link>
             <Link
-              href="/register"
+              href="/signup"
               className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-white hover:bg-brand-accent-hover transition-colors"
             >
               Get Started Free
@@ -55,7 +55,7 @@ function LandingPage() {
         </p>
         <div className="mt-10 flex items-center justify-center gap-4">
           <Link
-            href="/register"
+            href="/signup"
             className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-6 py-3 text-base font-semibold text-white hover:bg-brand-accent-hover transition-colors"
           >
             See Your Ecosystem Free
@@ -354,7 +354,7 @@ function LandingPage() {
                   ))}
                 </ul>
                 <Link
-                  href="/register"
+                  href="/signup"
                   className={`block w-full rounded-lg py-2.5 text-center text-sm font-medium transition-colors ${
                     plan.highlighted
                       ? 'bg-brand-accent text-white hover:bg-brand-accent-hover'
@@ -379,7 +379,7 @@ function LandingPage() {
             Time to see it.
           </p>
           <Link
-            href="/register"
+            href="/signup"
             className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-8 py-3 text-base font-semibold text-white hover:bg-brand-accent-hover transition-colors"
           >
             Get Started Free
@@ -398,7 +398,7 @@ function LandingPage() {
             <Link href="/login" className="hover:text-brand-text transition-colors">
               Log in
             </Link>
-            <Link href="/register" className="hover:text-brand-text transition-colors">
+            <Link href="/signup" className="hover:text-brand-text transition-colors">
               Sign up
             </Link>
           </div>

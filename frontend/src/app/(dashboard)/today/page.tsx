@@ -44,7 +44,8 @@ function HealthRing({ score }: { score: number }) {
   const r = 54;
   const circ = 2 * Math.PI * r;
   const filled = (score / 100) * circ;
-  const color = score >= 70 ? '#22c55e' : score >= 45 ? '#eab308' : '#ef4444';
+  // Green ≥70 (great), Amber 20-69 (needs work but not alarming), Red <20 (critical only)
+  const color = score >= 70 ? '#22c55e' : score >= 20 ? '#eab308' : '#ef4444';
 
   return (
     <div className="relative flex items-center justify-center score-animate" style={{ width: 140, height: 140 }}>

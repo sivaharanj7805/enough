@@ -517,6 +517,7 @@ class RecommendationResponse(BaseModel):
     summary: str
     specific_actions: list[str] = []
     ai_generated_content: dict | None = None
+    confidence: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime

@@ -289,6 +289,18 @@ async def generate_fast_recommendations(
             logger.warning("Template error for %s on %s: %s", ptype, post_id, e)
             continue
 
+        # Confidence: high for objective issues (thin content, schema, orphan)
+        # medium for contextual recommendations, low for structural suggestions
+        _high_conf_types = {"thin_content", "seo_missing_meta", "orphan", "missing_schema",
+                             "seo_no_images", "seo_title_length"}
+        _med_conf_types = {"readability_too_complex", "thin_below_cluster_avg",
+                           "improve_ai_citability", "poor_ai_structure"}
+        confidence = (
+            "high" if ptype in _high_conf_types else
+            "medium" if ptype in _med_conf_types else
+            "low"
+        )
+
         recs_to_insert.append((
             post_id,                            # post_id
             site_id,                            # site_id
@@ -301,6 +313,7 @@ async def generate_fast_recommendations(
             summary,                            # summary
             actions,                            # specific_actions (jsonb)
             None,                               # ai_generated_content
+            confidence,                         # confidence
         ))
 
     # ── Cannibalization recommendations ──
@@ -377,6 +390,7 @@ async def generate_fast_recommendations(
             pair["post_a_id"], site_id, None, "merge" if cos >= 0.90 else "differentiate",
             priority, effort, "high" if cos >= 0.90 else "medium",
             title, summary, actions, None,
+            "high" if cos >= 0.85 else "medium",  # confidence
         ))
 
     # ── Link suggestion recommendations — candidate-aware orphan recs ──
@@ -432,6 +446,7 @@ async def generate_fast_recommendations(
                 f"Fix orphan: {orphan['title'][:60]}",
                 f"This post has no inbound internal links. Link to it from {len(link_sources)} related posts that cover similar topics.",
                 actions, None,
+                "high",  # confidence — orphan detection is 100% objective
             ))
 
     # ── Batch insert ──
@@ -440,10 +455,12 @@ async def generate_fast_recommendations(
             INSERT INTO recommendations
                 (post_id, site_id, problem_id, recommendation_type, priority,
                  estimated_effort_hours, estimated_impact, title, summary,
-                 specific_actions, ai_generated_content)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
+                 specific_actions, ai_generated_content, confidence)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+            ON CONFLICT DO NOTHING
         """, [
-            (*r[:9], __import__("json").dumps(r[9]) if r[9] else None, r[10])
+            (*r[:9], __import__("json").dumps(r[9]) if r[9] else None, r[10],
+             r[11] if len(r) > 11 else "medium")
             for r in recs_to_insert
         ])
 
