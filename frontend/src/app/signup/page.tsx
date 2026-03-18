@@ -24,7 +24,7 @@ function LeftPanel() {
       <div>
         <h2 className="text-3xl font-bold text-[#e2e8f0] leading-tight mb-3">
           Your blog has problems<br />
-          <span className="text-[#3b82f6]">you don't know about yet.</span>
+          <span className="text-[#3b82f6]">you don&apos;t know about yet.</span>
         </h2>
         <p className="text-[#64748b] text-sm leading-relaxed mb-8">
           Enough crawls your entire content library, maps every cluster, detects every conflict,

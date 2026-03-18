@@ -23,7 +23,7 @@ function LeftPanel() {
           <span className="text-[#3b82f6]">Start publishing smarter.</span>
         </h2>
         <p className="text-[#64748b] text-base leading-relaxed">
-          Enough analyses your entire content library, finds what's working and what's hurting you,
+          Enough analyses your entire content library, finds what&apos;s working and what&apos;s hurting you,
           and tells you exactly what to fix — in priority order.
         </p>
 
@@ -177,9 +177,9 @@ export default function LoginPage() {
                       <label className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
                         Password
                       </label>
-                      <a href="#" className="text-xs text-[#3b82f6] hover:underline">
+                      <Link href="/forgot-password" className="text-xs text-[#3b82f6] hover:underline">
                         Forgot password?
-                      </a>
+                      </Link>
                     </div>
                     <input
                       type="password"

@@ -395,12 +395,10 @@ function LandingPage() {
             © {new Date().getFullYear()} Enough. Publish less. Grow more.
           </span>
           <div className="flex items-center gap-6 text-sm text-brand-text-muted">
-            <Link href="/login" className="hover:text-brand-text transition-colors">
-              Log in
-            </Link>
-            <Link href="/signup" className="hover:text-brand-text transition-colors">
-              Sign up
-            </Link>
+            <Link href="/login" className="hover:text-brand-text transition-colors">Log in</Link>
+            <Link href="/signup" className="hover:text-brand-text transition-colors">Sign up</Link>
+            <Link href="/terms" className="hover:text-brand-text transition-colors">Terms</Link>
+            <Link href="/privacy" className="hover:text-brand-text transition-colors">Privacy</Link>
           </div>
         </div>
       </footer>

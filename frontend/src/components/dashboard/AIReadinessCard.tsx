@@ -1,6 +1,6 @@
 'use client';
 
-import { Sparkles, TrendingUp, Shield, Code2, Brain } from 'lucide-react';
+import { Sparkles, Shield, Code2, Brain } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 
 interface AIScores {

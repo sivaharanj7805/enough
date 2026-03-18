@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     cors_origins: str = "http://localhost:3000"
 
+    # Monitoring
+    sentry_dsn: str = ""
+    environment: str = "production"
+
     # Cron / internal endpoint auth
     cron_secret: str = ""
 

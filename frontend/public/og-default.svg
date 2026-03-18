@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <rect width="1200" height="630" fill="#0a0f1a"/>
+  <line x1="0" y1="315" x2="1200" y2="315" stroke="#1e293b" stroke-width="1"/>
+  <text x="600" y="230" font-family="system-ui,sans-serif" font-weight="900" font-size="96"
+        fill="#3b82f6" text-anchor="middle" letter-spacing="10">ENOUGH</text>
+  <text x="600" y="295" font-family="system-ui,sans-serif" font-size="26"
+        fill="#64748b" text-anchor="middle">Content Ecosystem Intelligence</text>
+  <rect x="240" y="360" width="200" height="90" rx="12" fill="#111827"/>
+  <text x="340" y="400" font-family="system-ui,sans-serif" font-weight="700" font-size="32"
+        fill="#e2e8f0" text-anchor="middle">958</text>
+  <text x="340" y="428" font-family="system-ui,sans-serif" font-size="13"
+        fill="#64748b" text-anchor="middle">Posts analysed</text>
+  <rect x="500" y="360" width="200" height="90" rx="12" fill="#111827"/>
+  <text x="600" y="400" font-family="system-ui,sans-serif" font-weight="700" font-size="32"
+        fill="#f97316" text-anchor="middle">200+</text>
+  <text x="600" y="428" font-family="system-ui,sans-serif" font-size="13"
+        fill="#64748b" text-anchor="middle">Conflicts found</text>
+  <rect x="760" y="360" width="200" height="90" rx="12" fill="#111827"/>
+  <text x="860" y="400" font-family="system-ui,sans-serif" font-weight="700" font-size="32"
+        fill="#22c55e" text-anchor="middle">45/100</text>
+  <text x="860" y="428" font-family="system-ui,sans-serif" font-size="13"
+        fill="#64748b" text-anchor="middle">Health score</text>
+</svg>
