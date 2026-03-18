@@ -414,7 +414,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/landscape');
+      router.replace('/today');
     }
   }, [user, loading, router]);
 

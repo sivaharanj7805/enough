@@ -131,14 +131,23 @@ class AnalyticsOverview(BaseModel):
 
 # ──────────────────────────── Ingestion ────────────────────────────
 
+class EarlyFindings(BaseModel):
+    """Preliminary findings surfaced after first 50 posts — shown during pipeline wait."""
+    posts_sampled: int = 0
+    clusters_found: int = 0
+    cann_pairs_found: int = 0
+    thin_content_count: int = 0
+    preview_ready: bool = False
+
 class CrawlStatusResponse(BaseModel):
     site_id: UUID
-    status: str  # idle, crawling, completed, failed
+    status: str  # idle, crawling, embedding, analyzing, clustering, completed, failed
     posts_found: int = 0
     posts_processed: int = 0
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error: str | None = None
+    early_findings: EarlyFindings | None = None
 
 
 class TaskTriggerResponse(BaseModel):

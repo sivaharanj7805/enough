@@ -174,14 +174,51 @@ async def crawl_status(
     if not row:
         return CrawlStatusResponse(site_id=site_id, status="idle")
 
+    posts_found = row["posts_found"] or 0
+    status = row["status"]
+
+    # Early findings — surface preliminary results during pipeline wait
+    # Available once enough posts are crawled (>= 50) and analysis has started
+    early_findings = None
+    if status in ("embedding", "analyzing", "clustering", "completed") and posts_found >= 50:
+        try:
+            posts_sampled = await db.fetchval(
+                "SELECT COUNT(*) FROM posts WHERE site_id = $1", site_id,
+            ) or 0
+            clusters_found = await db.fetchval(
+                "SELECT COUNT(DISTINCT cluster_id) FROM post_clusters pc "
+                "JOIN posts p ON p.id = pc.post_id WHERE p.site_id = $1", site_id,
+            ) or 0
+            cann_pairs_found = await db.fetchval(
+                "SELECT COUNT(*) FROM cannibalization_pairs cp "
+                "JOIN posts p ON p.id = cp.post_a_id WHERE p.site_id = $1", site_id,
+            ) or 0
+            thin_count = await db.fetchval(
+                "SELECT COUNT(*) FROM content_problems cp "
+                "JOIN posts p ON p.id = cp.post_id "
+                "WHERE p.site_id = $1 AND cp.problem_type = 'thin_content'", site_id,
+            ) or 0
+            if posts_sampled > 0:
+                from app.models.schemas import EarlyFindings
+                early_findings = EarlyFindings(
+                    posts_sampled=int(posts_sampled),
+                    clusters_found=int(clusters_found),
+                    cann_pairs_found=int(cann_pairs_found),
+                    thin_content_count=int(thin_count),
+                    preview_ready=int(clusters_found) > 0,
+                )
+        except Exception:
+            pass  # Don't fail status check for early findings
+
     return CrawlStatusResponse(
         site_id=row["site_id"],
-        status=row["status"],
-        posts_found=row["posts_found"] or 0,
+        status=status,
+        posts_found=posts_found,
         posts_processed=row["posts_processed"] or 0,
         started_at=row["started_at"],
         completed_at=row["completed_at"],
         error=row["error"],
+        early_findings=early_findings,
     )
 
 

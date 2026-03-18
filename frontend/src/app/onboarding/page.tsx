@@ -8,10 +8,19 @@ import { useAuth } from '@/lib/hooks/useAuth';
 
 type Step = 'url' | 'creating' | 'crawling' | 'analyzing' | 'done' | 'error';
 
+interface EarlyFindings {
+  posts_sampled: number;
+  clusters_found: number;
+  cann_pairs_found: number;
+  thin_content_count: number;
+  preview_ready: boolean;
+}
+
 interface CrawlStatus {
   status: string;
   posts_found: number;
   posts_processed: number;
+  early_findings?: EarlyFindings | null;
 }
 
 const PIPELINE_STAGES = [
@@ -224,6 +233,38 @@ export default function OnboardingPage() {
                   : 'Discovering posts...'}
               </p>
             </div>
+
+            {/* Early findings preview — show once 50+ posts analyzed */}
+            {crawlStatus?.early_findings?.preview_ready && (
+              <div className="mb-6 rounded-xl bg-[#22c55e]/5 border border-[#22c55e]/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-[#22c55e] mb-3">
+                  Early look — full analysis still running
+                </p>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <div className="text-xl font-bold text-[#e2e8f0]">
+                      {crawlStatus.early_findings.clusters_found}
+                    </div>
+                    <div className="text-xs text-[#64748b]">Topic clusters</div>
+                  </div>
+                  <div>
+                    <div className="text-xl font-bold text-[#f97316]">
+                      {crawlStatus.early_findings.cann_pairs_found}
+                    </div>
+                    <div className="text-xs text-[#64748b]">Overlap pairs</div>
+                  </div>
+                  <div>
+                    <div className="text-xl font-bold text-[#eab308]">
+                      {crawlStatus.early_findings.thin_content_count}
+                    </div>
+                    <div className="text-xs text-[#64748b]">Thin content</div>
+                  </div>
+                </div>
+                <p className="text-xs text-[#64748b] mt-3 text-center">
+                  From first {crawlStatus.early_findings.posts_sampled} posts analyzed
+                </p>
+              </div>
+            )}
 
             <div className="space-y-3">
               {PIPELINE_STAGES.map((stage, i) => {
