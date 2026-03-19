@@ -68,12 +68,17 @@ async def verify_cron_secret(
     - CRON_SECRET is configured and header is missing or wrong
     - Uses constant-time comparison to prevent timing attacks
     """
-    from app.config import get_settings
+    from app.config import get_settings, Settings
     settings = get_settings()
 
     if not settings.cron_secret:
-        # No cron secret configured — allow in dev mode but log warning
-        logger.warning("CRON_SECRET not set — cron endpoints are unprotected")
+        # No cron secret configured — reject in production, warn in dev
+        if settings.environment == "production":
+            raise HTTPException(
+                status_code=503,
+                detail="Cron endpoint is disabled — CRON_SECRET is not configured",
+            )
+        logger.warning("CRON_SECRET not set — cron endpoints are unprotected (dev mode)")
         return
 
     if not x_cron_secret:

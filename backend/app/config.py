@@ -71,3 +71,41 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached settings instance."""
     return Settings()
+
+
+def validate_production(settings: "Settings | None" = None) -> None:
+    """Enforce required secrets in production. Call at application startup."""
+    import logging
+    _log = logging.getLogger(__name__)
+
+    if settings is None:
+        settings = get_settings()
+
+    if settings.environment != "production":
+        return
+
+    errors: list[str] = []
+
+    if settings.secret_key in ("", "change-me-in-production"):
+        errors.append("SECRET_KEY must be set to a secure random value in production")
+
+    if not settings.supabase_url:
+        errors.append("SUPABASE_URL is required in production")
+
+    if not settings.supabase_jwt_secret:
+        errors.append("SUPABASE_JWT_SECRET is required in production")
+
+    if not settings.cron_secret:
+        errors.append(
+            "CRON_SECRET is not set — cron endpoints are unprotected in production"
+        )
+
+    if "*" in settings.cors_origin_list:
+        _log.warning(
+            "CORS_ORIGINS contains '*' in production — this allows any origin to access the API"
+        )
+
+    if errors:
+        raise RuntimeError(
+            "Production configuration errors:\n" + "\n".join(f"  • {e}" for e in errors)
+        )

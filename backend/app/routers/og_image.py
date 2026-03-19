@@ -4,10 +4,11 @@ from uuid import UUID
 from typing import Annotated
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from app.database import get_db
+from app.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,8 +38,16 @@ def _wrap(text: str, max_chars: int = 52) -> list[str]:
 async def og_image(
     site_id: UUID,
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
 ) -> Response:
     """Generate a 1200×630 SVG social card for the audit report."""
+    # Verify site ownership
+    ownership = await db.fetchrow(
+        "SELECT id FROM sites WHERE id = $1 AND user_id = $2", site_id, user_id
+    )
+    if not ownership:
+        raise HTTPException(status_code=404, detail="Site not found")
+
     site = await db.fetchrow("SELECT domain FROM sites WHERE id = $1", site_id)
     domain = site["domain"] if site else "content audit"
 

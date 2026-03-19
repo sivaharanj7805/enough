@@ -1257,7 +1257,7 @@ async def ai_readiness_scan(
             logger.info("AI readiness scan complete for %s in %.1fs", site_id, time.time() - t0)
         except Exception as e:
             logger.error("AI readiness scan failed for %s: %s", site_id, e)
-            import traceback; traceback.print_exc()
+            logger.exception("Stack trace for above error")
 
     background_tasks.add_task(_run)
     return {

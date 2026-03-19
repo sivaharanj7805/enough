@@ -56,10 +56,14 @@ export default function OnboardingPage() {
 
   const pollStatus = async (id: string) => {
     let attempts = 0;
-    const maxAttempts = 300; // 25 min max
+    const maxAttempts = 120; // ~25 min max with backoff
+    const BASE_DELAY_MS = 5000;
+    const MAX_DELAY_MS = 30000;
 
     while (attempts < maxAttempts) {
-      await new Promise((r) => setTimeout(r, 5000));
+      // Exponential backoff: 5s → 7.5s → 11.25s → ... capped at 30s
+      const delay = Math.min(BASE_DELAY_MS * Math.pow(1.5, attempts), MAX_DELAY_MS);
+      await new Promise((r) => setTimeout(r, delay));
       attempts++;
 
       try {

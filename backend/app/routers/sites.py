@@ -17,6 +17,45 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _validate_url_not_internal(url: str | None, field_name: str) -> None:
+    """Prevent SSRF by rejecting URLs pointing to internal/private IP ranges."""
+    if not url:
+        return
+    import ipaddress
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+
+        # Reject non-HTTP schemes
+        if parsed.scheme not in ("http", "https"):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{field_name}: only http/https URLs are allowed",
+            )
+
+        # Try to parse as IP address
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{field_name}: internal/private IP addresses are not allowed",
+                )
+        except ValueError:
+            # Not an IP — hostname like example.com, check for localhost
+            if hostname.lower() in ("localhost", "::1") or hostname.endswith(".local"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{field_name}: localhost and .local domains are not allowed",
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("URL validation error for %s=%r: %s", field_name, url, e)
+
+
 @router.post("", response_model=SiteResponse, status_code=201)
 async def create_site(
     body: SiteCreate,
@@ -24,6 +63,10 @@ async def create_site(
     db: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Add a new site for crawling."""
+    # Validate URLs to prevent SSRF attacks against internal infrastructure
+    _validate_url_not_internal(body.wordpress_url, "wordpress_url")
+    _validate_url_not_internal(body.sitemap_url, "sitemap_url")
+
     encrypted_wp_password = encrypt_value(body.wordpress_app_password) if body.wordpress_app_password else None
 
     try:

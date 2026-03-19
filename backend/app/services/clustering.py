@@ -237,14 +237,17 @@ class TopicClusterer:
         logger.info("Mean pairwise cosine similarity: %.3f", mean_sim)
 
         if mean_sim > 0.70:
-            # Tight niche — spread more to find differences
-            min_dist = 0.05
+            # Tight niche — INCREASE min_dist so UMAP spreads similar points apart,
+            # making subtle differences visible to HDBSCAN.
+            # Low min_dist on a tight niche collapses everything into one blob.
+            min_dist = 0.25
             n_neighbors = min(5, n_posts - 1)
-            logger.info("Tight niche detected (%.3f) — using min_dist=0.05, n_neighbors=%d", mean_sim, n_neighbors)
+            logger.info("Tight niche detected (%.3f) — using min_dist=0.25, n_neighbors=%d", mean_sim, n_neighbors)
         elif mean_sim > 0.50:
             min_dist = 0.1
         else:
-            min_dist = 0.0  # Standard diverse content
+            # Diverse content — compact clusters, let HDBSCAN find tight structure
+            min_dist = 0.05
 
         logger.info(
             "UMAP clustering: %d dims → %d dims (n_neighbors=%d, min_dist=%.2f)",
