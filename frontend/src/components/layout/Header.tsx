@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 
 const PAGE_TITLES: Record<string, string> = {
   '/landscape': 'Landscape',
-  '/cannibalization': 'Cannibalization Map',
+  '/cannibalization': 'Content Overlap',
   '/oracle': 'Pre-Publish Oracle',
   '/dashboard': 'Health Dashboard',
   '/consolidation': 'Consolidation Plans',

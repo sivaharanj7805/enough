@@ -358,7 +358,7 @@ export default function OnboardingPage() {
 
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => router.push(`/overview?site=${siteId}`)}
+                onClick={() => router.push('/today')}
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#3b82f6] text-white font-semibold py-3 text-sm hover:bg-[#2563eb] transition-colors"
               >
                 View Dashboard <ArrowRight size={16} />

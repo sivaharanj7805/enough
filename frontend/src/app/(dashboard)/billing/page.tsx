@@ -17,20 +17,6 @@ import type {
 
 const PLANS = [
   {
-    tier: 'free',
-    name: 'Free',
-    price: '$0',
-    period: '/mo',
-    features: [
-      '1 site',
-      'Up to 50 posts',
-      'Basic landscape view',
-      'Dashboard & cannibalization',
-    ],
-    limits: ['No Oracle access', 'No consolidation engine'],
-    priceId: null,
-  },
-  {
     tier: 'growth',
     name: 'Growth',
     price: '$99',
@@ -41,7 +27,7 @@ const PLANS = [
       'Full landscape & dashboard',
       'Pre-Publish Oracle',
       '5 consolidations / month',
-      'Content calendar',
+      'Content overlap detection',
       'Weekly ecosystem reports',
     ],
     limits: [],
@@ -161,7 +147,7 @@ export default function BillingPage() {
       </Card>
 
       {/* Plans */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         {PLANS.map((plan) => {
           const isCurrent = currentTier === plan.tier;
           const isUpgrade =

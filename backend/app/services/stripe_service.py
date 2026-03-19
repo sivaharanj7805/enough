@@ -15,9 +15,9 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Tier limits
+# Tier limits — no free tier, all users must subscribe
 TIER_LIMITS = {
-    "free": {"sites": 1, "posts": 50, "consolidations_per_month": 0, "oracle": False},
+    "free": {"sites": 1, "posts": 500, "consolidations_per_month": 5, "oracle": True},
     "growth": {"sites": 1, "posts": 500, "consolidations_per_month": 5, "oracle": True},
     "scale": {"sites": 10, "posts": 5000, "consolidations_per_month": -1, "oracle": True},
 }

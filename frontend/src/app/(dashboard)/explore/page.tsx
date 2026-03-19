@@ -19,7 +19,7 @@ const ConsolidationTab = dynamic(() => import('@/components/explore/Consolidatio
 const TABS = [
   { id: 'clusters',      label: 'Clusters',        icon: Layers },
   { id: 'recommendations', label: 'Actions',       icon: CheckSquare },
-  { id: 'cannibalization', label: 'Cannibalization', icon: Network },
+  { id: 'cannibalization', label: 'Overlap',          icon: Network },
   { id: 'posts',         label: 'Posts',            icon: FileText },
   { id: 'landscape',     label: 'Landscape',        icon: Map },
   { id: 'consolidation', label: 'Consolidation',    icon: Wrench },

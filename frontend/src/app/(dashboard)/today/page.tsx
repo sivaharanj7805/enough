@@ -156,7 +156,7 @@ export default function TodayPage() {
 
   const isLoading = healthLoading || recsLoading;
 
-  const topRecs = recsData?.recommendations?.slice(0, 5) ?? [];
+  const topRecs = recsData?.recommendations?.slice(0, 3) ?? [];
   const totalRecs = recsData?.total ?? 0;
   const criticalCount = recsData?.by_priority?.critical ?? 0;
   const highCount = recsData?.by_priority?.high ?? 0;
@@ -220,7 +220,7 @@ export default function TodayPage() {
             <div className="flex flex-wrap gap-4 mt-4">
               {[
                 { v: 724, l: 'Active', c: '#e2e8f0' },
-                { v: 200, l: 'Cannibalizing', c: '#f97316' },
+                { v: 200, l: 'Competing', c: '#f97316' },
                 { v: 179, l: 'Orphans', c: '#64748b' },
                 { v: 0,   l: 'Schema markup', c: '#ef4444' },
               ].map(({ v, l, c }) => (
@@ -270,47 +270,54 @@ export default function TodayPage() {
         hasRecommendations={hasEngagedRecs}
       />
 
-      {/* ── Hero: Health score + site summary ── */}
+      {/* ── #1 Priority Card (the one thing to do today) ── */}
+      {topRecs.length > 0 && (
+        <div className="p-5 rounded-2xl border-2 border-[#3b82f6]/30 bg-[#3b82f6]/5">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#3b82f6] mb-2">
+            Your #1 priority
+          </p>
+          <p className="text-lg font-bold text-[#e2e8f0] leading-snug">
+            {topRecs[0].title}
+          </p>
+          {topRecs[0].summary && (
+            <p className="text-sm text-[#94a3b8] mt-2 leading-relaxed line-clamp-2">
+              {topRecs[0].summary}
+            </p>
+          )}
+          <div className="flex items-center gap-4 mt-3">
+            {topRecs[0].estimated_effort_hours != null && (
+              <span className="text-xs text-[#64748b] flex items-center gap-1">
+                <Clock size={11} /> {topRecs[0].estimated_effort_hours}h estimated
+              </span>
+            )}
+            <Link
+              href="/explore?tab=recommendations"
+              className="text-xs font-medium text-[#3b82f6] hover:text-[#2563eb] transition-colors flex items-center gap-1"
+            >
+              Show me how <ArrowRight size={12} />
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* ── Hero: Health score + site summary (sentence, not widgets) ── */}
       <div className="flex items-center gap-8 p-6 rounded-2xl bg-[#111827] border border-[#1e293b]">
         <HealthRing score={healthScore} />
         <div className="flex-1">
-          <p className="text-xs font-semibold uppercase tracking-widest text-[#64748b] mb-1">
-            Content Health
-          </p>
-          <h1 className="text-2xl font-bold text-[#e2e8f0] leading-tight">
-            {health.total_posts} posts across {health.clusters?.length ?? 0} topic clusters.
-          </h1>
-          <p className="text-sm text-[#64748b] mt-1.5">
+          <p className="text-sm text-[#94a3b8] leading-relaxed">
+            Your site: <span className="text-[#e2e8f0] font-semibold">{health.total_posts} posts</span>,{' '}
+            <span className="text-[#e2e8f0] font-semibold">{health.clusters?.length ?? 0} topic clusters</span>,{' '}
+            overall health <span className="font-semibold" style={{ color: healthScore >= 70 ? '#22c55e' : healthScore >= 20 ? '#eab308' : '#ef4444' }}>{healthScore}/100</span>.{' '}
             {urgentCount > 0 ? (
               <>
-                <span className="text-[#f97316] font-medium">{urgentCount} urgent issues</span>
-                {' '}need attention · {totalRecs} total actions
+                <span className="text-[#f97316] font-medium">{urgentCount} critical issues</span>.{' '}
+                {totalRecs} total actions.
               </>
             ) : (
-              `${totalRecs} actions available · no critical issues`
+              <>{totalRecs} actions available.</>
             )}
           </p>
-          {/* Quick stats row */}
-          <div className="flex flex-wrap gap-4 mt-4">
-            <div className="text-center">
-              <div className="text-xl font-bold text-[#e2e8f0]">{health.active_posts}</div>
-              <div className="text-[11px] text-[#64748b]">Active</div>
-            </div>
-            <div className="text-center">
-              <div className="text-xl font-bold text-[#f97316]">{health.cannibalistic_posts}</div>
-              <div className="text-[11px] text-[#64748b]">Cannibalizing</div>
-            </div>
-            <div className="text-center">
-              <div className="text-xl font-bold text-[#64748b]">{health.dead_posts}</div>
-              <div className="text-[11px] text-[#64748b]">Dead weight</div>
-            </div>
-            <div className="text-center">
-              <div className="text-xl font-bold text-[#e2e8f0]">
-                {health.content_efficiency_ratio.toFixed(1)}%
-              </div>
-              <div className="text-[11px] text-[#64748b]">Efficient</div>
-            </div>
-          </div>
+          {/* Detailed stats live in Explore — Today stays simple */}
         </div>
       </div>
 
@@ -351,12 +358,27 @@ export default function TodayPage() {
         </div>
       ) : null}
 
+      {/* ── Oracle prompt — "Ask anything about your content" ── */}
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#111827] border border-[#1e293b] cursor-pointer hover:border-[#3b82f6]/30 transition-colors"
+        onClick={() => {
+          // Trigger the Oracle FAB click
+          const fab = document.querySelector<HTMLButtonElement>('[title="Ask Oracle anything"]');
+          fab?.click();
+        }}
+      >
+        <Zap size={16} className="text-[#3b82f6] flex-shrink-0" />
+        <p className="text-sm text-[#94a3b8] flex-1">
+          Not sure where to start? <span className="text-[#3b82f6] font-medium">Ask the Oracle</span> — &quot;what should I fix first?&quot;
+        </p>
+        <ArrowRight size={14} className="text-[#3b82f6]" />
+      </div>
+
       {/* ── Priority Actions ── */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp size={15} className="text-[#3b82f6]" />
-            <h2 className="text-sm font-semibold text-[#e2e8f0]">Your top priorities</h2>
+            <h2 className="text-sm font-semibold text-[#e2e8f0]">Next best actions</h2>
           </div>
           <Link
             href="/explore?tab=recommendations"

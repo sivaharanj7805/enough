@@ -18,7 +18,7 @@ export const today = {
     `${total} actions available \u00B7 no critical issues`,
   totalActions: (count: number) =>
     `${count} total action${count === 1 ? '' : 's'}`,
-  priorityHeading: 'Your top priorities',
+  priorityHeading: 'Next best actions',
   allCaughtUp: 'All caught up',
   allCaughtUpSub: 'No pending high-priority actions right now.',
   viewAll: (count: number) => `All ${count} actions`,
@@ -109,7 +109,7 @@ export const empty = {
     description: 'Your content is looking healthy. We\u2019ll alert you if anything changes.',
   },
   noCannibalization: {
-    title: 'No cannibalization detected',
+    title: 'No competing posts detected',
     description:
       'None of your posts are competing against each other for the same queries. Nice work.',
   },
@@ -165,7 +165,7 @@ export const ecosystemState: Record<string, { label: string; description: string
   },
   swamp: {
     label: 'Swamp',
-    description: 'Over-bloated cluster with cannibalization \u2014 needs consolidation.',
+    description: 'Over-bloated cluster with competing posts \u2014 needs consolidation.',
   },
 };
 

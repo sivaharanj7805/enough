@@ -35,7 +35,7 @@ function LandingPage() {
               href="/signup"
               className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-white hover:bg-brand-accent-hover transition-colors"
             >
-              Get Started Free
+              Start Your Analysis
               <ArrowRight size={14} />
             </Link>
           </div>
@@ -58,7 +58,7 @@ function LandingPage() {
             href="/signup"
             className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-6 py-3 text-base font-semibold text-white hover:bg-brand-accent-hover transition-colors"
           >
-            See Your Ecosystem Free
+            See Your Ecosystem
             <ArrowRight size={18} />
           </Link>
           <Link
@@ -143,7 +143,7 @@ function LandingPage() {
               {/* Murky water highlights */}
               <ellipse cx="350" cy="245" rx="60" ry="4" fill="#365314" opacity={0.3} />
               <text x="350" y="290" textAnchor="middle" fill="#a3e635" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>SWAMP</text>
-              <text x="350" y="305" textAnchor="middle" fill="#bef264" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Cannibalized</text>
+              <text x="350" y="305" textAnchor="middle" fill="#bef264" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Competing</text>
 
               {/* ── DESERT region ── */}
               <path d="M440 210 Q480 185 530 195 Q580 175 630 195 Q650 190 660 200 L660 320 L440 320Z"
@@ -247,7 +247,7 @@ function LandingPage() {
               },
               {
                 icon: Network,
-                title: 'Cannibalization Detection',
+                title: 'Content Overlap Detection',
                 desc: 'Find posts competing against each other for the same keywords. Stop fighting yourself in search results.',
               },
               {
@@ -295,25 +295,19 @@ function LandingPage() {
       <section id="pricing" className="py-20">
         <div className="mx-auto max-w-6xl px-6">
           <h2 className="text-center text-3xl font-bold mb-12">Simple Pricing</h2>
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 gap-6 max-w-3xl mx-auto">
             {[
-              {
-                name: 'Free',
-                price: '$0',
-                features: ['1 site', 'Up to 50 posts', 'Basic landscape', 'Dashboard'],
-                cta: 'Get Started Free',
-                highlighted: false,
-              },
               {
                 name: 'Growth',
                 price: '$99',
                 features: [
-                  '1 site',
-                  'Up to 500 posts',
-                  'Full features',
-                  'Pre-Publish Oracle',
-                  '5 consolidations/mo',
-                  'Weekly reports',
+                  '1 site, up to 500 posts',
+                  'Full content landscape & dashboard',
+                  'Pre-Publish Oracle (AI assistant)',
+                  'Content overlap detection',
+                  '5 AI consolidation drafts/mo',
+                  'Weekly ecosystem reports',
+                  'Prioritized recommendations',
                 ],
                 cta: 'Start Growth Plan',
                 highlighted: true,
@@ -322,10 +316,10 @@ function LandingPage() {
                 name: 'Scale',
                 price: '$299',
                 features: [
-                  'Up to 10 sites',
-                  'Up to 5,000 posts',
+                  'Up to 10 sites, 5,000 posts',
+                  'Everything in Growth',
                   'Unlimited consolidations',
-                  'Impact tracking',
+                  'Impact tracking & reporting',
                   'Priority support',
                 ],
                 cta: 'Start Scale Plan',
@@ -382,7 +376,7 @@ function LandingPage() {
             href="/signup"
             className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-8 py-3 text-base font-semibold text-white hover:bg-brand-accent-hover transition-colors"
           >
-            Get Started Free
+            Start Your Analysis
             <ArrowRight size={18} />
           </Link>
         </div>
