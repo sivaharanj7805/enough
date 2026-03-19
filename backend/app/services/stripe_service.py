@@ -15,10 +15,10 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Tier limits — paid-only product ($99/mo minimum)
-# Free tier is restricted: users must upgrade to access Oracle and consolidation
+# Tier limits — paid-only product, no free tier
+# "free" = unsubscribed user, blocked from everything until they pay
 TIER_LIMITS = {
-    "free": {"sites": 1, "posts": 50, "consolidations_per_month": 0, "oracle": False},
+    "free": {"sites": 0, "posts": 0, "consolidations_per_month": 0, "oracle": False},
     "growth": {"sites": 1, "posts": 500, "consolidations_per_month": 5, "oracle": True},
     "scale": {"sites": 10, "posts": 5000, "consolidations_per_month": -1, "oracle": True},
 }
