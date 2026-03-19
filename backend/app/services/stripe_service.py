@@ -15,9 +15,10 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Tier limits — no free tier, all users must subscribe
+# Tier limits — paid-only product ($99/mo minimum)
+# Free tier is restricted: users must upgrade to access Oracle and consolidation
 TIER_LIMITS = {
-    "free": {"sites": 1, "posts": 500, "consolidations_per_month": 5, "oracle": True},
+    "free": {"sites": 1, "posts": 50, "consolidations_per_month": 0, "oracle": False},
     "growth": {"sites": 1, "posts": 500, "consolidations_per_month": 5, "oracle": True},
     "scale": {"sites": 10, "posts": 5000, "consolidations_per_month": -1, "oracle": True},
 }
@@ -30,6 +31,23 @@ class StripeService:
         settings = get_settings()
         stripe.api_key = settings.stripe_secret_key
 
+    def _resolve_price_id(self, price_id: str) -> str:
+        """Resolve a tier name ('growth', 'scale') to a real Stripe price ID.
+
+        Accepts either a tier name or a raw Stripe price ID (price_xxx).
+        """
+        if price_id.startswith("price_"):
+            return price_id  # Already a real Stripe price ID
+        settings = get_settings()
+        mapping = {
+            "growth": settings.stripe_price_growth,
+            "scale": settings.stripe_price_scale,
+        }
+        resolved = mapping.get(price_id)
+        if not resolved:
+            raise ValueError(f"Unknown price tier: {price_id}. Use 'growth' or 'scale'.")
+        return resolved
+
     async def create_checkout_session(
         self,
         db: asyncpg.Connection,
@@ -39,6 +57,9 @@ class StripeService:
         cancel_url: str,
     ) -> str:
         """Create a Stripe checkout session and return the URL."""
+        # Resolve tier name to actual Stripe price ID
+        stripe_price_id = self._resolve_price_id(price_id)
+
         # Get or create Stripe customer
         profile = await db.fetchrow(
             "SELECT email, stripe_customer_id FROM profiles WHERE id = $1::uuid",
@@ -65,7 +86,7 @@ class StripeService:
             stripe.checkout.Session.create,
             customer=customer_id,
             payment_method_types=["card"],
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=[{"price": stripe_price_id, "quantity": 1}],
             mode="subscription",
             success_url=success_url,
             cancel_url=cancel_url,
@@ -77,7 +98,11 @@ class StripeService:
     async def handle_webhook(
         self, db: asyncpg.Connection, payload: bytes, sig_header: str
     ) -> None:
-        """Process a Stripe webhook event."""
+        """Process a Stripe webhook event with idempotency protection.
+
+        Uses the Stripe event ID to prevent duplicate processing. If the DB
+        write fails, the event will be retried by Stripe (up to 3 days).
+        """
         settings = get_settings()
 
         try:
@@ -89,73 +114,90 @@ class StripeService:
             logger.error("Invalid Stripe webhook signature")
             raise ValueError("Invalid signature")
 
+        event_id = event["id"]
         event_type = event["type"]
         data = event["data"]["object"]
 
-        logger.info("Stripe webhook: %s", event_type)
+        logger.info("Stripe webhook: %s (event_id=%s)", event_type, event_id)
 
-        if event_type == "checkout.session.completed":
-            user_id = data.get("metadata", {}).get("user_id")
-            subscription_id = data.get("subscription")
-            customer_id = data.get("customer")
-            if user_id and subscription_id:
-                # Determine tier from price
-                sub = await asyncio.to_thread(
-                    stripe.Subscription.retrieve, subscription_id
-                )
-                price_id = sub["items"]["data"][0]["price"]["id"]
+        # Idempotency: skip if we already processed this event
+        already = await db.fetchval(
+            "SELECT 1 FROM webhook_events WHERE event_id = $1", event_id
+        )
+        if already:
+            logger.info("Skipping duplicate webhook event %s", event_id)
+            return
+
+        # Process the event inside a transaction so either all writes succeed or none
+        async with db.transaction():
+            # Record the event for idempotency
+            await db.execute(
+                "INSERT INTO webhook_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                event_id,
+                event_type,
+            )
+
+            if event_type == "checkout.session.completed":
+                user_id = data.get("metadata", {}).get("user_id")
+                subscription_id = data.get("subscription")
+                customer_id = data.get("customer")
+                if user_id and subscription_id:
+                    sub = await asyncio.to_thread(
+                        stripe.Subscription.retrieve, subscription_id
+                    )
+                    price_id = sub["items"]["data"][0]["price"]["id"]
+                    tier = self._price_to_tier(price_id)
+                    await db.execute(
+                        """UPDATE profiles
+                           SET stripe_subscription_id = $1,
+                               stripe_customer_id = $2,
+                               subscription_status = $3
+                           WHERE id = $4::uuid""",
+                        subscription_id,
+                        customer_id,
+                        tier,
+                        user_id,
+                    )
+                    logger.info("Activated %s subscription for user %s", tier, user_id)
+
+            elif event_type == "customer.subscription.updated":
+                subscription_id = data.get("id")
+                price_id = data["items"]["data"][0]["price"]["id"]
                 tier = self._price_to_tier(price_id)
+                current_period_end = data.get("current_period_end")
+
                 await db.execute(
                     """UPDATE profiles
-                       SET stripe_subscription_id = $1,
-                           stripe_customer_id = $2,
-                           subscription_status = $3
-                       WHERE id = $4::uuid""",
-                    subscription_id,
-                    customer_id,
+                       SET subscription_status = $1,
+                           subscription_ends_at = TO_TIMESTAMP($2)
+                       WHERE stripe_subscription_id = $3""",
                     tier,
-                    user_id,
+                    current_period_end,
+                    subscription_id,
                 )
-                logger.info("Activated %s subscription for user %s", tier, user_id)
 
-        elif event_type == "customer.subscription.updated":
-            subscription_id = data.get("id")
-            price_id = data["items"]["data"][0]["price"]["id"]
-            tier = self._price_to_tier(price_id)
-            current_period_end = data.get("current_period_end")
-
-            await db.execute(
-                """UPDATE profiles
-                   SET subscription_status = $1,
-                       subscription_ends_at = TO_TIMESTAMP($2)
-                   WHERE stripe_subscription_id = $3""",
-                tier,
-                current_period_end,
-                subscription_id,
-            )
-
-        elif event_type == "customer.subscription.deleted":
-            subscription_id = data.get("id")
-            await db.execute(
-                """UPDATE profiles
-                   SET subscription_status = 'free',
-                       stripe_subscription_id = NULL,
-                       subscription_ends_at = NULL
-                   WHERE stripe_subscription_id = $1""",
-                subscription_id,
-            )
-            logger.info("Subscription %s cancelled, downgraded to free", subscription_id)
-
-        elif event_type == "invoice.payment_failed":
-            subscription_id = data.get("subscription")
-            if subscription_id:
+            elif event_type == "customer.subscription.deleted":
+                subscription_id = data.get("id")
                 await db.execute(
                     """UPDATE profiles
-                       SET subscription_status = 'past_due'
+                       SET subscription_status = 'free',
+                           stripe_subscription_id = NULL,
+                           subscription_ends_at = NULL
                        WHERE stripe_subscription_id = $1""",
                     subscription_id,
                 )
-                logger.warning("Payment failed for subscription %s", subscription_id)
+                logger.info("Subscription %s cancelled, downgraded to free", subscription_id)
+
+            elif event_type == "invoice.payment_failed":
+                subscription_id = data.get("subscription")
+                if subscription_id:
+                    await db.execute(
+                        """UPDATE profiles
+                           SET subscription_status = 'past_due'
+                           WHERE stripe_subscription_id = $1""",
+                        subscription_id,
+                    )
+                    logger.warning("Payment failed for subscription %s", subscription_id)
 
     def _price_to_tier(self, price_id: str) -> str:
         """Map a Stripe price ID to a tier name."""

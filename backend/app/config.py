@@ -104,6 +104,27 @@ def validate_production(settings: "Settings | None" = None) -> None:
             "CRON_SECRET is not set — cron endpoints are unprotected in production"
         )
 
+    if not settings.stripe_secret_key:
+        errors.append("STRIPE_SECRET_KEY is required in production")
+
+    if not settings.stripe_webhook_secret:
+        errors.append("STRIPE_WEBHOOK_SECRET is required in production")
+
+    if not settings.stripe_price_growth:
+        errors.append("STRIPE_PRICE_GROWTH is required — create a Stripe price and set the ID")
+
+    if not settings.resend_api_key:
+        errors.append("RESEND_API_KEY is required in production — weekly reports need email delivery")
+
+    if not settings.sentry_dsn:
+        _log.warning("SENTRY_DSN is not set — error monitoring is disabled in production")
+
+    if not settings.openai_api_key:
+        errors.append("OPENAI_API_KEY is required in production — embeddings will fail")
+
+    if not settings.anthropic_api_key:
+        errors.append("ANTHROPIC_API_KEY is required in production — Oracle and consolidation will fail")
+
     if not settings.frontend_url:
         errors.append("FRONTEND_URL is required in production")
     elif settings.frontend_url.startswith("http://localhost"):

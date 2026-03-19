@@ -325,7 +325,12 @@ async def get_subscription(
 
 @router.post("/billing/webhook")
 async def stripe_webhook(request: Request):
-    """Stripe webhook handler — NO AUTH required (called by Stripe)."""
+    """Stripe webhook handler — NO AUTH required (called by Stripe).
+
+    Returns 200 on success so Stripe stops retrying.
+    Returns 400 for bad signatures (Stripe won't retry).
+    Returns 500 for DB failures (Stripe will retry up to 3 days).
+    """
     from app.database import get_pool
     from app.services.stripe_service import StripeService
 
@@ -338,10 +343,12 @@ async def stripe_webhook(request: Request):
         try:
             await service.handle_webhook(db, payload, sig_header)
         except ValueError as e:
+            # Signature or validation error — don't retry
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error("Webhook processing failed: %s", e)
-            raise HTTPException(status_code=500, detail="Webhook failed")
+            # DB or unexpected error — return 500 so Stripe retries
+            logger.error("Webhook processing failed (will be retried by Stripe): %s", e)
+            raise HTTPException(status_code=500, detail="Webhook processing failed — will retry")
 
     return {"received": True}
 

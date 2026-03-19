@@ -155,3 +155,16 @@ export function useAIScores(siteId: string | null) {
     siteId ? `/sites/${siteId}/intelligence/ai-scores` : null
   );
 }
+
+// ─── Subscription ────────────────────────────────
+
+interface Subscription {
+  tier: string;
+  status: string;
+  stripe_subscription_id: string | null;
+  current_period_end: string | null;
+}
+
+export function useSubscription() {
+  return useSWRFetch<Subscription>('/billing/subscription');
+}
