@@ -24,11 +24,36 @@ interface CrawlStatus {
 }
 
 const PIPELINE_STAGES = [
-  { key: 'crawling', label: 'Crawling posts', emoji: '🕷️' },
-  { key: 'embedding', label: 'Generating embeddings', emoji: '🧠' },
-  { key: 'analyzing', label: 'Running analysis', emoji: '🔬' },
-  { key: 'clustering', label: 'Clustering topics', emoji: '🗂️' },
-  { key: 'completed', label: 'Building recommendations', emoji: '✦' },
+  {
+    key: 'crawling',
+    label: 'Crawling posts',
+    emoji: '🕷️',
+    education: 'We\'re downloading every page on your blog and extracting the text content, headings, links, and metadata.',
+  },
+  {
+    key: 'embedding',
+    label: 'Understanding content',
+    emoji: '🧠',
+    education: 'Each post gets a 1,536-dimension "fingerprint" that captures what it\'s about — so we can find posts that overlap.',
+  },
+  {
+    key: 'analyzing',
+    label: 'Scoring health',
+    emoji: '🔬',
+    education: 'We score each post on 6 factors: traffic, ranking, engagement, freshness, depth, and technical SEO.',
+  },
+  {
+    key: 'clustering',
+    label: 'Clustering topics',
+    emoji: '🗂️',
+    education: 'Posts are grouped by topic similarity using machine learning — revealing your natural content pillars.',
+  },
+  {
+    key: 'completed',
+    label: 'Building recommendations',
+    emoji: '✦',
+    education: 'Prioritizing what to fix first — merges, rewrites, internal links, schema — ordered by traffic impact.',
+  },
 ];
 
 export default function OnboardingPage() {
@@ -290,17 +315,24 @@ export default function OnboardingPage() {
                     <span className="text-lg w-6 text-center">
                       {isDone ? '✓' : isActive ? stage.emoji : '○'}
                     </span>
-                    <span className={`text-sm font-medium ${
-                      isDone ? 'text-[#22c55e]' :
-                      isActive ? 'text-[#e2e8f0]' : 'text-[#475569]'
-                    }`}>
-                      {stage.label}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm font-medium ${
+                        isDone ? 'text-[#22c55e]' :
+                        isActive ? 'text-[#e2e8f0]' : 'text-[#475569]'
+                      }`}>
+                        {stage.label}
+                      </span>
+                      {isActive && stage.education && (
+                        <p className="text-xs text-[#64748b] mt-1 leading-relaxed">
+                          {stage.education}
+                        </p>
+                      )}
+                    </div>
                     {isActive && !isPending && (
-                      <Loader2 size={14} className="ml-auto animate-spin text-[#22c55e]" />
+                      <Loader2 size={14} className="ml-auto flex-shrink-0 animate-spin text-[#22c55e]" />
                     )}
                     {isDone && (
-                      <CheckCircle size={14} className="ml-auto text-[#22c55e]" />
+                      <CheckCircle size={14} className="ml-auto flex-shrink-0 text-[#22c55e]" />
                     )}
                   </div>
                 );

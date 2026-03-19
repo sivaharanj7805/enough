@@ -6,6 +6,9 @@ import { useSiteHealth, useRecommendations, useAIScores } from '@/lib/hooks/useA
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
+import { TodayHeroSkeleton, RecommendationCardSkeleton } from '@/components/ui/Skeleton';
+import { PipelineProgress } from '@/components/dashboard/PipelineProgress';
+import { SetupChecklist } from '@/components/dashboard/SetupChecklist';
 import Link from 'next/link';
 import { mutate } from 'swr';
 import {
@@ -18,6 +21,7 @@ import {
   TrendingUp,
   CheckCircle2,
 } from 'lucide-react';
+import { today as todayCopy, recType as REC_TYPE_LABEL } from '@/lib/copy';
 import type { Recommendation } from '@/lib/types';
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -25,19 +29,6 @@ const PRIORITY_COLOR: Record<string, string> = {
   high:     '#f97316',
   medium:   '#eab308',
   low:      '#64748b',
-};
-
-const REC_TYPE_LABEL: Record<string, string> = {
-  merge:                  'Merge posts',
-  expand:                 'Expand content',
-  interlink:              'Add internal links',
-  add_schema:             'Add schema markup',
-  improve_ai_citability:  'Boost AI citability',
-  strengthen_eeat:        'Strengthen E-E-A-T',
-  improve_ai_structure:   'Improve AI structure',
-  rewrite:                'Rewrite post',
-  redirect:               'Set up redirect',
-  seo_fix:                'SEO fix',
 };
 
 function HealthRing({ score }: { score: number }) {
@@ -187,21 +178,9 @@ export default function TodayPage() {
   if (isLoading) {
     return (
       <div className="max-w-3xl mx-auto space-y-6 py-2">
-        {/* Hero skeleton */}
-        <div className="flex items-center gap-8 p-6 rounded-2xl bg-[#111827] border border-[#1e293b]">
-          <div className="skeleton w-[140px] h-[140px] rounded-full flex-shrink-0" />
-          <div className="flex-1 space-y-3">
-            <div className="skeleton h-3 w-24 rounded" />
-            <div className="skeleton h-7 w-3/4 rounded" />
-            <div className="skeleton h-4 w-1/2 rounded" />
-            <div className="flex gap-6 mt-2">
-              {[1,2,3,4].map(i => <div key={i} className="skeleton h-10 w-14 rounded" />)}
-            </div>
-          </div>
-        </div>
-        {/* Cards skeleton */}
-        {[1,2,3].map(i => (
-          <div key={i} className="skeleton h-20 w-full rounded-xl" />
+        <TodayHeroSkeleton />
+        {[1, 2, 3].map((i) => (
+          <RecommendationCardSkeleton key={i} />
         ))}
       </div>
     );
@@ -274,9 +253,23 @@ export default function TodayPage() {
   }
 
   const healthScore = Math.round(health.content_health_score);
+  // Check if any recs have been actioned (completed/in_progress) — means user engaged
+  const hasEngagedRecs = topRecs.some(
+    (r) => r.status === 'completed' || r.status === 'in_progress'
+  );
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 py-2">
+      {/* ── Pipeline progress (only visible while running) ── */}
+      {currentSite?.id && <PipelineProgress siteId={currentSite.id} />}
+
+      {/* ── Setup checklist (Zeigarnik effect) ── */}
+      <SetupChecklist
+        site={currentSite}
+        health={health}
+        hasRecommendations={hasEngagedRecs}
+      />
+
       {/* ── Hero: Health score + site summary ── */}
       <div className="flex items-center gap-8 p-6 rounded-2xl bg-[#111827] border border-[#1e293b]">
         <HealthRing score={healthScore} />

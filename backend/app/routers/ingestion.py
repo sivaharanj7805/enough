@@ -328,6 +328,35 @@ async def trigger_monthly_reembed(
     return TaskTriggerResponse(message="Monthly re-embed started", site_id=None)
 
 
+@router.post("/cron/weekly-digest", response_model=TaskTriggerResponse)
+async def trigger_weekly_digest(
+    background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
+):
+    """Send weekly ecosystem email digest to all users.
+
+    Sends a personalized email per site with:
+    - Health score delta (this week vs last)
+    - Top recommendation ("do this one thing")
+    - Quick win consolidation opportunity
+    - Post breakdown changes
+
+    Requires X-Cron-Secret header. Wire to a weekly cron (e.g. Monday 9am).
+    """
+    async def _send_digests():
+        from app.database import get_pool
+        from app.services.weekly_report import WeeklyReportService
+
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            service = WeeklyReportService()
+            sent = await service.send_all_reports(db)
+            logger.info("Weekly digest: sent %d reports", sent)
+
+    background_tasks.add_task(_send_digests)
+    return TaskTriggerResponse(message="Weekly digest emails queued", site_id=None)
+
+
 async def _verify_ownership(site_id: UUID, user_id: str, db: asyncpg.Connection) -> None:
     """Quick ownership check without returning full site data."""
     row = await db.fetchrow(
