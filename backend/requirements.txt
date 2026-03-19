@@ -38,7 +38,7 @@ PyJWT==2.10.1
 
 # Phase 5: Retention + Growth
 stripe==11.4.1
-resend==2.5.0
+resend>=2.5.0
 
 # Phase 2: Intelligence Engine
 hdbscan==0.8.40
