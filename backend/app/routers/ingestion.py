@@ -39,8 +39,8 @@ async def _update_crawl_progress(site_id: UUID, processed: int, total: int) -> N
                 """,
                 total, processed, site_id,
             )
-    except Exception:
-        pass  # Progress updates are best-effort
+    except Exception as e:
+        logger.debug("Progress update failed (best-effort): %s", e)
 
 
 async def _run_crawl(site_id: UUID, site: dict) -> None:
@@ -142,8 +142,8 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
                     "UPDATE crawl_jobs SET status = 'failed', error = $1, updated_at = NOW() WHERE site_id = $2",
                     str(e)[:500], site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
 
 
 @router.post("/{site_id}/crawl", response_model=TaskTriggerResponse)
@@ -207,8 +207,8 @@ async def crawl_status(
                     thin_content_count=int(thin_count),
                     preview_ready=int(clusters_found) > 0,
                 )
-        except Exception:
-            pass  # Don't fail status check for early findings
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)  # Don't fail status check for early findings
 
     return CrawlStatusResponse(
         site_id=row["site_id"],
@@ -408,8 +408,8 @@ async def _pipeline_step(pool, site_id: UUID, step_name: str, status: str, fn) -
                        WHERE site_id = $2""",
                     f"[{step_name}]: {str(e)[:200]}; ", site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
         return False
 
 
@@ -504,8 +504,8 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
                     "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
                     str(e)[:500], site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
 
 
 class PipelineOptions(BaseModel):
@@ -601,8 +601,8 @@ async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
                     "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
                     str(e)[:500], site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
 
 
 @router.post("/{site_id}/pipeline/refresh", response_model=TaskTriggerResponse)

@@ -8,11 +8,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse
 import httpx
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.config import get_settings, Settings
-from app.database import get_supabase_client
+from app.database import get_supabase_client, get_supabase_admin
+from app.dependencies import get_current_user_id
 from app.models.schemas import RegisterRequest, LoginRequest, AuthResponse
 
 logger = logging.getLogger(__name__)
@@ -255,3 +257,139 @@ async def google_oauth_callback(
     except Exception as e:
         logger.error("Google OAuth callback error: %s", e)
         raise HTTPException(status_code=500, detail="Internal error during OAuth")
+
+
+# ──────────────────── Password Reset ────────────────────
+
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+
+class PasswordResetConfirm(BaseModel):
+    access_token: str
+    new_password: str
+
+
+@router.post("/password-reset")
+@limiter.limit("5/minute")
+async def request_password_reset(request: Request, body: PasswordResetRequest):
+    """Send a password reset email via Supabase Auth."""
+    if not _EMAIL_RE.match(body.email):
+        raise HTTPException(status_code=422, detail="Invalid email address format")
+    try:
+        client = get_supabase_client()
+        settings = get_settings()
+        redirect_url = f"{settings.frontend_url}/reset-password" if settings.frontend_url else None
+        client.auth.reset_password_email(
+            body.email,
+            options={"redirect_to": redirect_url} if redirect_url else {},
+        )
+        # Always return success to prevent email enumeration
+        return {"message": "If an account exists with that email, a password reset link has been sent"}
+    except Exception as e:
+        logger.error("Password reset request error: %s", e)
+        # Still return success to prevent enumeration
+        return {"message": "If an account exists with that email, a password reset link has been sent"}
+
+
+@router.post("/password-reset/confirm")
+@limiter.limit("5/minute")
+async def confirm_password_reset(request: Request, body: PasswordResetConfirm):
+    """Confirm password reset using the token from the reset email."""
+    try:
+        client = get_supabase_client()
+        # Set session using the access token from the reset email link
+        client.auth.set_session(body.access_token, "")
+        client.auth.update_user({"password": body.new_password})
+        return {"message": "Password updated successfully"}
+    except Exception as e:
+        logger.error("Password reset confirm error: %s", e)
+        raise HTTPException(status_code=400, detail="Password reset failed — link may have expired")
+
+
+# ──────────────────── Email Verification ────────────────────
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+
+@router.post("/resend-verification")
+@limiter.limit("3/minute")
+async def resend_verification(request: Request, body: ResendVerificationRequest):
+    """Resend email verification link via Supabase Auth."""
+    if not _EMAIL_RE.match(body.email):
+        raise HTTPException(status_code=422, detail="Invalid email address format")
+    try:
+        client = get_supabase_client()
+        client.auth.resend({"type": "signup", "email": body.email})
+        return {"message": "Verification email sent — check your inbox"}
+    except Exception as e:
+        logger.error("Resend verification error: %s", e)
+        return {"message": "Verification email sent — check your inbox"}
+
+
+# ──────────────────── Account Deletion (GDPR) ────────────────────
+
+
+@router.delete("/account")
+async def delete_account(
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
+    """Delete the current user's account and all associated data.
+
+    This is a GDPR-compliant endpoint that:
+    1. Deletes all user sites (cascades to posts, clusters, etc.)
+    2. Deletes the user profile
+    3. Deletes the Supabase auth user
+    """
+    from app.database import get_pool
+
+    pool = await get_pool()
+    async with pool.acquire() as db:
+        # Delete all sites (CASCADE handles posts, clusters, etc.)
+        await db.execute("DELETE FROM sites WHERE user_id = $1", user_id)
+
+        # Delete the profile
+        await db.execute("DELETE FROM profiles WHERE id = $1::uuid", user_id)
+
+    # Delete the Supabase auth user
+    try:
+        admin = get_supabase_admin()
+        admin.auth.admin.delete_user(user_id)
+    except Exception as e:
+        logger.error("Failed to delete Supabase auth user %s: %s", user_id, e)
+        # Profile and data are already deleted — log but don't fail
+
+    return {"message": "Account and all associated data deleted"}
+
+
+# ──────────────────── Terms Acceptance ────────────────────
+
+
+class AcceptTermsRequest(BaseModel):
+    accepted: bool = True
+
+
+@router.post("/accept-terms")
+async def accept_terms(
+    body: AcceptTermsRequest,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
+    """Record that the user has accepted the terms of service."""
+    if not body.accepted:
+        raise HTTPException(status_code=400, detail="Terms must be accepted")
+
+    from app.database import get_pool
+    from datetime import datetime, timezone
+
+    pool = await get_pool()
+    async with pool.acquire() as db:
+        await db.execute(
+            "UPDATE profiles SET terms_accepted_at = $1 WHERE id = $2::uuid",
+            datetime.now(timezone.utc),
+            user_id,
+        )
+
+    return {"message": "Terms of service accepted"}

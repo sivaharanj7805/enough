@@ -13,7 +13,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id
+from app.dependencies import get_current_user_id, require_oracle, require_consolidation
 
 limiter = Limiter(key_func=get_remote_address)
 from app.models.schemas import (
@@ -633,6 +633,7 @@ async def generate_consolidation_draft(
     cluster_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    _tier: None = Depends(require_consolidation),
 ):
     """Generate an AI-merged consolidation draft for a cluster."""
     await _verify_site(site_id, user_id, db)
@@ -673,6 +674,7 @@ async def oracle_check(
     body: OracleRequest,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    _tier: None = Depends(require_oracle),
 ):
     """Pre-publish oracle — check new content against the existing ecosystem."""
     await _verify_site(site_id, user_id, db)

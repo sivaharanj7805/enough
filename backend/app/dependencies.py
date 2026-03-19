@@ -88,6 +88,34 @@ async def verify_cron_secret(
         raise HTTPException(status_code=403, detail="Invalid cron secret")
 
 
+class SubscriptionGuard:
+    """Dependency that checks subscription tier limits before allowing access."""
+
+    def __init__(self, feature: str):
+        self.feature = feature
+
+    async def __call__(
+        self,
+        user_id: Annotated[str, Depends(get_current_user_id)],
+        db: Annotated[asyncpg.Connection, Depends(get_db)],
+    ) -> None:
+        from app.services.stripe_service import StripeService
+
+        service = StripeService()
+        allowed = await service.check_usage_limits(db, user_id, self.feature)
+        if not allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Your plan does not include access to {self.feature}, or you have reached your usage limit. Please upgrade.",
+            )
+
+
+# Pre-built guards for common features
+require_oracle = SubscriptionGuard("oracle")
+require_consolidation = SubscriptionGuard("consolidation")
+require_site_limit = SubscriptionGuard("sites")
+
+
 async def get_verified_site(
     site_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],

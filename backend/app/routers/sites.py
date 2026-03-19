@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.dependencies import get_current_user_id
+from app.dependencies import get_current_user_id, require_site_limit
 from app.models.schemas import SiteCreate, SiteResponse, SiteListResponse
 from app.utils.encryption import encrypt_value
 
@@ -61,6 +61,7 @@ async def create_site(
     body: SiteCreate,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    _tier: None = Depends(require_site_limit),
 ):
     """Add a new site for crawling."""
     # Validate URLs to prevent SSRF attacks against internal infrastructure

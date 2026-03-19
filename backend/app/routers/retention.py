@@ -356,8 +356,10 @@ async def get_billing_portal(
 
     service = StripeService()
     try:
+        from app.config import get_settings
+        _settings = get_settings()
         url = await service.get_portal_url(
-            db, user_id, return_url="http://localhost:3000/billing"
+            db, user_id, return_url=f"{_settings.frontend_url}/billing"
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

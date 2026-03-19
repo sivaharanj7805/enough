@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://enough.app';
 const ANON_TOKEN = '11111111-1111-1111-1111-111111111111';
 
