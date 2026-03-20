@@ -321,12 +321,12 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
   const healthFactors = useMemo(() => {
     if (!health) return [];
     return [
-      { factor: 'Content Health', value: Math.round(health.content_health_score) },
-      { factor: 'Efficiency', value: Math.round(health.content_efficiency_ratio * 100) },
+      { factor: 'Content Health', value: Math.round(health.content_health_score ?? 0) },
+      { factor: 'Efficiency', value: Math.round((health.content_efficiency_ratio ?? 0) * 100) },
       { factor: 'Active Ratio', value: health.total_posts > 0 ? Math.round((health.active_posts / health.total_posts) * 100) : 0 },
-      { factor: 'Data Coverage', value: Math.round(health.data_completeness * 100) },
-      { factor: 'Date Coverage', value: Math.round(health.modified_date_coverage * 100) },
-      { factor: 'AI Enriched', value: Math.round(health.ai_enriched_count * 100) },
+      { factor: 'Data Coverage', value: Math.round((health.data_completeness ?? 0) * 100) },
+      { factor: 'Date Coverage', value: Math.round((health.modified_date_coverage ?? 0) * 100) },
+      { factor: 'AI Enriched', value: Math.round((health.ai_enriched_count ?? 0) * 100) },
     ];
   }, [health]);
 

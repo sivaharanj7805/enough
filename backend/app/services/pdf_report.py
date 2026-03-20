@@ -238,7 +238,7 @@ def generate_audit_pdf(report: dict) -> bytes:
     if dup_count:
         issue_items.append(f"{dup_count} near-duplicate URL pairs")
     # Add generic problem count if there are issues not covered above
-    other = problem_count - (thin_count + orphan_count)
+    other = problem_count - (cann_count + thin_count + orphan_count + dup_count)
     if other > 0 and not issue_items:
         issue_items.append(f"{problem_count} total issues detected")
 

@@ -1239,15 +1239,15 @@ async def quick_scan(
         import time
         t0 = time.time()
         try:
-            from app.services.health_scoring import HealthScoringService
-            from app.services.problem_detection import ProblemDetectionService
+            from app.services.health_scoring import HealthScorer
+            from app.services.problem_detection import ProblemDetector
             from app.services.fast_recommendations import generate_fast_recommendations
 
-            hs = HealthScoringService()
+            hs = HealthScorer()
             await hs.score_site(db, site_id)
 
-            pd = ProblemDetectionService()
-            await pd.detect_problems(db, site_id)
+            pd = ProblemDetector()
+            await pd.detect_all(db, site_id)
 
             await generate_fast_recommendations(db, site_id)
             logger.info("Quick scan complete for %s in %.1fs", site_id, time.time() - t0)

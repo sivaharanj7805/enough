@@ -783,7 +783,7 @@ def _technical_seo_score(
         score += pts
 
     # 8. Canonical tag
-    if html and 'rel="canonical"' in html or "rel='canonical'" in (body_html or "").lower():
+    if html and ('rel="canonical"' in html or "rel='canonical'" in html):
         score += pts
 
     return min(100.0, score)

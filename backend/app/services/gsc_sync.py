@@ -154,10 +154,11 @@ class GSCSyncService:
                     "top_queries": {},
                 }
             agg = page_date_agg[key]
+            row_impressions = row.get("impressions", 0)
             agg["clicks"] += row.get("clicks", 0)
-            agg["impressions"] += row.get("impressions", 0)
-            agg["ctr_sum"] += row.get("ctr", 0.0)
-            agg["position_sum"] += row.get("position", 0.0)
+            agg["impressions"] += row_impressions
+            agg["ctr_sum"] += row.get("ctr", 0.0) * row_impressions
+            agg["position_sum"] += row.get("position", 0.0) * row_impressions
             agg["query_count"] += 1
             # Track top queries by clicks
             q_clicks = row.get("clicks", 0)
@@ -172,8 +173,9 @@ class GSCSyncService:
                 continue
 
             qcount = agg["query_count"]
-            avg_ctr = agg["ctr_sum"] / qcount if qcount else 0.0
-            avg_pos = agg["position_sum"] / qcount if qcount else 0.0
+            total_imp = agg["impressions"]
+            avg_ctr = agg["ctr_sum"] / total_imp if total_imp else 0.0
+            avg_pos = agg["position_sum"] / total_imp if total_imp else 0.0
             top_queries = sorted(
                 agg["top_queries"].items(), key=lambda x: -x[1]
             )[:10]
