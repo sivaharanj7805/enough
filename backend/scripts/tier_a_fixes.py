@@ -354,8 +354,8 @@ async def fix_a6_flag_duplicate_content(conn: asyncpg.Connection) -> None:
             
             # Add redirect recommendation
             await conn.execute("""
-                INSERT INTO recommendations (post_id, site_id, recommendation_type, priority, estimated_hours, severity, title, summary, action_items, status)
-                VALUES ($1, $2, 'redirect', 'critical', 0.5, 'critical', $3, $4, $5, 'pending')
+                INSERT INTO recommendations (post_id, site_id, recommendation_type, priority, estimated_effort_hours, estimated_impact, title, summary, specific_actions, status)
+                VALUES ($1, $2, 'optimize', 'critical', 0.5, 'high', $3, $4, $5, 'pending')
                 ON CONFLICT DO NOTHING
             """, dup_id, SITE_ID,
                 f"Redirect duplicate: {titles[ids.index(dup_id)][:50]}",
@@ -493,7 +493,7 @@ async def fix_a8_growth_recs(conn: asyncpg.Connection) -> None:
     
     if recs:
         await conn.executemany("""
-            INSERT INTO recommendations (post_id, site_id, recommendation_type, priority, estimated_hours, severity, title, summary, action_items, status)
+            INSERT INTO recommendations (post_id, site_id, recommendation_type, priority, estimated_effort_hours, estimated_impact, title, summary, specific_actions, status)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """, recs)
     

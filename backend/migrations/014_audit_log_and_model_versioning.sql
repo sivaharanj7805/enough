@@ -30,6 +30,11 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_action
 ALTER TABLE post_embeddings
     ADD COLUMN IF NOT EXISTS embedding_model TEXT DEFAULT 'text-embedding-3-small';
 
+-- Index moved here from 013 (column didn't exist yet in that migration)
+CREATE INDEX IF NOT EXISTS idx_post_embeddings_model
+    ON post_embeddings(embedding_model)
+    WHERE embedding_model IS NOT NULL;
+
 -- ── Timestamps on post_clusters ──
 ALTER TABLE post_clusters
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
