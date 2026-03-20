@@ -148,7 +148,7 @@ class GSCConnector:
                         query,
                         row.get("impressions", 0),
                         row.get("clicks", 0),
-                        row.get("position"),
+                        row.get("position", 0),
                         row.get("ctr", 0),
                     )
                     total_upserted += 1

@@ -572,7 +572,7 @@ def generate_ai_problems(post_id: UUID, title: str,
                 "to be cited in AI answers. Add at minimum: Article schema with headline, "
                 "datePublished, author, and image."
             ),
-            "metadata": {"schema_score": schema, "schema_types": signals.get("schema_schema_types", [])},
+            "metadata": {"schema_score": schema, "schema_types": signals.get("schema_types", [])},
         })
 
     if extract < 40:

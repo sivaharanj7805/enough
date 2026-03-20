@@ -13,8 +13,8 @@ export function useSWRFetch<T>(
 
   return useSWR<T>(
     path ? [path, token] : null,
-    async ([url]: [string]) => {
-      return apiFetch<T>(url, { token });
+    async ([url, currentToken]: [string, string | undefined]) => {
+      return apiFetch<T>(url, { token: currentToken });
     },
     {
       revalidateOnFocus: false,
