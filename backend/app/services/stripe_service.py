@@ -247,7 +247,8 @@ class StripeService:
             return "growth"
         elif price_id == settings.stripe_price_scale:
             return "scale"
-        return "growth"  # default if unknown
+        logger.error("Unknown Stripe price_id: %s — defaulting to free", price_id)
+        return "free"  # safe default — never grant paid access for unknown IDs
 
     async def get_subscription(
         self, db: asyncpg.Connection, user_id: str
