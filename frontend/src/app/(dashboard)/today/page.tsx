@@ -300,7 +300,7 @@ function PriorityActionCard({
       {expanded && (
         <div className="px-5 pb-5 border-t border-[#1e293b]">
           {/* Steps */}
-          {rec.specific_actions.length > 0 && (
+          {Array.isArray(rec.specific_actions) && rec.specific_actions.length > 0 && (
             <div className="mt-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-[#64748b] mb-2">
                 Steps

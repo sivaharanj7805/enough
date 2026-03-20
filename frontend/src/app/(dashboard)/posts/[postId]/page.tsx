@@ -225,7 +225,7 @@ export default function PostDetailPage() {
 
   // Post cannibalization pairs
   const postCannib = (cannibPairs || []).filter(
-    p => p.post_a_id === postId || p.post_b_id === postId
+    p => p.post_a.post_id === postId || p.post_b.post_id === postId
   );
 
   // GSC summary
@@ -496,8 +496,8 @@ export default function PostDetailPage() {
             {postCannib.length > 0 ? (
               <div className="space-y-3">
                 {postCannib.map((pair) => {
-                  const otherTitle = pair.post_a_id === postId ? pair.post_b_title : pair.post_a_title;
-                  const otherId = pair.post_a_id === postId ? pair.post_b_id : pair.post_a_id;
+                  const otherTitle = pair.post_a.post_id === postId ? pair.post_b.title : pair.post_a.title;
+                  const otherId = pair.post_a.post_id === postId ? pair.post_b.post_id : pair.post_a.post_id;
                   return (
                     <div key={pair.id} className="rounded-lg bg-brand-bg p-3 border border-brand-border/50">
                       <div className="flex items-center justify-between mb-1">
@@ -505,7 +505,7 @@ export default function PostDetailPage() {
                           {otherTitle || 'Unknown post'}
                         </Link>
                         <span className="text-xs font-semibold text-amber-400 shrink-0 ml-2">
-                          {Math.round((pair.similarity_score || 0) * 100)}% similar
+                          {Math.round((pair.overlap_score || 0) * 100)}% similar
                         </span>
                       </div>
                       <Badge color={SEVERITY_COLORS[pair.severity as keyof typeof SEVERITY_COLORS] || '#6b7280'}>
