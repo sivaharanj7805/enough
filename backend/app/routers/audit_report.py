@@ -139,7 +139,7 @@ async def get_audit_report(
     ) or 0
     orphan_count = await db.fetchval(
         "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id "
-        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan_post'",
+        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan'",
         site_id,
     ) or 0
     thin_count = await db.fetchval(
@@ -375,7 +375,7 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
     ) or 0
     orphan_count = await db.fetchval(
         "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id "
-        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan_post'",
+        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan'",
         site_id,
     ) or 0
     thin_count = await db.fetchval(

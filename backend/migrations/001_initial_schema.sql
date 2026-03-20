@@ -28,7 +28,7 @@ CREATE TABLE sites (
     sitemap_url TEXT,
     ga4_property_id TEXT,
     gsc_site_url TEXT,
-    google_refresh_token TEXT,
+    google_tokens TEXT,
     last_crawl_at TIMESTAMPTZ,
     last_analytics_sync_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
