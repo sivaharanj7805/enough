@@ -1,16 +1,14 @@
-"""Full content brief generation — replaces MarketMuse ($600/mo).
+"""RAG-powered content brief generation.
 
-Generates comprehensive, writer-ready content briefs including:
-- Target keyword + secondary keywords
-- A/B title options
-- Recommended word count
-- Full H2/H3 outline with bullet points per section
-- Key questions to answer (from related queries)
-- Internal linking targets (existing posts to link to/from)
-- Competitor insights (what top results cover)
+Generates comprehensive, writer-ready content briefs that:
+1. Pre-check for cannibalization against the existing blog
+2. Pull cluster context to set word count/structure benchmarks
+3. Plan internal links to/from the new post
+4. Generate an outline that covers gaps NOT already in existing content
+5. Specify what to AVOID to prevent cannibalization
 
-A brief should be actionable enough that a writer can start
-immediately without additional research.
+The brief references the user's own data — their top performers, cluster
+patterns, and keyword rankings. No generic advice.
 """
 
 import json
@@ -19,21 +17,26 @@ from uuid import UUID
 
 import asyncpg
 from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from app.config import get_settings
+from app.services.rag_context import get_brief_context, format_brief_context
 from app.utils.rate_limiter import RateLimiter
+from app.utils.token_guard import truncate_for_api
 
 logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
+EMBEDDING_MODEL = "text-embedding-3-small"
 
 
 class ContentBriefGenerator:
-    """Generate full content briefs via Claude."""
+    """Generate RAG-powered content briefs."""
 
     def __init__(self) -> None:
         settings = get_settings()
         self.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self.openai = AsyncOpenAI(api_key=settings.openai_api_key)
         self.rate_limiter = RateLimiter(requests_per_second=3)
 
     async def generate_brief(
@@ -44,28 +47,120 @@ class ContentBriefGenerator:
         source_type: str = "manual",
         source_id: UUID | None = None,
     ) -> dict:
-        """Generate a full content brief for a target keyword.
+        """Generate a full RAG-powered content brief.
 
-        Returns the brief data and stores it in the content_briefs table.
+        Steps:
+        1. Embed the topic keyword
+        2. Retrieve blog context (similar posts, cluster stats, link candidates)
+        3. Check cannibalization risk
+        4. Generate brief via Claude with all context
+        5. Store in DB
+
+        Returns the complete brief data dict.
         """
-        logger.info("Generating content brief for '%s' (site %s)", target_keyword, site_id)
+        logger.info("Generating RAG content brief for '%s' (site %s)", target_keyword, site_id)
 
-        # Gather context: existing posts in related clusters
-        related_posts = await db.fetch(
-            """
-            SELECT p.id, p.title, p.url
-            FROM posts p
-            WHERE p.site_id = $1
-            ORDER BY p.title
-            LIMIT 30
-            """,
-            site_id,
+        # Step 1: Generate embedding for the topic
+        topic_embedding = await self._embed_topic(target_keyword)
+        if not topic_embedding:
+            return {"error": "Failed to generate topic embedding"}
+
+        # Step 2: Retrieve RAG context
+        rag_context = await get_brief_context(
+            db, site_id, topic_embedding, target_keyword,
         )
-        existing_titles = [r["title"] for r in related_posts]
-        existing_urls = [{"id": r["id"], "title": r["title"], "url": r["url"]} for r in related_posts]
 
-        # Get related GSC queries for secondary keywords
-        related_queries = await db.fetch(
+        # Step 3: Get GSC secondary keywords
+        secondary_kws = await self._get_secondary_keywords(db, site_id, target_keyword)
+
+        # Step 4: Format context and generate brief via Claude
+        context_text = format_brief_context(rag_context)
+        brief_data = await self._generate_via_claude(
+            target_keyword, secondary_kws, context_text, rag_context,
+        )
+
+        if not brief_data:
+            return {"error": "Failed to generate brief"}
+
+        # Step 5: Build internal link plan from RAG data
+        link_candidates = rag_context.get("link_candidates", [])
+        links_to = [
+            {"post_id": c["id"], "title": c["title"], "url": c["url"]}
+            for c in link_candidates if c.get("direction") == "to"
+        ][:5]
+        links_from = [
+            {"post_id": c["id"], "title": c["title"], "url": c["url"]}
+            for c in link_candidates if c.get("direction") == "from"
+        ][:5]
+
+        # Step 6: Store in DB
+        cannibalization_risk = rag_context.get("cannibalization_risk", "unknown")
+        avoid_topics = brief_data.get("avoid_topics", [])
+        content_angle = brief_data.get("content_angle", "")
+        difficulty_level = brief_data.get("difficulty_level", "intermediate")
+
+        internal_link_target_ids = [UUID(c["id"]) for c in link_candidates[:5]]
+
+        brief_id = await db.fetchval(
+            """
+            INSERT INTO content_briefs
+                (site_id, source_type, source_id, target_keyword,
+                 secondary_keywords, suggested_titles, recommended_word_count,
+                 outline, questions_to_answer, internal_link_targets,
+                 cannibalization_risk, differentiation_notes,
+                 avoid_topics, internal_links_from, internal_links_to,
+                 content_angle, difficulty_level)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            RETURNING id
+            """,
+            site_id, source_type, source_id, target_keyword,
+            brief_data.get("secondary_keywords", secondary_kws[:5]),
+            brief_data.get("suggested_titles", []),
+            brief_data.get("recommended_word_count", 1500),
+            json.dumps(brief_data.get("outline", [])),
+            brief_data.get("questions_to_answer", []),
+            internal_link_target_ids,
+            cannibalization_risk,
+            rag_context.get("risk_message", ""),
+            avoid_topics,
+            json.dumps(links_from),
+            json.dumps(links_to),
+            content_angle,
+            difficulty_level,
+        )
+
+        result = {
+            "brief_id": str(brief_id),
+            "target_keyword": target_keyword,
+            "cannibalization_risk": cannibalization_risk,
+            "risk_message": rag_context.get("risk_message", ""),
+            **brief_data,
+            "internal_links_to": links_to,
+            "internal_links_from": links_from,
+            "avoid_topics": avoid_topics,
+        }
+
+        logger.info("RAG content brief generated: %s (risk: %s)", brief_id, cannibalization_risk)
+        return result
+
+    async def _embed_topic(self, topic: str) -> str | None:
+        """Generate an embedding for the topic keyword."""
+        try:
+            resp = await self.openai.embeddings.create(
+                model=EMBEDDING_MODEL,
+                input=topic,
+            )
+            embedding = resp.data[0].embedding
+            return "[" + ",".join(str(v) for v in embedding) + "]"
+        except Exception as e:
+            logger.error("Failed to embed topic '%s': %s", topic, e)
+            return None
+
+    async def _get_secondary_keywords(
+        self, db: asyncpg.Connection, site_id: UUID, keyword: str,
+    ) -> list[str]:
+        """Get related keywords from GSC data."""
+        rows = await db.fetch(
             """
             SELECT DISTINCT query, SUM(impressions) AS total_imp
             FROM gsc_metrics
@@ -76,89 +171,69 @@ class ContentBriefGenerator:
             ORDER BY total_imp DESC
             LIMIT 15
             """,
-            site_id, target_keyword.split()[0],  # Match on first word
+            site_id, keyword.split()[0],
         )
-        secondary_kws = [r["query"] for r in related_queries if r["query"] != target_keyword]
-
-        # Generate the brief via Claude
-        brief_data = await self._generate_via_claude(
-            target_keyword, secondary_kws[:10], existing_titles[:15],
-        )
-
-        if not brief_data:
-            return {"error": "Failed to generate brief"}
-
-        # Find internal link targets (posts to link to/from)
-        link_targets = []
-        for post in existing_urls[:10]:
-            link_targets.append(post["id"])
-
-        # Store in DB
-        brief_id = await db.fetchval(
-            """
-            INSERT INTO content_briefs
-                (site_id, source_type, source_id, target_keyword,
-                 secondary_keywords, suggested_titles, recommended_word_count,
-                 outline, questions_to_answer, internal_link_targets)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING id
-            """,
-            site_id, source_type, source_id, target_keyword,
-            brief_data.get("secondary_keywords", secondary_kws[:5]),
-            brief_data.get("suggested_titles", []),
-            brief_data.get("recommended_word_count", 1500),
-            json.dumps(brief_data.get("outline", [])),
-            brief_data.get("questions_to_answer", []),
-            link_targets[:5],
-        )
-
-        result = {
-            "brief_id": brief_id,
-            "target_keyword": target_keyword,
-            **brief_data,
-            "internal_link_targets": [
-                {"id": str(p["id"]), "title": p["title"], "url": p["url"]}
-                for p in existing_urls[:5]
-            ],
-        }
-
-        logger.info("Content brief generated: %s", brief_id)
-        return result
+        return [r["query"] for r in rows if r["query"].lower() != keyword.lower()]
 
     async def _generate_via_claude(
         self,
         target_keyword: str,
         secondary_keywords: list[str],
-        existing_titles: list[str],
+        context_text: str,
+        rag_context: dict,
     ) -> dict | None:
-        """Call Claude to generate the brief structure."""
-        secondary_text = ", ".join(secondary_keywords[:10]) if secondary_keywords else "none found"
-        existing_text = "\n".join(f"- {t}" for t in existing_titles[:15])
+        """Generate the brief using Claude with full RAG context."""
+        secondary_text = ", ".join(secondary_keywords[:10]) if secondary_keywords else "none found in GSC"
+
+        # Build the list of existing posts to explicitly avoid overlapping with
+        similar = rag_context.get("similar_existing", [])
+        avoid_section = ""
+        if similar:
+            avoid_lines = []
+            for p in similar[:5]:
+                if p.get("similarity", 0) > 0.40:
+                    avoid_lines.append(
+                        f"  - \"{p['title']}\" (similarity: {p['similarity']:.0%})"
+                    )
+            if avoid_lines:
+                avoid_section = (
+                    "\n\nEXISTING POSTS TO DIFFERENTIATE FROM:\n"
+                    + "\n".join(avoid_lines)
+                )
+
+        cluster_stats = rag_context.get("cluster_stats", {})
+        word_count_benchmark = cluster_stats.get("avg_word_count", 1500)
 
         await self.rate_limiter.wait()
         try:
             response = await self.anthropic.messages.create(
                 model=CLAUDE_MODEL,
-                max_tokens=1500,
+                max_tokens=2000,
                 temperature=0.3,
                 system=(
-                    "You are an expert SEO content strategist. Generate detailed, "
-                    "actionable content briefs that a writer can immediately execute. "
-                    "Be specific — don't say 'discuss benefits', say exactly what "
-                    "benefits to cover and what data to include."
+                    "You are an expert SEO content strategist generating a content brief "
+                    "for a specific blog. You have access to the blog's own data — use it. "
+                    "Reference their top performers as benchmarks. Set word count targets "
+                    "based on what works in their cluster. Name specific existing posts to "
+                    "link to/from. Be specific — don't say 'discuss benefits', say exactly "
+                    "what benefits to cover. Specify what to AVOID to prevent cannibalization "
+                    "with existing content."
                 ),
                 messages=[{
                     "role": "user",
-                    "content": f"""Generate a full content brief for a blog post targeting: "{target_keyword}"
+                    "content": f"""Generate a full content brief for a new blog post targeting: "{target_keyword}"
 
-Related keywords: {secondary_text}
+Related keywords from GSC: {secondary_text}
 
-Existing posts on this site:
-{existing_text}
+BLOG CONTEXT:
+{context_text}
+{avoid_section}
+
+The cluster average word count is {word_count_benchmark}. Use this as your baseline.
 
 Respond in this exact JSON format:
 {{
-  "suggested_titles": ["Title Option A (include keyword)", "Title Option B (emotional hook)"],
+  "suggested_titles": ["Title Option A (include keyword)", "Title Option B (different angle)"],
   "secondary_keywords": ["kw1", "kw2", "kw3", "kw4", "kw5"],
   "recommended_word_count": number,
   "outline": [
@@ -167,34 +242,49 @@ Respond in this exact JSON format:
       "text": "Section Heading",
       "bullets": ["Specific point to cover", "Another specific point"],
       "estimated_words": 300
-    }},
-    {{
-      "level": "h3",
-      "text": "Sub-section",
-      "bullets": ["Point 1", "Point 2"],
-      "estimated_words": 200
     }}
   ],
-  "questions_to_answer": ["Specific question from search intent", "Another question"],
+  "questions_to_answer": ["Specific question from search intent"],
+  "avoid_topics": ["Topics covered by existing posts — DO NOT cover these"],
+  "content_angle": "How this post differentiates from existing content",
+  "difficulty_level": "beginner|intermediate|advanced",
   "opening_hook": "Suggested first paragraph approach",
   "cta_suggestion": "What call-to-action to use",
+  "internal_links_suggested": [
+    {{"post_title": "Existing Post Title", "anchor_text": "suggested anchor", "direction": "to|from"}}
+  ],
   "content_type": "guide|listicle|comparison|how-to|case-study",
-  "difficulty_level": "beginner|intermediate|advanced",
   "confidence": 0.0-1.0
 }}""",
                 }],
             )
 
             raw = response.content[0].text.strip()
-            # Parse JSON (handle markdown code blocks)
-            if "```json" in raw:
-                raw = raw.split("```json")[1].split("```")[0]
-            elif "```" in raw:
-                raw = raw.split("```")[1].split("```")[0]
-
-            return json.loads(raw)
+            return self._parse_json_response(raw)
         except Exception as e:
             logger.error("Claude brief generation failed: %s", e)
+            return None
+
+    @staticmethod
+    def _parse_json_response(raw: str) -> dict | None:
+        """Parse JSON from Claude response, handling markdown code blocks."""
+        text = raw.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            lines = [line for line in lines if not line.strip().startswith("```")]
+            text = "\n".join(lines)
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                try:
+                    return json.loads(text[start:end])
+                except json.JSONDecodeError:
+                    pass
+            logger.error("Failed to parse brief JSON: %s", text[:200])
             return None
 
     async def generate_briefs_for_gaps(

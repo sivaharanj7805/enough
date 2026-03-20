@@ -246,15 +246,29 @@ class RecommendationEngine:
         site_id: UUID,
         problem: asyncpg.Record,
     ) -> bool:
-        """Generate a recommendation for a single problem."""
+        """Generate a recommendation for a single problem.
+
+        Fetches RAG context from the user's own blog data before generating,
+        so recommendations reference their top performers, cluster patterns,
+        and internal link graph.
+        """
         ptype = problem["problem_type"]
 
+        # Fetch RAG context for this post (pgvector similarity, cluster stats, etc.)
+        from app.services.rag_context import get_recommendation_context, format_recommendation_context
+        try:
+            rag_ctx = await get_recommendation_context(db, site_id, problem["post_id"])
+            rag_text = format_recommendation_context(rag_ctx)
+        except Exception as e:
+            logger.warning("RAG context retrieval failed for post %s: %s", problem["post_id"], e)
+            rag_text = ""
+
         if ptype.startswith("decay_"):
-            return await self._recommend_decay(db, site_id, problem)
+            return await self._recommend_decay(db, site_id, problem, rag_text)
         elif ptype.startswith("thin_"):
-            return await self._recommend_thin(db, site_id, problem)
+            return await self._recommend_thin(db, site_id, problem, rag_text)
         elif ptype.startswith("seo_"):
-            return await self._recommend_seo(db, site_id, problem)
+            return await self._recommend_seo(db, site_id, problem, rag_text)
         elif ptype == "orphan":
             return await self._recommend_orphan(db, site_id, problem)
         elif ptype == "cannibalization":
@@ -417,6 +431,7 @@ Respond in this exact JSON format:
 
     async def _recommend_decay(
         self, db: asyncpg.Connection, site_id: UUID, problem: asyncpg.Record,
+        rag_text: str = "",
     ) -> bool:
         """Generate content refresh recommendation for decaying posts."""
         details = json.loads(problem["details"]) if problem["details"] else {}
@@ -433,6 +448,8 @@ Respond in this exact JSON format:
         elif signal == "stale_plus_low_ranking":
             context = f"Not updated in {details.get('months_since_update', '?')} months, currently at average position {details.get('avg_position', '?')}."
 
+        rag_section = f"\n\nBLOG CONTEXT (from this site's own data):\n{rag_text}" if rag_text else ""
+
         prompt = f"""You are an SEO content strategist. This blog post is decaying — losing rankings and traffic.
 
 POST:
@@ -444,11 +461,12 @@ POST:
 - Top queries & positions: {gsc_data}
 
 DECAY SIGNAL: {context}
+{rag_section}
 
 CONTENT EXCERPT:
 {body}
 
-Generate a specific content refresh brief. Only reference sections and facts you can actually see in the excerpt — do not make up content that might be there.
+Generate a specific content refresh brief. Reference the blog's own top-performing content as benchmarks where relevant. Only reference sections and facts you can actually see in the excerpt — do not make up content that might be there.
 
 Respond in JSON:
 {{
@@ -456,6 +474,7 @@ Respond in JSON:
   "new_sections_to_add": ["Sections to add based on current search intent"],
   "facts_to_update": ["Specific outdated facts, stats, or references found in the excerpt"],
   "target_keywords": ["Keywords to optimize for based on current GSC data"],
+  "internal_links_to_add": ["Specific posts on this blog to link to, with suggested anchor text"],
   "suggested_new_title": "An optimized title if the current one is weak",
   "estimated_effort_hours": number,
   "estimated_impact": "high" or "medium" or "low",
@@ -499,6 +518,7 @@ Respond in JSON:
 
     async def _recommend_thin(
         self, db: asyncpg.Connection, site_id: UUID, problem: asyncpg.Record,
+        rag_text: str = "",
     ) -> bool:
         """Generate expand/consolidate recommendation for thin content."""
         details = json.loads(problem["details"]) if problem["details"] else {}
@@ -523,6 +543,8 @@ Respond in JSON:
         if similar_post:
             similar_info = f"\nRelated post that could absorb this: '{similar_post['title']}' ({similar_post['url']}, {similar_post['word_count']} words)"
 
+        rag_section = f"\n\nBLOG CONTEXT (from this site's own data):\n{rag_text}" if rag_text else ""
+
         prompt = f"""You are an SEO content strategist. This post is thin — too short to rank well.
 
 POST:
@@ -531,11 +553,12 @@ POST:
 - Word count: {problem['word_count'] or 0}
 - Cluster average: {cluster_avg} words
 {similar_info}
+{rag_section}
 
 CONTENT:
 {body}
 
-Should this post be EXPANDED with new sections, or CONSOLIDATED into the related post? Base your decision only on what you can see.
+Should this post be EXPANDED with new sections, or CONSOLIDATED into the related post? Use the blog context to recommend specific sections, word count targets based on what works in their cluster, and internal links to include. Base your decision only on what you can see.
 
 Respond in JSON:
 {{
@@ -543,6 +566,7 @@ Respond in JSON:
   "reason": "Why this action...",
   "expansion_sections": ["If expanding: specific sections to add with brief descriptions"],
   "consolidation_target": "If consolidating: which post to merge into and why",
+  "internal_links_to_add": ["Specific posts to link to with anchor text"],
   "target_word_count": number,
   "estimated_effort_hours": number,
   "estimated_impact": "high" or "medium" or "low",
@@ -580,6 +604,7 @@ Respond in JSON:
 
     async def _recommend_seo(
         self, db: asyncpg.Connection, site_id: UUID, problem: asyncpg.Record,
+        rag_text: str = "",
     ) -> bool:
         """Generate specific SEO fix with actual generated content."""
         ptype = problem["problem_type"]
@@ -1094,8 +1119,12 @@ Respond in JSON:
                 max_tokens=2048,
                 temperature=temperature,
                 system=(
-                    "You are an SEO content strategist. You give specific, actionable "
-                    "recommendations grounded in the data provided. "
+                    "You are an SEO content strategist analyzing a specific blog. "
+                    "You give specific, actionable recommendations grounded in the "
+                    "data provided. When BLOG CONTEXT is provided, use it to reference "
+                    "the user's own top-performing content as benchmarks. Be specific: "
+                    "name sections to add, word count targets based on what works in "
+                    "their cluster, and internal links to include with anchor text. "
                     "Never fabricate data, statistics, or facts. "
                     "Always include a 'confidence' field (0.0-1.0) indicating how "
                     "confident you are in this recommendation based on the data available. "

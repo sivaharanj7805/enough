@@ -1406,3 +1406,169 @@ async def get_ai_scores(
         "pct_has_schema": float(row["pct_has_schema"] or 0),
         "pct_ai_ready": float(row["pct_ai_ready"] or 0),
     }
+
+
+# ── Content Briefs (RAG-powered) ─────────────────────────────────────────────
+
+from pydantic import BaseModel as _BriefBaseModel
+
+
+class ContentBriefRequest(_BriefBaseModel):
+    """Request body for content brief generation."""
+    topic: str
+
+
+@router.post("/{site_id}/intelligence/briefs")
+@limiter.limit("5/minute")
+async def generate_content_brief(
+    request: Request,
+    site_id: UUID,
+    body: ContentBriefRequest,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Generate a RAG-powered content brief for a new post topic.
+
+    Pre-checks for cannibalization against existing content, pulls cluster
+    benchmarks, plans internal links, and generates a full outline that
+    avoids overlap with existing posts.
+
+    Returns:
+    - Cannibalization risk assessment (high/medium/low)
+    - Suggested titles, outline, word count target
+    - Internal links to/from the new post
+    - Topics to explicitly AVOID
+    - Content angle to differentiate
+    """
+    await _verify_site(site_id, user_id, db)
+
+    if not body.topic or len(body.topic.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Topic must be at least 3 characters")
+
+    from app.services.content_briefs import ContentBriefGenerator
+
+    generator = ContentBriefGenerator()
+    result = await generator.generate_brief(db, site_id, body.topic.strip())
+
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+
+    return result
+
+
+@router.get("/{site_id}/intelligence/briefs")
+async def list_content_briefs(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """List all content briefs for a site."""
+    await _verify_site(site_id, user_id, db)
+
+    rows = await db.fetch(
+        """
+        SELECT id, target_keyword, suggested_titles, recommended_word_count,
+               cannibalization_risk, content_angle, difficulty_level,
+               status, created_at
+        FROM content_briefs
+        WHERE site_id = $1
+        ORDER BY created_at DESC
+        LIMIT 50
+        """,
+        site_id,
+    )
+
+    return [
+        {
+            "id": str(r["id"]),
+            "target_keyword": r["target_keyword"],
+            "suggested_titles": r["suggested_titles"] or [],
+            "recommended_word_count": r["recommended_word_count"],
+            "cannibalization_risk": r["cannibalization_risk"],
+            "content_angle": r["content_angle"],
+            "difficulty_level": r["difficulty_level"],
+            "status": r["status"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/{site_id}/intelligence/briefs/{brief_id}")
+async def get_content_brief(
+    site_id: UUID,
+    brief_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get a single content brief with full detail."""
+    await _verify_site(site_id, user_id, db)
+
+    row = await db.fetchrow(
+        "SELECT * FROM content_briefs WHERE id = $1 AND site_id = $2",
+        brief_id, site_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Brief not found")
+
+    import json as _json
+
+    outline = row["outline"]
+    if isinstance(outline, str):
+        try:
+            outline = _json.loads(outline)
+        except (ValueError, TypeError):
+            outline = []
+
+    links_from = row.get("internal_links_from")
+    if isinstance(links_from, str):
+        try:
+            links_from = _json.loads(links_from)
+        except (ValueError, TypeError):
+            links_from = []
+
+    links_to = row.get("internal_links_to")
+    if isinstance(links_to, str):
+        try:
+            links_to = _json.loads(links_to)
+        except (ValueError, TypeError):
+            links_to = []
+
+    return {
+        "id": str(row["id"]),
+        "site_id": str(row["site_id"]),
+        "target_keyword": row["target_keyword"],
+        "secondary_keywords": row["secondary_keywords"] or [],
+        "suggested_titles": row["suggested_titles"] or [],
+        "recommended_word_count": row["recommended_word_count"],
+        "outline": outline,
+        "questions_to_answer": row["questions_to_answer"] or [],
+        "cannibalization_risk": row.get("cannibalization_risk"),
+        "differentiation_notes": row.get("differentiation_notes"),
+        "avoid_topics": row.get("avoid_topics") or [],
+        "internal_links_from": links_from or [],
+        "internal_links_to": links_to or [],
+        "content_angle": row.get("content_angle"),
+        "difficulty_level": row.get("difficulty_level"),
+        "status": row["status"],
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+@router.delete("/{site_id}/intelligence/briefs/{brief_id}", status_code=204)
+async def delete_content_brief(
+    site_id: UUID,
+    brief_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Delete a content brief."""
+    await _verify_site(site_id, user_id, db)
+
+    result = await db.execute(
+        "DELETE FROM content_briefs WHERE id = $1 AND site_id = $2",
+        brief_id, site_id,
+    )
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Brief not found")

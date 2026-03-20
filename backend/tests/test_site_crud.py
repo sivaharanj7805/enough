@@ -54,7 +54,7 @@ class TestSiteResponseSanitization:
             cms_type="wordpress",
             wordpress_url="https://test.com/wp-json",
             wordpress_app_password="encrypted-password",
-            google_refresh_token="encrypted-token",
+            google_tokens="encrypted-token",
             sitemap_url=None,
             ga4_property_id=None,
             gsc_site_url=None,
@@ -67,7 +67,7 @@ class TestSiteResponseSanitization:
         # Should not contain the encrypted password
         result_dict = result.model_dump() if hasattr(result, 'model_dump') else result.dict()
         assert "wordpress_app_password" not in result_dict
-        assert "google_refresh_token" not in result_dict
+        assert "google_tokens" not in result_dict
 
     def test_sanitize_preserves_public_fields(self):
         from app.routers.sites import _sanitize_site_response
@@ -82,7 +82,7 @@ class TestSiteResponseSanitization:
             cms_type="wordpress",
             wordpress_url="https://myblog.com/wp-json",
             wordpress_app_password=None,
-            google_refresh_token=None,
+            google_tokens=None,
             sitemap_url="https://myblog.com/sitemap.xml",
             ga4_property_id="properties/12345",
             gsc_site_url="https://myblog.com",
