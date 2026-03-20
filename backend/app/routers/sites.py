@@ -150,7 +150,7 @@ async def store_google_token(
     """Store an encrypted Google refresh token for GA4/GSC access."""
     encrypted_token = encrypt_value(body.refresh_token)
     result = await db.execute(
-        "UPDATE sites SET google_refresh_token = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+        "UPDATE sites SET google_tokens = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
         encrypted_token, site_id, user_id,
     )
     if result == "UPDATE 0":
