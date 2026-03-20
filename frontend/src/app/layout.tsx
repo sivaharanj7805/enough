@@ -3,6 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { SiteProvider } from '@/providers/SiteProvider';
 import { ToastProvider } from '@/components/ui/Toast';
+import { CookieConsent } from '@/components/ui/CookieConsent';
 
 const APP_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://enough.app';
 
@@ -70,6 +71,7 @@ export default function RootLayout({
           <AuthProvider>
             <SiteProvider>
               {children}
+              <CookieConsent />
             </SiteProvider>
           </AuthProvider>
         </ToastProvider>

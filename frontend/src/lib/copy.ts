@@ -283,3 +283,55 @@ export const misc = {
   analyzeCta: 'Analyze my blog \u2192',
   readOnlyBadge: 'Read-only \u2014 we never modify your content',
 } as const;
+
+// ─── Health Labels ─────────────────────────────
+
+export const HEALTH_LABELS: Record<string, { label: string; description: string }> = {
+  excellent: { label: 'Excellent', description: 'Your content is well-structured and competitive.' },
+  good: { label: 'Good', description: 'A few targeted improvements could make a real difference.' },
+  needsWork: { label: 'Needs work', description: 'There are clear opportunities to strengthen your content.' },
+  significant: { label: 'Significant issues', description: 'Your content is underperforming its potential.' },
+  critical: { label: 'Critical', description: 'Major structural problems are limiting your content\'s reach.' },
+};
+
+export function getHealthLabel(score: number) {
+  if (score >= 80) return HEALTH_LABELS.excellent;
+  if (score >= 60) return HEALTH_LABELS.good;
+  if (score >= 40) return HEALTH_LABELS.needsWork;
+  if (score >= 20) return HEALTH_LABELS.significant;
+  return HEALTH_LABELS.critical;
+}
+
+// ─── Button Labels ─────────────────────────────
+
+export const BUTTON_LABELS = {
+  analyzeMyBlog: 'Analyze My Blog',
+  viewFullPlan: 'View Full Plan',
+  markAsDone: 'Mark as Done',
+  connectGSC: 'Connect Google Search Console',
+  connectGA4: 'Connect Google Analytics',
+  dismiss: 'Dismiss',
+  reAnalyze: 'Re-analyze',
+  getAudit: 'Get Your Free Audit',
+  subscribe: 'Subscribe & Start Fixing',
+};
+
+// ─── Error Messages ────────────────────────────
+
+export const ERROR_MESSAGES = {
+  urlUnreachable: "We couldn't reach that URL. Make sure it's publicly accessible and try again.",
+  serverError: "Something went wrong on our end. We're looking into it. Try again in a few minutes.",
+  tooFewPosts: "Your blog has fewer than 10 posts. Enough works best with 25+ posts.",
+  sessionExpired: "Your session has expired. Please log in again.",
+  networkOffline: "You're offline. Some features may be unavailable.",
+};
+
+// ─── Tooltips ──────────────────────────────────
+
+export const TOOLTIPS = {
+  healthScore: 'A composite of 6 factors: traffic, rankings, engagement, freshness, content depth, and technical SEO.',
+  pillarPost: 'A comprehensive, high-authority post that covers a topic in depth and links to related supporting posts.',
+  cannibalization: 'When two or more posts target the same keyword, they compete against each other in search results.',
+  cosineSimilarity: 'A measure of how similar two pieces of content are, from 0% (completely different) to 100% (identical).',
+  pageRank: 'A score based on how many internal links point to this post, indicating its importance within your site.',
+};

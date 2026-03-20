@@ -72,7 +72,6 @@ export default function ClusterDetailPage() {
       words.push(...cluster.label.split(/[\s,·|/]+/).filter((w) => w.length > 2));
     }
     if (cluster.description) {
-      // Extract meaningful words from description
       const descWords = cluster.description
         .split(/[\s,·|/]+/)
         .filter((w) => w.length > 3)
@@ -80,7 +79,15 @@ export default function ClusterDetailPage() {
       words.push(...descWords);
     }
     // Dedupe and limit
-    const unique = [...new Set(words.map((w) => w.toLowerCase()))];
+    const seen = new Map<string, boolean>();
+    const unique: string[] = [];
+    for (const w of words) {
+      const lower = w.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.set(lower, true);
+        unique.push(lower);
+      }
+    }
     return unique.slice(0, 10);
   }, [cluster]);
 

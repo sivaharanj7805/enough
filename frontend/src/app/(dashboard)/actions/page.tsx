@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useSite } from '@/lib/hooks/useSite';
 import { useRecommendations } from '@/lib/hooks/useApi';
@@ -24,6 +24,9 @@ import {
   Filter,
   ChevronDown,
   ChevronRight,
+  X,
+  ArrowDownUp,
+  Undo2,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -31,6 +34,14 @@ import { mutate } from 'swr';
 import type { Recommendation } from '@/lib/types';
 
 type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'dismissed';
+type SortOption = 'impact' | 'priority' | 'effort' | 'date';
+
+const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
+  { value: 'impact', label: 'Impact' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'effort', label: 'Effort' },
+  { value: 'date', label: 'Date created' },
+];
 
 const STATUS_CONFIG = {
   pending: { label: 'To Do', icon: Clock, color: '#eab308', bgClass: 'bg-yellow-500/10' },
@@ -50,18 +61,28 @@ const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; colo
   growth: { label: 'Growth', icon: TrendingUp, color: '#06b6d4' },
 };
 
+// Undo toast state
+interface UndoAction {
+  recId: string;
+  previousStatus: string;
+  actionLabel: string;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
 function ActionCard({
   rec,
   siteId,
   token,
   expanded,
   onToggle,
+  onStatusUpdate,
 }: {
   rec: Recommendation;
   siteId: string;
   token?: string;
   expanded: boolean;
   onToggle: () => void;
+  onStatusUpdate: (recId: string, newStatus: string, previousStatus: string, label: string) => void;
 }) {
   const priorityColor = SEVERITY_COLORS[rec.priority as keyof typeof SEVERITY_COLORS] || SEVERITY_COLORS.low;
   const typeInfo = TYPE_CONFIG[rec.recommendation_type] || { label: rec.recommendation_type, icon: Lightbulb, color: '#6b7280' };
@@ -86,20 +107,11 @@ function ActionCard({
     }
   }, [siteId, rec.id, token]);
 
-  const handleStatusUpdate = useCallback(
-    async (status: string) => {
-      try {
-        await apiFetch(`/sites/${siteId}/intelligence/recommendations/${rec.id}/status`, {
-          method: 'PATCH',
-          body: JSON.stringify({ status }),
-          token,
-        });
-        mutate((key: unknown) => Array.isArray(key) && typeof key[0] === 'string' && key[0].includes('recommendations'));
-      } catch {
-        // Fail silently
-      }
+  const handleStatusChange = useCallback(
+    (newStatus: string, label: string) => {
+      onStatusUpdate(rec.id, newStatus, rec.status, label);
     },
-    [siteId, rec.id, token]
+    [rec.id, rec.status, onStatusUpdate]
   );
 
   return (
@@ -119,6 +131,12 @@ function ActionCard({
             <span className="text-xs text-brand-text-muted">{typeInfo.label}</span>
           </div>
           <p className="text-sm font-medium text-brand-text mt-1 line-clamp-1">{rec.title}</p>
+          {/* Estimated Impact */}
+          {rec.estimated_impact && (
+            <p className="text-xs text-brand-accent mt-0.5">
+              ~{rec.estimated_impact}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
@@ -140,7 +158,6 @@ function ActionCard({
 
           {/* AI Enriched Guidance */}
           {(() => {
-            // Check if specific_actions contains AI enrichment
             const actionsRaw = rec.specific_actions as unknown;
             if (actionsRaw && typeof actionsRaw === 'object' && !Array.isArray(actionsRaw)) {
               const enriched = actionsRaw as { ai_enriched?: boolean; guidance?: Record<string, unknown>; original_actions?: string[] };
@@ -150,7 +167,7 @@ function ActionCard({
                   <div className="mt-3 space-y-2">
                     <div className="flex items-center gap-1.5">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 text-xs font-medium">
-                        ✦ AI Analysis
+                        AI Analysis
                       </span>
                     </div>
                     {Object.entries(g).map(([key, val]) => {
@@ -162,7 +179,7 @@ function ActionCard({
                             <p className="text-xs font-medium text-brand-text-muted mb-1">{label}</p>
                             {(val as string[]).map((item, i) => (
                               <div key={i} className="flex items-start gap-2 text-sm text-brand-text mb-1">
-                                <span className="text-purple-400 mt-0.5 shrink-0">›</span>
+                                <span className="text-purple-400 mt-0.5 shrink-0">&rsaquo;</span>
                                 <span>{item}</span>
                               </div>
                             ))}
@@ -181,7 +198,7 @@ function ActionCard({
                         <p className="text-xs text-brand-text-muted mb-1">Quick actions</p>
                         {enriched.original_actions.map((action, i) => (
                           <div key={i} className="flex items-start gap-2 text-xs text-brand-text-muted">
-                            <span className="text-brand-accent mt-0.5 shrink-0">•</span>
+                            <span className="text-brand-accent mt-0.5 shrink-0">&bull;</span>
                             <span>{action}</span>
                           </div>
                         ))}
@@ -199,7 +216,7 @@ function ActionCard({
                 <p className="text-xs font-medium uppercase tracking-wider text-brand-text-muted">Action Items</p>
                 {actions.map((action, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm text-brand-text">
-                    <span className="text-brand-accent mt-0.5 shrink-0">•</span>
+                    <span className="text-brand-accent mt-0.5 shrink-0">&bull;</span>
                     <span>{action}</span>
                   </div>
                 ))}
@@ -247,7 +264,7 @@ function ActionCard({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                     </svg>
-                  ) : <span>✦</span>}
+                  ) : <span>*</span>}
                   {enriching ? 'Getting AI analysis...' : 'Get AI Analysis'}
                 </button>
               </div>
@@ -256,7 +273,7 @@ function ActionCard({
 
           {enriched && (
             <div className="mt-3 rounded-lg bg-purple-500/5 border border-purple-500/20 p-3 space-y-2">
-              <p className="text-xs font-medium text-purple-400">✦ AI Analysis (just generated)</p>
+              <p className="text-xs font-medium text-purple-400">AI Analysis (just generated)</p>
               {Object.entries(enriched).map(([key, val]) => {
                 if (!val) return null;
                 const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -266,7 +283,7 @@ function ActionCard({
                       <p className="text-xs font-medium text-brand-text-muted mb-1">{label}</p>
                       {(val as string[]).map((item, i) => (
                         <div key={i} className="flex gap-2 text-xs text-brand-text mb-0.5">
-                          <span className="text-purple-400 shrink-0">›</span><span>{item}</span>
+                          <span className="text-purple-400 shrink-0">&rsaquo;</span><span>{item}</span>
                         </div>
                       ))}
                     </div>
@@ -287,13 +304,13 @@ function ActionCard({
             {rec.status === 'pending' && (
               <>
                 <button
-                  onClick={() => void handleStatusUpdate('in_progress')}
+                  onClick={() => handleStatusChange('in_progress', 'Started')}
                   className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
                 >
                   <Play size={12} /> Start Working
                 </button>
                 <button
-                  onClick={() => void handleStatusUpdate('dismissed')}
+                  onClick={() => handleStatusChange('dismissed', 'Dismissed')}
                   className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium bg-brand-surface-hover text-brand-text-muted hover:text-brand-text transition-colors"
                 >
                   <XCircle size={12} /> Dismiss
@@ -303,13 +320,13 @@ function ActionCard({
             {rec.status === 'in_progress' && (
               <>
                 <button
-                  onClick={() => void handleStatusUpdate('completed')}
+                  onClick={() => handleStatusChange('completed', 'Marked complete')}
                   className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
                 >
                   <CheckCircle size={12} /> Mark Complete
                 </button>
                 <button
-                  onClick={() => void handleStatusUpdate('pending')}
+                  onClick={() => handleStatusChange('pending', 'Moved to To Do')}
                   className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium bg-brand-surface-hover text-brand-text-muted hover:text-brand-text transition-colors"
                 >
                   <Clock size={12} /> Move to To Do
@@ -317,11 +334,11 @@ function ActionCard({
               </>
             )}
             {rec.status === 'completed' && (
-              <Badge color="#22c55e">✓ Completed</Badge>
+              <Badge color="#22c55e">Completed</Badge>
             )}
             {rec.status === 'dismissed' && (
               <button
-                onClick={() => void handleStatusUpdate('pending')}
+                onClick={() => handleStatusChange('pending', 'Restored')}
                 className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium bg-brand-surface-hover text-brand-text-muted hover:text-brand-text transition-colors"
               >
                 <Clock size={12} /> Restore
@@ -348,7 +365,10 @@ export default function ActionQueuePage() {
   const { data: recsData, isLoading } = useRecommendations(siteId);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('impact');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const recs = recsData?.recommendations || [];
 
@@ -362,7 +382,74 @@ export default function ActionQueuePage() {
     return counts;
   }, [recs]);
 
-  // Filtered recs
+  const hasActiveFilters = statusFilter !== 'pending' || typeFilter !== 'all';
+
+  const clearAllFilters = useCallback(() => {
+    setStatusFilter('pending');
+    setTypeFilter('all');
+  }, []);
+
+  // Handle status update with undo support
+  const handleStatusUpdate = useCallback(
+    async (recId: string, newStatus: string, previousStatus: string, label: string) => {
+      // Clear any existing undo timeout
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+      }
+
+      // Perform the status update
+      try {
+        await apiFetch(`/sites/${siteId}/intelligence/recommendations/${recId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: newStatus }),
+          token: session?.access_token,
+        });
+        mutate((key: unknown) => Array.isArray(key) && typeof key[0] === 'string' && key[0].includes('recommendations'));
+      } catch {
+        return; // Don't show undo if the action failed
+      }
+
+      // Show undo toast for completed/dismissed actions
+      if (newStatus === 'completed' || newStatus === 'dismissed') {
+        const timeoutId = setTimeout(() => {
+          setUndoAction(null);
+        }, 5000);
+
+        undoTimeoutRef.current = timeoutId;
+        setUndoAction({ recId, previousStatus, actionLabel: label, timeoutId });
+      }
+    },
+    [siteId, session?.access_token]
+  );
+
+  // Handle undo
+  const handleUndo = useCallback(async () => {
+    if (!undoAction) return;
+    clearTimeout(undoAction.timeoutId);
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+
+    try {
+      await apiFetch(`/sites/${siteId}/intelligence/recommendations/${undoAction.recId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: undoAction.previousStatus }),
+        token: session?.access_token,
+      });
+      mutate((key: unknown) => Array.isArray(key) && typeof key[0] === 'string' && key[0].includes('recommendations'));
+    } catch {
+      // Fail silently
+    }
+
+    setUndoAction(null);
+  }, [undoAction, siteId, session?.access_token]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    };
+  }, []);
+
+  // Filtered and sorted recs
   const filtered = useMemo(() => {
     let result = recs;
     if (statusFilter !== 'all') {
@@ -371,12 +458,32 @@ export default function ActionQueuePage() {
     if (typeFilter !== 'all') {
       result = result.filter((r) => r.recommendation_type === typeFilter);
     }
-    // Sort: critical first, then by type
-    return result.sort((a, b) => {
-      const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-      return (priorityOrder[a.priority as keyof typeof priorityOrder] || 3) - (priorityOrder[b.priority as keyof typeof priorityOrder] || 3);
+
+    // Sort
+    const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    return [...result].sort((a, b) => {
+      switch (sortBy) {
+        case 'impact': {
+          // Sort by estimated_impact (parse numeric value if possible), then priority
+          const aImpact = parseFloat(a.estimated_impact || '0') || 0;
+          const bImpact = parseFloat(b.estimated_impact || '0') || 0;
+          if (bImpact !== aImpact) return bImpact - aImpact;
+          return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
+        }
+        case 'priority':
+          return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
+        case 'effort': {
+          const aEffort = a.estimated_effort_hours || 999;
+          const bEffort = b.estimated_effort_hours || 999;
+          return aEffort - bEffort;
+        }
+        case 'date':
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        default:
+          return 0;
+      }
     });
-  }, [recs, statusFilter, typeFilter]);
+  }, [recs, statusFilter, typeFilter, sortBy]);
 
   // Estimated total hours
   const totalHours = useMemo(
@@ -400,7 +507,7 @@ export default function ActionQueuePage() {
       <div>
         <h1 className="text-2xl font-bold text-brand-text">Action Queue</h1>
         <p className="text-sm text-brand-text-muted mt-1">
-          {recs.length} recommendations · Track progress and complete actions to improve your content
+          {recs.length} recommendations -- Track progress and complete actions to improve your content
         </p>
       </div>
 
@@ -414,21 +521,21 @@ export default function ActionQueuePage() {
         </div>
         <ProgressBar value={statusCounts.completed} max={recs.length || 1} />
         <div className="flex items-center gap-6 mt-3 text-xs text-brand-text-muted">
-          <span>🕐 {statusCounts.pending} to do</span>
-          <span>🔵 {statusCounts.in_progress} in progress</span>
-          <span>✅ {statusCounts.completed} done</span>
-          <span>⏭ {statusCounts.dismissed} dismissed</span>
+          <span>{statusCounts.pending} to do</span>
+          <span>{statusCounts.in_progress} in progress</span>
+          <span>{statusCounts.completed} done</span>
+          <span>{statusCounts.dismissed} dismissed</span>
           {totalHours > 0 && (
             <span className="ml-auto">
               {totalHours > 200
-                ? `200+ hrs estimated · prioritize top items first`
+                ? `200+ hrs estimated -- prioritize top items first`
                 : `~${totalHours.toFixed(0)}h estimated for current view`}
             </span>
           )}
         </div>
       </Card>
 
-      {/* Status Tabs */}
+      {/* Status Tabs + Sort */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
         {(Object.entries(STATUS_CONFIG) as Array<[StatusFilter, typeof STATUS_CONFIG[keyof typeof STATUS_CONFIG]]>).map(
           ([key, config]) => (
@@ -459,9 +566,23 @@ export default function ActionQueuePage() {
         >
           All ({recs.length})
         </button>
+
+        {/* Sort Dropdown */}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          <ArrowDownUp size={12} className="text-brand-text-muted" />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            className="rounded-lg border border-brand-border bg-brand-bg px-2 py-1.5 text-xs text-brand-text focus:border-brand-accent focus:outline-none"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>Sort: {opt.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* Type Filter */}
+      {/* Type Filter + Clear All */}
       <div className="flex items-center gap-2 flex-wrap">
         <Filter size={14} className="text-brand-text-muted" />
         <button
@@ -488,6 +609,17 @@ export default function ActionQueuePage() {
             </button>
           );
         })}
+
+        {/* Clear All Filters */}
+        {hasActiveFilters && (
+          <button
+            onClick={clearAllFilters}
+            className="ml-auto flex items-center gap-1 text-xs text-brand-text-muted hover:text-brand-text transition-colors"
+          >
+            <X size={12} />
+            Clear all filters
+          </button>
+        )}
       </div>
 
       {/* Recommendations List */}
@@ -501,6 +633,7 @@ export default function ActionQueuePage() {
               token={session?.access_token}
               expanded={expandedId === rec.id}
               onToggle={() => setExpandedId(expandedId === rec.id ? null : rec.id)}
+              onStatusUpdate={handleStatusUpdate}
             />
           ))}
         </div>
@@ -515,6 +648,30 @@ export default function ActionQueuePage() {
             </p>
           </div>
         </Card>
+      )}
+
+      {/* Undo Toast */}
+      {undoAction && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in duration-200">
+          <div className="flex items-center gap-3 rounded-lg bg-brand-surface border border-brand-border shadow-lg px-4 py-3">
+            <span className="text-sm text-brand-text">
+              {undoAction.actionLabel}
+            </span>
+            <button
+              onClick={() => void handleUndo()}
+              className="flex items-center gap-1.5 text-sm font-medium text-brand-accent hover:text-brand-accent-hover transition-colors"
+            >
+              <Undo2 size={14} />
+              Undo
+            </button>
+            <button
+              onClick={() => { clearTimeout(undoAction.timeoutId); setUndoAction(null); }}
+              className="text-brand-text-muted hover:text-brand-text transition-colors ml-1"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
