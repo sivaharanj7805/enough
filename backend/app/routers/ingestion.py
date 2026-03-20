@@ -328,6 +328,31 @@ async def trigger_monthly_reembed(
     return TaskTriggerResponse(message="Monthly re-embed started", site_id=None)
 
 
+@router.post("/cron/process-drips", response_model=TaskTriggerResponse)
+async def trigger_process_drips(
+    background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
+):
+    """Process pending drip emails for audit leads.
+
+    Sends scheduled drip emails (day 2 and day 5 follow-ups) for
+    audit report leads. Wire to a frequent cron (e.g. every 30 min).
+    Requires X-Cron-Secret header.
+    """
+    async def _process():
+        from app.database import get_pool
+        from app.services.drip_sequence import DripSequenceService
+
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            service = DripSequenceService()
+            sent = await service.process_pending_drips(db)
+            logger.info("Drip processing: sent %d emails", sent)
+
+    background_tasks.add_task(_process)
+    return TaskTriggerResponse(message="Drip email processing started", site_id=None)
+
+
 @router.post("/cron/weekly-digest", response_model=TaskTriggerResponse)
 async def trigger_weekly_digest(
     background_tasks: BackgroundTasks,

@@ -208,6 +208,73 @@ export const weeklyEmail = {
   topPriority: (title: string) => `Top priority this week: ${title}`,
 } as const;
 
+// ─── Empty States (per-page) ───────────────────
+
+export const EMPTY_STATES = {
+  today: {
+    title: 'Your analysis is running',
+    description: 'Results will appear here as the pipeline processes your blog.',
+    action: 'View Progress',
+  },
+  todayComplete: {
+    title: 'Your content is in great shape',
+    description: "We'll notify you when new issues arise.",
+    action: null,
+  },
+  landscape: {
+    title: 'Your content ecosystem is forming',
+    description: 'The landscape will render as clusters are detected.',
+  },
+  clusters: {
+    title: 'Clusters appear after analysis',
+    description: 'Topics will be grouped automatically once the pipeline completes.',
+  },
+  posts: {
+    title: 'No posts analyzed yet',
+    description: 'Posts will appear here once the crawl completes.',
+  },
+  postNotFound: {
+    title: 'Post not found',
+    description: 'This post may have been removed or the URL is incorrect.',
+  },
+  recommendations: {
+    title: 'No recommendations yet',
+    description: 'Analysis takes about 20 minutes. Recommendations will appear as issues are detected.',
+  },
+  recommendationsDone: {
+    title: 'All recommendations completed. Nice work.',
+    description: "We'll generate new recommendations on your next analysis.",
+  },
+  issuesNone: {
+    title: 'No issues found',
+    description: 'Your content is in great shape.',
+  },
+  issuesTab: (type: string) => ({
+    title: `No ${type} detected`,
+    description: 'Your content looks good here.',
+  }),
+  cannibalization: {
+    title: 'No cannibalization detected',
+    description: 'Your posts target distinct topics effectively.',
+  },
+  consolidation: {
+    title: 'No consolidation plans yet',
+    description: 'Merge recommendations will appear here.',
+  },
+  oracle: {
+    title: 'Ask Oracle about your content',
+    description: 'Get insights about your blog health, clusters, and recommendations.',
+  },
+  analytics: {
+    title: 'Connect your data sources to see analytics',
+    description: 'Link Google Search Console and Analytics for traffic insights.',
+  },
+  impact: {
+    title: 'Impact data will be available in 7-14 days',
+    description: "We're tracking the effect of your changes.",
+  },
+} as const;
+
 // ─── Misc ───────────────────────────────────────
 
 export const misc = {

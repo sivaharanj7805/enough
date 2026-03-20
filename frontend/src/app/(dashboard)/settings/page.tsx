@@ -6,6 +6,7 @@ import { useSite } from '@/lib/hooks/useSite';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
+import { useToast } from '@/components/ui/Toast';
 import { apiFetch } from '@/lib/api';
 import {
   CheckCircle,
@@ -19,6 +20,8 @@ import {
   Brain,
   Layers,
   Sparkles,
+  Bell,
+  Globe,
 } from 'lucide-react';
 
 interface GoogleStatus {
@@ -39,13 +42,21 @@ interface GA4Property {
   account: string;
 }
 
+type SettingsTab = 'integrations' | 'site-settings' | 'notifications';
+
+const CMS_OPTIONS = ['WordPress', 'Sitemap', 'HubSpot', 'Webflow', 'Ghost'] as const;
+const RECRAWL_OPTIONS = ['Manual', 'Weekly', 'Monthly'] as const;
+const DIGEST_OPTIONS = ['Weekly', 'Biweekly', 'Monthly', 'Off'] as const;
+
 export default function SettingsPage() {
   const { currentSite } = useSite();
   const { session } = useAuth();
+  const { toast } = useToast();
   const siteId = currentSite?.id;
   const token = session?.access_token;
   const searchParams = useSearchParams();
 
+  const [activeTab, setActiveTab] = useState<SettingsTab>('integrations');
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<'gsc' | 'ga4' | 'all' | null>(null);
@@ -54,6 +65,20 @@ export default function SettingsPage() {
   const [gscUrl, setGscUrl] = useState('');
   const [ga4Id, setGa4Id] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Site Settings state
+  const [siteUrl, setSiteUrl] = useState(currentSite?.url ?? '');
+  const [cmsType, setCmsType] = useState<string>('Sitemap');
+  const [recrawlSchedule, setRecrawlSchedule] = useState<string>('Manual');
+  const [savingSiteSettings, setSavingSiteSettings] = useState(false);
+
+  // Notifications state
+  const [digestFrequency, setDigestFrequency] = useState<string>('Weekly');
+  const [savingNotifications, setSavingNotifications] = useState(false);
+
+  useEffect(() => {
+    if (currentSite?.url) setSiteUrl(currentSite.url);
+  }, [currentSite?.url]);
 
   const showMessage = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
@@ -83,13 +108,12 @@ export default function SettingsPage() {
     // Handle OAuth callback
     const connected = searchParams.get('google_connected');
     const error = searchParams.get('google_error');
-    if (connected) showMessage('success', '✅ Google account connected successfully!');
+    if (connected) showMessage('success', 'Google account connected successfully!');
     if (error) showMessage('error', `Google connection failed: ${error}`);
   }, [siteId]);
 
   const handleConnect = () => {
     if (!siteId) return;
-    // Use the existing auth/google endpoint which handles state + redirect
     const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'https://pst-leaving-otherwise-roles.trycloudflare.com';
     window.location.href = `${apiBase}/v1/auth/google?site_id=${siteId}`;
   };
@@ -166,6 +190,46 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveSiteSettings = async () => {
+    if (!siteId) return;
+    setSavingSiteSettings(true);
+    try {
+      await apiFetch(`/sites/${siteId}/settings`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({
+          url: siteUrl,
+          cms_type: cmsType.toLowerCase(),
+          recrawl_schedule: recrawlSchedule.toLowerCase(),
+        }),
+      });
+      toast('Site settings saved successfully.', { type: 'success' });
+    } catch {
+      toast('Failed to save site settings. Please try again.', { type: 'error' });
+    } finally {
+      setSavingSiteSettings(false);
+    }
+  };
+
+  const handleSaveNotifications = async () => {
+    if (!siteId) return;
+    setSavingNotifications(true);
+    try {
+      await apiFetch(`/sites/${siteId}/notifications`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({
+          digest_frequency: digestFrequency.toLowerCase(),
+        }),
+      });
+      toast('Notification preferences saved.', { type: 'success' });
+    } catch {
+      toast('Failed to save notification preferences. Please try again.', { type: 'error' });
+    } finally {
+      setSavingNotifications(false);
+    }
+  };
+
   const formatDate = (iso: string | null) => {
     if (!iso) return 'Never';
     return new Date(iso).toLocaleString();
@@ -178,6 +242,12 @@ export default function SettingsPage() {
       </div>
     );
   }
+
+  const tabs: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
+    { id: 'integrations', label: 'Integrations', icon: Database },
+    { id: 'site-settings', label: 'Site Settings', icon: Globe },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
+  ];
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 py-6 px-4">
@@ -200,355 +270,519 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Google Account */}
-      <Card>
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-brand-text flex items-center gap-2">
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              Google Account
-            </h2>
-            <p className="text-xs text-brand-text-muted mt-1">
-              Required for Google Search Console and Google Analytics 4
-            </p>
+      {/* Tab navigation */}
+      <nav className="flex border-b border-brand-border" role="tablist" aria-label="Settings tabs">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`panel-${tab.id}`}
+              id={`tab-${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-brand-accent text-brand-accent'
+                  : 'border-transparent text-brand-text-muted hover:text-brand-text hover:border-brand-border'
+              }`}
+            >
+              <Icon size={16} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Integrations Tab */}
+      <div
+        role="tabpanel"
+        id="panel-integrations"
+        aria-labelledby="tab-integrations"
+        hidden={activeTab !== 'integrations'}
+        className="space-y-6"
+      >
+        {/* Google Account */}
+        <Card>
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-brand-text flex items-center gap-2">
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Google Account
+              </h2>
+              <p className="text-xs text-brand-text-muted mt-1">
+                Required for Google Search Console and Google Analytics 4
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {googleStatus?.connected ? (
+                <span className="flex items-center gap-1 text-xs text-green-400">
+                  <CheckCircle size={14} /> Connected
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-red-400">
+                  <XCircle size={14} /> Not connected
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="mt-4 flex gap-2">
             {googleStatus?.connected ? (
-              <span className="flex items-center gap-1 text-xs text-green-400">
-                <CheckCircle size={14} /> Connected
-              </span>
+              <>
+                <button
+                  onClick={() => void syncData('all')}
+                  disabled={syncing === 'all'}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-accent/10 text-brand-accent text-sm font-medium hover:bg-brand-accent/20 transition-colors disabled:opacity-50"
+                >
+                  {syncing === 'all' ? <Spinner size="sm" /> : <RefreshCw size={14} />}
+                  Sync All Data
+                </button>
+                <button
+                  onClick={handleDisconnect}
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm text-brand-text-muted hover:text-red-400 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </>
             ) : (
-              <span className="flex items-center gap-1 text-xs text-red-400">
-                <XCircle size={14} /> Not connected
-              </span>
+              <button
+                onClick={handleConnect}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-accent text-black text-sm font-semibold hover:bg-brand-accent/90 transition-colors"
+              >
+                Connect Google Account
+              </button>
             )}
           </div>
-        </div>
+        </Card>
 
-        <div className="mt-4 flex gap-2">
-          {googleStatus?.connected ? (
-            <>
-              <button
-                onClick={() => void syncData('all')}
-                disabled={syncing === 'all'}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-accent/10 text-brand-accent text-sm font-medium hover:bg-brand-accent/20 transition-colors disabled:opacity-50"
-              >
-                {syncing === 'all' ? <Spinner size="sm" /> : <RefreshCw size={14} />}
-                Sync All Data
-              </button>
-              <button
-                onClick={handleDisconnect}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm text-brand-text-muted hover:text-red-400 transition-colors"
-              >
-                Disconnect
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleConnect}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-accent text-black text-sm font-semibold hover:bg-brand-accent/90 transition-colors"
-            >
-              Connect Google Account
-            </button>
+        {/* GSC Section */}
+        <Card>
+          <div className="flex items-center gap-2 mb-4">
+            <Search size={18} className="text-blue-400" />
+            <div>
+              <h2 className="text-base font-semibold text-brand-text">Google Search Console</h2>
+              <p className="text-xs text-brand-text-muted">
+                Unlocks: ranking positions, decay detection, CTR analysis, keyword data
+              </p>
+            </div>
+            <div className="ml-auto">
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                googleStatus?.gsc_site_url
+                  ? 'bg-green-500/10 text-green-400'
+                  : 'bg-amber-500/10 text-amber-400'
+              }`}>
+                {googleStatus?.last_gsc_sync ? `Last synced: ${formatDate(googleStatus.last_gsc_sync)}` : googleStatus?.gsc_site_url ? 'Configured' : 'Not configured'}
+              </span>
+            </div>
+          </div>
+
+          {googleStatus?.connected && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <label htmlFor="gsc-url" className="sr-only">GSC site URL</label>
+                <input
+                  id="gsc-url"
+                  type="text"
+                  value={gscUrl}
+                  onChange={e => setGscUrl(e.target.value)}
+                  placeholder="e.g. https://www.close.com/ or sc-domain:close.com"
+                  className="flex-1 px-3 py-2 rounded-lg bg-brand-bg border border-brand-border text-sm text-brand-text placeholder-brand-text-muted focus:outline-none focus:border-brand-accent"
+                />
+                <button
+                  onClick={() => void fetchGSCSites()}
+                  className="px-3 py-2 rounded-lg border border-brand-border text-xs text-brand-text-muted hover:text-brand-text transition-colors whitespace-nowrap"
+                >
+                  Browse sites
+                </button>
+                <button
+                  onClick={() => void saveGSCUrl()}
+                  disabled={!gscUrl}
+                  className="px-4 py-2 rounded-lg bg-blue-500/10 text-blue-400 text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+
+              {gscSites.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs text-brand-text-muted">Your verified sites:</p>
+                  {gscSites.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setGscUrl(s)}
+                      className="block text-xs text-brand-accent hover:underline"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {googleStatus.gsc_site_url && (
+                <button
+                  onClick={() => void syncData('gsc')}
+                  disabled={syncing === 'gsc'}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 text-blue-400 text-sm hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                >
+                  {syncing === 'gsc' ? <Spinner size="sm" /> : <RefreshCw size={14} />}
+                  Sync GSC (90 days)
+                </button>
+              )}
+            </div>
           )}
-        </div>
-      </Card>
 
-      {/* GSC Section */}
-      <Card>
-        <div className="flex items-center gap-2 mb-4">
-          <Search size={18} className="text-blue-400" />
-          <div>
-            <h2 className="text-base font-semibold text-brand-text">Google Search Console</h2>
-            <p className="text-xs text-brand-text-muted">
-              Unlocks: ranking positions, decay detection, CTR analysis, keyword data
-            </p>
-          </div>
-          <div className="ml-auto">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-              googleStatus?.gsc_site_url
-                ? 'bg-green-500/10 text-green-400'
-                : 'bg-amber-500/10 text-amber-400'
-            }`}>
-              {googleStatus?.last_gsc_sync ? `Last synced: ${formatDate(googleStatus.last_gsc_sync)}` : googleStatus?.gsc_site_url ? 'Configured' : 'Not configured'}
-            </span>
-          </div>
-        </div>
+          {!googleStatus?.connected && (
+            <p className="text-sm text-brand-text-muted">Connect your Google account above to configure GSC.</p>
+          )}
+        </Card>
 
-        {googleStatus?.connected && (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={gscUrl}
-                onChange={e => setGscUrl(e.target.value)}
-                placeholder="e.g. https://www.close.com/ or sc-domain:close.com"
-                className="flex-1 px-3 py-2 rounded-lg bg-brand-bg border border-brand-border text-sm text-brand-text placeholder-brand-text-muted focus:outline-none focus:border-brand-accent"
-              />
-              <button
-                onClick={() => void fetchGSCSites()}
-                className="px-3 py-2 rounded-lg border border-brand-border text-xs text-brand-text-muted hover:text-brand-text transition-colors whitespace-nowrap"
-              >
-                Browse sites
-              </button>
-              <button
-                onClick={() => void saveGSCUrl()}
-                disabled={!gscUrl}
-                className="px-4 py-2 rounded-lg bg-blue-500/10 text-blue-400 text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-
-            {gscSites.length > 0 && (
-              <div className="mt-2 space-y-1">
-                <p className="text-xs text-brand-text-muted">Your verified sites:</p>
-                {gscSites.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setGscUrl(s)}
-                    className="block text-xs text-brand-accent hover:underline"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {googleStatus.gsc_site_url && (
-              <button
-                onClick={() => void syncData('gsc')}
-                disabled={syncing === 'gsc'}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 text-blue-400 text-sm hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-              >
-                {syncing === 'gsc' ? <Spinner size="sm" /> : <RefreshCw size={14} />}
-                Sync GSC (90 days)
-              </button>
-            )}
-          </div>
-        )}
-
-        {!googleStatus?.connected && (
-          <p className="text-sm text-brand-text-muted">Connect your Google account above to configure GSC.</p>
-        )}
-      </Card>
-
-      {/* GA4 Section */}
-      <Card>
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp size={18} className="text-purple-400" />
-          <div>
-            <h2 className="text-base font-semibold text-brand-text">Google Analytics 4</h2>
-            <p className="text-xs text-brand-text-muted">
-              Unlocks: pageviews, engagement rate, traffic trends, impact scoring
-            </p>
-          </div>
-          <div className="ml-auto">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-              googleStatus?.ga4_property_id
-                ? 'bg-green-500/10 text-green-400'
-                : 'bg-amber-500/10 text-amber-400'
-            }`}>
-              {googleStatus?.last_ga4_sync ? `Last synced: ${formatDate(googleStatus.last_ga4_sync)}` : googleStatus?.ga4_property_id ? 'Configured' : 'Not configured'}
-            </span>
-          </div>
-        </div>
-
-        {googleStatus?.connected && (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={ga4Id}
-                onChange={e => setGa4Id(e.target.value)}
-                placeholder="e.g. 123456789"
-                className="flex-1 px-3 py-2 rounded-lg bg-brand-bg border border-brand-border text-sm text-brand-text placeholder-brand-text-muted focus:outline-none focus:border-brand-accent"
-              />
-              <button
-                onClick={() => void fetchGA4Properties()}
-                className="px-3 py-2 rounded-lg border border-brand-border text-xs text-brand-text-muted hover:text-brand-text transition-colors whitespace-nowrap"
-              >
-                Browse properties
-              </button>
-              <button
-                onClick={() => void saveGA4Id()}
-                disabled={!ga4Id}
-                className="px-4 py-2 rounded-lg bg-purple-500/10 text-purple-400 text-sm font-medium hover:bg-purple-500/20 transition-colors disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-
-            {ga4Properties.length > 0 && (
-              <div className="mt-2 space-y-1">
-                <p className="text-xs text-brand-text-muted">Your GA4 properties:</p>
-                {ga4Properties.map(p => (
-                  <button
-                    key={p.property_id}
-                    onClick={() => setGa4Id(p.property_id)}
-                    className="block text-xs text-brand-accent hover:underline"
-                  >
-                    {p.display_name} ({p.property_id}) — {p.account}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {googleStatus.ga4_property_id && (
-              <button
-                onClick={() => void syncData('ga4')}
-                disabled={syncing === 'ga4'}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/10 text-purple-400 text-sm hover:bg-purple-500/20 transition-colors disabled:opacity-50"
-              >
-                {syncing === 'ga4' ? <Spinner size="sm" /> : <RefreshCw size={14} />}
-                Sync GA4 (90 days)
-              </button>
-            )}
-          </div>
-        )}
-
-        {!googleStatus?.connected && (
-          <p className="text-sm text-brand-text-muted">Connect your Google account above to configure GA4.</p>
-        )}
-      </Card>
-
-      {/* Intelligence Upgrades */}
-      <Card>
-        <h3 className="text-sm font-semibold text-brand-text mb-3 flex items-center gap-2">
-          <Zap size={16} className="text-brand-accent" />
-          Intelligence Upgrades
-        </h3>
-        <div className="space-y-3">
-          <div className="flex items-start justify-between gap-4">
+        {/* GA4 Section */}
+        <Card>
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp size={18} className="text-purple-400" />
             <div>
-              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
-                <Zap size={13} className="text-brand-accent" /> Quick Scan
-              </p>
-              <p className="text-xs text-brand-text-muted mt-0.5">Re-run health scoring + problem detection + recommendations (~30s). No re-crawl.</p>
-            </div>
-            <button
-              onClick={() => {
-                if (!siteId) return;
-                void apiFetch(`/sites/${siteId}/intelligence/quick-scan`, { method: 'POST', token })
-                  .then(() => showMessage('success', 'Quick scan started — refresh in ~30s'));
-              }}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-brand-accent/10 text-brand-accent text-xs font-medium hover:bg-brand-accent/20 transition-colors"
-            >
-              Run
-            </button>
-          </div>
-
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
-                <RefreshCw size={13} className="text-blue-400" /> Incremental Refresh
-              </p>
-              <p className="text-xs text-brand-text-muted mt-0.5">Re-crawl new/changed posts only, then re-analyze. Much faster than full pipeline on re-runs.</p>
-            </div>
-            <button
-              onClick={() => {
-                if (!siteId) return;
-                void apiFetch(`/sites/${siteId}/pipeline/refresh`, { method: 'POST', token })
-                  .then(() => showMessage('success', 'Incremental refresh started'));
-              }}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors"
-            >
-              Run
-            </button>
-          </div>
-
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
-                <Layers size={13} className="text-orange-400" /> Confirm Chunk Overlap
-              </p>
-              <p className="text-xs text-brand-text-muted mt-0.5">Verify cannibalization pairs at section level using H2/H3 chunk embeddings. Runs in background (~5 min).</p>
-            </div>
-            <button
-              onClick={() => {
-                if (!siteId) return;
-                void apiFetch(`/sites/${siteId}/intelligence/cannibalization/confirm-chunks`, { method: 'POST', token })
-                  .then(() => showMessage('success', 'Chunk confirmation started in background'));
-              }}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-400 text-xs font-medium hover:bg-orange-500/20 transition-colors"
-            >
-              Run
-            </button>
-          </div>
-
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
-                <Brain size={13} className="text-purple-400" /> Claude Intent Classification
-              </p>
-              <p className="text-xs text-brand-text-muted mt-0.5">Re-classify ambiguous posts with Claude AI instead of keyword matching. Runs in background (~2 min).</p>
-            </div>
-            <button
-              onClick={() => {
-                if (!siteId) return;
-                void apiFetch(`/sites/${siteId}/intelligence/intent/claude-classify`, { method: 'POST', token })
-                  .then(() => showMessage('success', 'Claude intent classification started'));
-              }}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors"
-            >
-              Run
-            </button>
-          </div>
-
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
-                <Sparkles size={13} className="text-amber-400" /> AI Readiness Scan
-              </p>
-              <p className="text-xs text-brand-text-muted mt-0.5">
-                Score every post for 2026 SEO: AI Citability, E-E-A-T signals, Schema markup, and AI Extraction structure. No API calls — pure content analysis (~1-3 min).
+              <h2 className="text-base font-semibold text-brand-text">Google Analytics 4</h2>
+              <p className="text-xs text-brand-text-muted">
+                Unlocks: pageviews, engagement rate, traffic trends, impact scoring
               </p>
             </div>
-            <button
-              onClick={() => {
-                if (!siteId) return;
-                void apiFetch(`/sites/${siteId}/intelligence/ai-readiness`, { method: 'POST', token })
-                  .then(() => showMessage('success', 'AI readiness scan started — check back in ~2 min'));
-              }}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors"
-            >
-              Run
-            </button>
-          </div>
-        </div>
-      </Card>
-
-      {/* What this unlocks */}
-      <Card className="bg-brand-bg border-brand-accent/20">
-        <h3 className="text-sm font-semibold text-brand-text mb-3 flex items-center gap-2">
-          <Database size={16} className="text-brand-accent" />
-          What these integrations unlock
-        </h3>
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: 'Health Score', before: '5/10', after: '9/10', color: '#22c55e' },
-            { label: 'Problem Detection', before: '7/10', after: '10/10', color: '#22c55e' },
-            { label: 'Recommendations', before: '6/10', after: '9/10', color: '#3b82f6' },
-            { label: 'Freshness', before: '5/10', after: '9/10', color: '#8b5cf6' },
-            { label: 'Cannibalization', before: '8.5/10', after: '10/10', color: '#f97316' },
-            { label: 'Overall', before: '7/10', after: '9.5/10', color: '#22c55e' },
-          ].map(item => (
-            <div key={item.label} className="flex items-center justify-between text-sm">
-              <span className="text-brand-text-muted">{item.label}</span>
-              <span className="flex items-center gap-1">
-                <span className="text-brand-text-muted text-xs">{item.before}</span>
-                <span className="text-brand-text-muted text-xs">→</span>
-                <span className="font-semibold text-xs" style={{ color: item.color }}>{item.after}</span>
+            <div className="ml-auto">
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                googleStatus?.ga4_property_id
+                  ? 'bg-green-500/10 text-green-400'
+                  : 'bg-amber-500/10 text-amber-400'
+              }`}>
+                {googleStatus?.last_ga4_sync ? `Last synced: ${formatDate(googleStatus.last_ga4_sync)}` : googleStatus?.ga4_property_id ? 'Configured' : 'Not configured'}
               </span>
             </div>
-          ))}
-        </div>
-      </Card>
+          </div>
+
+          {googleStatus?.connected && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <label htmlFor="ga4-id" className="sr-only">GA4 property ID</label>
+                <input
+                  id="ga4-id"
+                  type="text"
+                  value={ga4Id}
+                  onChange={e => setGa4Id(e.target.value)}
+                  placeholder="e.g. 123456789"
+                  className="flex-1 px-3 py-2 rounded-lg bg-brand-bg border border-brand-border text-sm text-brand-text placeholder-brand-text-muted focus:outline-none focus:border-brand-accent"
+                />
+                <button
+                  onClick={() => void fetchGA4Properties()}
+                  className="px-3 py-2 rounded-lg border border-brand-border text-xs text-brand-text-muted hover:text-brand-text transition-colors whitespace-nowrap"
+                >
+                  Browse properties
+                </button>
+                <button
+                  onClick={() => void saveGA4Id()}
+                  disabled={!ga4Id}
+                  className="px-4 py-2 rounded-lg bg-purple-500/10 text-purple-400 text-sm font-medium hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+
+              {ga4Properties.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs text-brand-text-muted">Your GA4 properties:</p>
+                  {ga4Properties.map(p => (
+                    <button
+                      key={p.property_id}
+                      onClick={() => setGa4Id(p.property_id)}
+                      className="block text-xs text-brand-accent hover:underline"
+                    >
+                      {p.display_name} ({p.property_id}) — {p.account}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {googleStatus.ga4_property_id && (
+                <button
+                  onClick={() => void syncData('ga4')}
+                  disabled={syncing === 'ga4'}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/10 text-purple-400 text-sm hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                >
+                  {syncing === 'ga4' ? <Spinner size="sm" /> : <RefreshCw size={14} />}
+                  Sync GA4 (90 days)
+                </button>
+              )}
+            </div>
+          )}
+
+          {!googleStatus?.connected && (
+            <p className="text-sm text-brand-text-muted">Connect your Google account above to configure GA4.</p>
+          )}
+        </Card>
+
+        {/* Intelligence Upgrades */}
+        <Card>
+          <h3 className="text-sm font-semibold text-brand-text mb-3 flex items-center gap-2">
+            <Zap size={16} className="text-brand-accent" />
+            Intelligence Upgrades
+          </h3>
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                  <Zap size={13} className="text-brand-accent" /> Quick Scan
+                </p>
+                <p className="text-xs text-brand-text-muted mt-0.5">Re-run health scoring + problem detection + recommendations (~30s). No re-crawl.</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!siteId) return;
+                  void apiFetch(`/sites/${siteId}/intelligence/quick-scan`, { method: 'POST', token })
+                    .then(() => showMessage('success', 'Quick scan started — refresh in ~30s'));
+                }}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-brand-accent/10 text-brand-accent text-xs font-medium hover:bg-brand-accent/20 transition-colors"
+              >
+                Run
+              </button>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                  <RefreshCw size={13} className="text-blue-400" /> Incremental Refresh
+                </p>
+                <p className="text-xs text-brand-text-muted mt-0.5">Re-crawl new/changed posts only, then re-analyze. Much faster than full pipeline on re-runs.</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!siteId) return;
+                  void apiFetch(`/sites/${siteId}/pipeline/refresh`, { method: 'POST', token })
+                    .then(() => showMessage('success', 'Incremental refresh started'));
+                }}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors"
+              >
+                Run
+              </button>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                  <Layers size={13} className="text-orange-400" /> Confirm Chunk Overlap
+                </p>
+                <p className="text-xs text-brand-text-muted mt-0.5">Verify cannibalization pairs at section level using H2/H3 chunk embeddings. Runs in background (~5 min).</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!siteId) return;
+                  void apiFetch(`/sites/${siteId}/intelligence/cannibalization/confirm-chunks`, { method: 'POST', token })
+                    .then(() => showMessage('success', 'Chunk confirmation started in background'));
+                }}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-400 text-xs font-medium hover:bg-orange-500/20 transition-colors"
+              >
+                Run
+              </button>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                  <Brain size={13} className="text-purple-400" /> Claude Intent Classification
+                </p>
+                <p className="text-xs text-brand-text-muted mt-0.5">Re-classify ambiguous posts with Claude AI instead of keyword matching. Runs in background (~2 min).</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!siteId) return;
+                  void apiFetch(`/sites/${siteId}/intelligence/intent/claude-classify`, { method: 'POST', token })
+                    .then(() => showMessage('success', 'Claude intent classification started'));
+                }}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors"
+              >
+                Run
+              </button>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-brand-text font-medium flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-amber-400" /> AI Readiness Scan
+                </p>
+                <p className="text-xs text-brand-text-muted mt-0.5">
+                  Score every post for 2026 SEO: AI Citability, E-E-A-T signals, Schema markup, and AI Extraction structure. No API calls — pure content analysis (~1-3 min).
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!siteId) return;
+                  void apiFetch(`/sites/${siteId}/intelligence/ai-readiness`, { method: 'POST', token })
+                    .then(() => showMessage('success', 'AI readiness scan started — check back in ~2 min'));
+                }}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors"
+              >
+                Run
+              </button>
+            </div>
+          </div>
+        </Card>
+
+        {/* What this unlocks */}
+        <Card className="bg-brand-bg border-brand-accent/20">
+          <h3 className="text-sm font-semibold text-brand-text mb-3 flex items-center gap-2">
+            <Database size={16} className="text-brand-accent" />
+            What these integrations unlock
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Health Score', before: '5/10', after: '9/10', color: '#22c55e' },
+              { label: 'Problem Detection', before: '7/10', after: '10/10', color: '#22c55e' },
+              { label: 'Recommendations', before: '6/10', after: '9/10', color: '#3b82f6' },
+              { label: 'Freshness', before: '5/10', after: '9/10', color: '#8b5cf6' },
+              { label: 'Cannibalization', before: '8.5/10', after: '10/10', color: '#f97316' },
+              { label: 'Overall', before: '7/10', after: '9.5/10', color: '#22c55e' },
+            ].map(item => (
+              <div key={item.label} className="flex items-center justify-between text-sm">
+                <span className="text-brand-text-muted">{item.label}</span>
+                <span className="flex items-center gap-1">
+                  <span className="text-brand-text-muted text-xs">{item.before}</span>
+                  <span className="text-brand-text-muted text-xs">&rarr;</span>
+                  <span className="font-semibold text-xs" style={{ color: item.color }}>{item.after}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* Site Settings Tab */}
+      <div
+        role="tabpanel"
+        id="panel-site-settings"
+        aria-labelledby="tab-site-settings"
+        hidden={activeTab !== 'site-settings'}
+        className="space-y-6"
+      >
+        <Card>
+          <h2 className="text-base font-semibold text-brand-text mb-4 flex items-center gap-2">
+            <Globe size={18} className="text-brand-accent" />
+            Site Configuration
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="site-url" className="block text-sm font-medium text-brand-text mb-1">
+                Site URL
+              </label>
+              <input
+                id="site-url"
+                type="url"
+                value={siteUrl}
+                onChange={(e) => setSiteUrl(e.target.value)}
+                placeholder="https://yourblog.com"
+                aria-required="true"
+                className="w-full px-3 py-2 rounded-lg bg-brand-bg border border-brand-border text-sm text-brand-text placeholder-brand-text-muted focus:outline-none focus:border-brand-accent"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="cms-type" className="block text-sm font-medium text-brand-text mb-1">
+                CMS Type
+              </label>
+              <select
+                id="cms-type"
+                value={cmsType}
+                onChange={(e) => setCmsType(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-brand-bg border border-brand-border text-sm text-brand-text focus:outline-none focus:border-brand-accent"
+              >
+                {CMS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="recrawl-schedule" className="block text-sm font-medium text-brand-text mb-1">
+                Re-crawl Schedule
+              </label>
+              <select
+                id="recrawl-schedule"
+                value={recrawlSchedule}
+                onChange={(e) => setRecrawlSchedule(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-brand-bg border border-brand-border text-sm text-brand-text focus:outline-none focus:border-brand-accent"
+              >
+                {RECRAWL_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => void handleSaveSiteSettings()}
+              disabled={savingSiteSettings}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-accent text-white text-sm font-medium hover:bg-brand-accent/90 transition-colors disabled:opacity-50"
+            >
+              {savingSiteSettings && <Spinner size="sm" />}
+              Save Site Settings
+            </button>
+          </div>
+        </Card>
+      </div>
+
+      {/* Notifications Tab */}
+      <div
+        role="tabpanel"
+        id="panel-notifications"
+        aria-labelledby="tab-notifications"
+        hidden={activeTab !== 'notifications'}
+        className="space-y-6"
+      >
+        <Card>
+          <h2 className="text-base font-semibold text-brand-text mb-4 flex items-center gap-2">
+            <Bell size={18} className="text-brand-accent" />
+            Email Digest
+          </h2>
+          <fieldset>
+            <legend className="block text-sm font-medium text-brand-text mb-3">
+              How often would you like to receive email digests?
+            </legend>
+            <div className="space-y-2">
+              {DIGEST_OPTIONS.map((option) => (
+                <label
+                  key={option}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-brand-surface-hover cursor-pointer transition-colors"
+                >
+                  <input
+                    type="radio"
+                    name="digest-frequency"
+                    value={option}
+                    checked={digestFrequency === option}
+                    onChange={(e) => setDigestFrequency(e.target.value)}
+                    className="w-4 h-4 text-brand-accent border-brand-border focus:ring-2 focus:ring-brand-accent focus:ring-offset-2 focus:ring-offset-brand-bg"
+                  />
+                  <span className="text-sm text-brand-text">{option}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="mt-4">
+            <button
+              onClick={() => void handleSaveNotifications()}
+              disabled={savingNotifications}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-accent text-white text-sm font-medium hover:bg-brand-accent/90 transition-colors disabled:opacity-50"
+            >
+              {savingNotifications && <Spinner size="sm" />}
+              Save Notification Preferences
+            </button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

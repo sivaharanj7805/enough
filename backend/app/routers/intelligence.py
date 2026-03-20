@@ -581,6 +581,46 @@ async def get_site_health(
     )
 
 
+@router.get("/{site_id}/intelligence/health/history")
+async def get_health_history(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    limit: int = 90,
+):
+    """Get health score history for trend analysis.
+
+    Returns an array of {score, factor_scores, analyzed_at} sorted newest-first.
+    """
+    await _verify_site(site_id, user_id, db)
+
+    rows = await db.fetch(
+        """SELECT score, factor_scores, analyzed_at
+           FROM health_score_history
+           WHERE site_id = $1
+           ORDER BY analyzed_at DESC
+           LIMIT $2""",
+        site_id, min(limit, 365),
+    )
+
+    import json
+    results = []
+    for r in rows:
+        factors = r["factor_scores"]
+        if isinstance(factors, str):
+            try:
+                factors = json.loads(factors)
+            except (json.JSONDecodeError, TypeError):
+                factors = {}
+        results.append({
+            "score": float(r["score"]),
+            "factor_scores": factors or {},
+            "analyzed_at": r["analyzed_at"].isoformat() if r["analyzed_at"] else None,
+        })
+
+    return results
+
+
 @router.get(
     "/{site_id}/intelligence/consolidation",
     response_model=list[ConsolidationPlanResponse],
