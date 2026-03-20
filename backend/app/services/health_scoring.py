@@ -145,6 +145,47 @@ class HealthScorer:
             )
             total_scored += scored
 
+        # Record health score snapshot in history table
+        if total_scored > 0:
+            try:
+                import json
+                avg_score = await db.fetchval(
+                    """SELECT AVG(phs.composite_score)
+                       FROM post_health_scores phs
+                       JOIN posts p ON p.id = phs.post_id
+                       WHERE p.site_id = $1""",
+                    site_id,
+                )
+                factor_row = await db.fetchrow(
+                    """SELECT
+                        ROUND(AVG(phs.engagement_score)::numeric, 2) AS engagement,
+                        ROUND(AVG(phs.freshness_score)::numeric, 2) AS freshness,
+                        ROUND(AVG(phs.content_depth_score)::numeric, 2) AS content_depth,
+                        ROUND(AVG(phs.internal_link_score * 100)::numeric, 2) AS internal_links,
+                        ROUND(AVG(phs.technical_seo_score)::numeric, 2) AS technical_seo,
+                        ROUND(AVG(phs.ranking_strength * 100)::numeric, 2) AS ranking,
+                        ROUND(AVG(phs.traffic_contribution * 100)::numeric, 2) AS traffic
+                       FROM post_health_scores phs
+                       JOIN posts p ON p.id = phs.post_id
+                       WHERE p.site_id = $1""",
+                    site_id,
+                )
+                factor_scores = {}
+                if factor_row:
+                    for key in ("engagement", "freshness", "content_depth",
+                                "internal_links", "technical_seo", "ranking", "traffic"):
+                        val = factor_row[key]
+                        factor_scores[key] = float(val) if val is not None else None
+
+                await db.execute(
+                    """INSERT INTO health_score_history (site_id, score, factor_scores, analyzed_at)
+                       VALUES ($1, $2, $3, NOW())""",
+                    site_id, float(avg_score or 0), json.dumps(factor_scores),
+                )
+                logger.info("Recorded health score history for site %s: %.1f", site_id, avg_score or 0)
+            except Exception as e:
+                logger.warning("Failed to record health score history for site %s: %s", site_id, e)
+
         logger.info(
             "Health scoring complete for site %s — %d posts scored (ga4=%s, gsc=%s)",
             site_id, total_scored, has_ga4, has_gsc,
@@ -742,7 +783,7 @@ def _technical_seo_score(
         score += pts
 
     # 8. Canonical tag
-    if html and 'rel="canonical"' in html or "rel='canonical'" in (body_html or "").lower():
+    if html and ('rel="canonical"' in html or "rel='canonical'" in html):
         score += pts
 
     return min(100.0, score)

@@ -21,7 +21,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/v1';
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '') + '/v1';
 const TOKEN = '11111111-1111-1111-1111-111111111111';
 const SITE_ID = '32296e5d-7924-4d9f-92b8-7f774c634fad';
 

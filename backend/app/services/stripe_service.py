@@ -15,9 +15,10 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Tier limits
+# Tier limits — paid-only product, no free tier
+# "free" = unsubscribed user, blocked from everything until they pay
 TIER_LIMITS = {
-    "free": {"sites": 1, "posts": 50, "consolidations_per_month": 0, "oracle": False},
+    "free": {"sites": 0, "posts": 0, "consolidations_per_month": 0, "oracle": False},
     "growth": {"sites": 1, "posts": 500, "consolidations_per_month": 5, "oracle": True},
     "scale": {"sites": 10, "posts": 5000, "consolidations_per_month": -1, "oracle": True},
 }
@@ -30,6 +31,23 @@ class StripeService:
         settings = get_settings()
         stripe.api_key = settings.stripe_secret_key
 
+    def _resolve_price_id(self, price_id: str) -> str:
+        """Resolve a tier name ('growth', 'scale') to a real Stripe price ID.
+
+        Accepts either a tier name or a raw Stripe price ID (price_xxx).
+        """
+        if price_id.startswith("price_"):
+            return price_id  # Already a real Stripe price ID
+        settings = get_settings()
+        mapping = {
+            "growth": settings.stripe_price_growth,
+            "scale": settings.stripe_price_scale,
+        }
+        resolved = mapping.get(price_id)
+        if not resolved:
+            raise ValueError(f"Unknown price tier: {price_id}. Use 'growth' or 'scale'.")
+        return resolved
+
     async def create_checkout_session(
         self,
         db: asyncpg.Connection,
@@ -39,6 +57,9 @@ class StripeService:
         cancel_url: str,
     ) -> str:
         """Create a Stripe checkout session and return the URL."""
+        # Resolve tier name to actual Stripe price ID
+        stripe_price_id = self._resolve_price_id(price_id)
+
         # Get or create Stripe customer
         profile = await db.fetchrow(
             "SELECT email, stripe_customer_id FROM profiles WHERE id = $1::uuid",
@@ -65,7 +86,7 @@ class StripeService:
             stripe.checkout.Session.create,
             customer=customer_id,
             payment_method_types=["card"],
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=[{"price": stripe_price_id, "quantity": 1}],
             mode="subscription",
             success_url=success_url,
             cancel_url=cancel_url,
@@ -77,7 +98,11 @@ class StripeService:
     async def handle_webhook(
         self, db: asyncpg.Connection, payload: bytes, sig_header: str
     ) -> None:
-        """Process a Stripe webhook event."""
+        """Process a Stripe webhook event with idempotency protection.
+
+        Uses the Stripe event ID to prevent duplicate processing. If the DB
+        write fails, the event will be retried by Stripe (up to 3 days).
+        """
         settings = get_settings()
 
         try:
@@ -89,73 +114,131 @@ class StripeService:
             logger.error("Invalid Stripe webhook signature")
             raise ValueError("Invalid signature")
 
+        event_id = event["id"]
         event_type = event["type"]
         data = event["data"]["object"]
 
-        logger.info("Stripe webhook: %s", event_type)
+        logger.info("Stripe webhook: %s (event_id=%s)", event_type, event_id)
 
-        if event_type == "checkout.session.completed":
-            user_id = data.get("metadata", {}).get("user_id")
-            subscription_id = data.get("subscription")
-            customer_id = data.get("customer")
-            if user_id and subscription_id:
-                # Determine tier from price
-                sub = await asyncio.to_thread(
-                    stripe.Subscription.retrieve, subscription_id
-                )
-                price_id = sub["items"]["data"][0]["price"]["id"]
+        # Idempotency: skip if we already processed this event
+        already = await db.fetchval(
+            "SELECT 1 FROM webhook_events WHERE event_id = $1", event_id
+        )
+        if already:
+            logger.info("Skipping duplicate webhook event %s", event_id)
+            return
+
+        # Process the event inside a transaction so either all writes succeed or none
+        async with db.transaction():
+            # Record the event for idempotency
+            await db.execute(
+                "INSERT INTO webhook_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT (event_id) DO NOTHING",
+                event_id,
+                event_type,
+            )
+
+            if event_type == "checkout.session.completed":
+                user_id = data.get("metadata", {}).get("user_id")
+                subscription_id = data.get("subscription")
+                customer_id = data.get("customer")
+                if user_id and subscription_id:
+                    sub = await asyncio.to_thread(
+                        stripe.Subscription.retrieve, subscription_id
+                    )
+                    price_id = sub["items"]["data"][0]["price"]["id"]
+                    tier = self._price_to_tier(price_id)
+                    await db.execute(
+                        """UPDATE profiles
+                           SET stripe_subscription_id = $1,
+                               stripe_customer_id = $2,
+                               subscription_status = $3
+                           WHERE id = $4::uuid""",
+                        subscription_id,
+                        customer_id,
+                        tier,
+                        user_id,
+                    )
+                    logger.info("Activated %s subscription for user %s", tier, user_id)
+
+            elif event_type == "customer.subscription.updated":
+                subscription_id = data.get("id")
+                price_id = data["items"]["data"][0]["price"]["id"]
                 tier = self._price_to_tier(price_id)
+                current_period_end = data.get("current_period_end")
+
                 await db.execute(
                     """UPDATE profiles
-                       SET stripe_subscription_id = $1,
-                           stripe_customer_id = $2,
-                           subscription_status = $3
-                       WHERE id = $4::uuid""",
-                    subscription_id,
-                    customer_id,
+                       SET subscription_status = $1,
+                           subscription_ends_at = TO_TIMESTAMP($2)
+                       WHERE stripe_subscription_id = $3""",
                     tier,
-                    user_id,
+                    current_period_end,
+                    subscription_id,
                 )
-                logger.info("Activated %s subscription for user %s", tier, user_id)
 
-        elif event_type == "customer.subscription.updated":
-            subscription_id = data.get("id")
-            price_id = data["items"]["data"][0]["price"]["id"]
-            tier = self._price_to_tier(price_id)
-            current_period_end = data.get("current_period_end")
-
-            await db.execute(
-                """UPDATE profiles
-                   SET subscription_status = $1,
-                       subscription_ends_at = TO_TIMESTAMP($2)
-                   WHERE stripe_subscription_id = $3""",
-                tier,
-                current_period_end,
-                subscription_id,
-            )
-
-        elif event_type == "customer.subscription.deleted":
-            subscription_id = data.get("id")
-            await db.execute(
-                """UPDATE profiles
-                   SET subscription_status = 'free',
-                       stripe_subscription_id = NULL,
-                       subscription_ends_at = NULL
-                   WHERE stripe_subscription_id = $1""",
-                subscription_id,
-            )
-            logger.info("Subscription %s cancelled, downgraded to free", subscription_id)
-
-        elif event_type == "invoice.payment_failed":
-            subscription_id = data.get("subscription")
-            if subscription_id:
+            elif event_type == "customer.subscription.deleted":
+                subscription_id = data.get("id")
+                # Get user info before downgrading
+                profile = await db.fetchrow(
+                    "SELECT id, email FROM profiles WHERE stripe_subscription_id = $1",
+                    subscription_id,
+                )
                 await db.execute(
                     """UPDATE profiles
-                       SET subscription_status = 'past_due'
+                       SET subscription_status = 'free',
+                           stripe_subscription_id = NULL,
+                           subscription_ends_at = NULL
                        WHERE stripe_subscription_id = $1""",
                     subscription_id,
                 )
-                logger.warning("Payment failed for subscription %s", subscription_id)
+                logger.info("Subscription %s cancelled, downgraded to free", subscription_id)
+
+                # Send cancellation confirmation email and schedule win-back sequence
+                if profile and profile["email"]:
+                    await self._send_cancellation_email(profile["email"])
+                    await self._schedule_winback(
+                        db, str(profile["id"]), profile["email"],
+                    )
+
+            elif event_type == "customer.subscription.paused":
+                subscription_id = data.get("id")
+                await db.execute(
+                    """UPDATE profiles
+                       SET subscription_status = 'paused'
+                       WHERE stripe_subscription_id = $1""",
+                    subscription_id,
+                )
+                logger.info("Subscription %s paused", subscription_id)
+
+            elif event_type == "invoice.payment_failed":
+                subscription_id = data.get("subscription")
+                if subscription_id:
+                    # Implement 7-day grace period: set past_due with grace deadline
+                    # Don't immediately lock out — give 7 days to fix payment
+                    from datetime import datetime, timezone, timedelta
+                    grace_deadline = datetime.now(timezone.utc) + timedelta(days=7)
+                    await db.execute(
+                        """UPDATE profiles
+                           SET subscription_status = 'past_due',
+                               grace_period_ends_at = $1
+                           WHERE stripe_subscription_id = $2
+                             AND subscription_status != 'free'""",
+                        grace_deadline, subscription_id,
+                    )
+                    logger.warning(
+                        "Payment failed for subscription %s — 7-day grace period until %s",
+                        subscription_id, grace_deadline.isoformat(),
+                    )
+
+                    # Send payment failure notification
+                    profile = await db.fetchrow(
+                        "SELECT email FROM profiles WHERE stripe_subscription_id = $1",
+                        subscription_id,
+                    )
+                    if profile and profile["email"]:
+                        await self._send_payment_failed_email(
+                            profile["email"], grace_deadline,
+                        )
 
     def _price_to_tier(self, price_id: str) -> str:
         """Map a Stripe price ID to a tier name."""
@@ -164,7 +247,8 @@ class StripeService:
             return "growth"
         elif price_id == settings.stripe_price_scale:
             return "scale"
-        return "growth"  # default if unknown
+        logger.error("Unknown Stripe price_id: %s — defaulting to free", price_id)
+        return "free"  # safe default — never grant paid access for unknown IDs
 
     async def get_subscription(
         self, db: asyncpg.Connection, user_id: str
@@ -213,6 +297,286 @@ class StripeService:
         )
         return session.url
 
+    async def _send_cancellation_email(self, email: str) -> None:
+        """Send a cancellation confirmation email."""
+        settings = get_settings()
+        if not settings.resend_api_key:
+            return
+        try:
+            import resend
+            resend.api_key = settings.resend_api_key
+            await asyncio.to_thread(
+                resend.Emails.send,
+                {
+                    "from": settings.email_from,
+                    "to": [email],
+                    "subject": "Your Enough subscription has been cancelled",
+                    "html": """
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+  </div>
+  <h2 style="font-size:18px;">We're sorry to see you go</h2>
+  <p>Your Enough subscription has been cancelled. Your data will remain available for 30 days.</p>
+  <p>If this was a mistake, you can resubscribe anytime at <a href="https://enough.app/pricing" style="color:#22c55e;">enough.app/pricing</a>.</p>
+  <p style="color:#94a3b8;font-size:13px;">Your content ecosystem won't monitor itself — we'll be here when you're ready to come back.</p>
+  <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
+    Enough — Publish Less. Grow More.
+  </div>
+</div>""",
+                },
+            )
+            logger.info("Cancellation confirmation sent to %s", email)
+        except Exception as e:
+            logger.error("Failed to send cancellation email to %s: %s", email, e)
+
+    async def _send_payment_failed_email(
+        self, email: str, grace_deadline,
+    ) -> None:
+        """Send payment failure notification with grace period info."""
+        settings = get_settings()
+        if not settings.resend_api_key:
+            return
+        try:
+            import resend
+            resend.api_key = settings.resend_api_key
+            deadline_str = grace_deadline.strftime("%B %d, %Y")
+            await asyncio.to_thread(
+                resend.Emails.send,
+                {
+                    "from": settings.email_from,
+                    "to": [email],
+                    "subject": "Action needed: payment failed for your Enough subscription",
+                    "html": f"""
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+  </div>
+  <h2 style="font-size:18px;color:#f97316;">Payment Failed</h2>
+  <p>We were unable to process your latest payment. Your account remains active until <strong>{deadline_str}</strong> (7-day grace period).</p>
+  <p>Please update your payment method to avoid losing access:</p>
+  <div style="text-align:center;margin:20px 0;">
+    <a href="https://enough.app/settings/billing" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Update Payment Method &rarr;</a>
+  </div>
+  <p style="color:#94a3b8;font-size:13px;">If your payment isn't updated by {deadline_str}, your account will be downgraded.</p>
+  <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
+    Enough — Publish Less. Grow More.
+  </div>
+</div>""",
+                },
+            )
+        except Exception as e:
+            logger.error("Failed to send payment failed email to %s: %s", email, e)
+
+    async def _schedule_winback(
+        self, db: asyncpg.Connection, user_id: str, email: str,
+    ) -> None:
+        """Schedule win-back email sequence after cancellation."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        try:
+            await db.execute(
+                """INSERT INTO winback_emails (user_id, email, cancelled_at)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (user_id) DO UPDATE SET
+                       cancelled_at = $3,
+                       day_7_sent_at = NULL,
+                       day_30_sent_at = NULL,
+                       day_60_sent_at = NULL""",
+                user_id, email, now,
+            )
+            logger.info("Win-back sequence scheduled for user %s", user_id)
+        except Exception as e:
+            logger.error("Failed to schedule win-back for user %s: %s", user_id, e)
+
+    async def process_winback_emails(self, db: asyncpg.Connection) -> int:
+        """Process pending win-back emails. Called by cron.
+
+        Sends:
+        - Day 7: "Your content health has gone unchecked for a week"
+        - Day 30: "Here's what changed on your blog since you left"
+        - Day 60: Final attempt with discount offer
+        """
+        from datetime import datetime, timezone, timedelta
+        settings = get_settings()
+        if not settings.resend_api_key:
+            return 0
+
+        now = datetime.now(timezone.utc)
+        sent = 0
+
+        # Day 7 win-backs
+        day7_rows = await db.fetch(
+            """SELECT id, user_id, email, cancelled_at FROM winback_emails
+               WHERE day_7_sent_at IS NULL
+                 AND cancelled_at <= $1
+                 AND cancelled_at > $2""",
+            now - timedelta(days=7),
+            now - timedelta(days=30),
+        )
+        for row in day7_rows:
+            if await self._send_winback_day7(row["email"]):
+                await db.execute(
+                    "UPDATE winback_emails SET day_7_sent_at = $1 WHERE id = $2",
+                    now, row["id"],
+                )
+                sent += 1
+
+        # Day 30 win-backs
+        day30_rows = await db.fetch(
+            """SELECT id, user_id, email, cancelled_at FROM winback_emails
+               WHERE day_7_sent_at IS NOT NULL
+                 AND day_30_sent_at IS NULL
+                 AND cancelled_at <= $1
+                 AND cancelled_at > $2""",
+            now - timedelta(days=30),
+            now - timedelta(days=60),
+        )
+        for row in day30_rows:
+            if await self._send_winback_day30(row["email"]):
+                await db.execute(
+                    "UPDATE winback_emails SET day_30_sent_at = $1 WHERE id = $2",
+                    now, row["id"],
+                )
+                sent += 1
+
+        # Day 60 win-backs (final attempt with discount)
+        day60_rows = await db.fetch(
+            """SELECT id, user_id, email, cancelled_at FROM winback_emails
+               WHERE day_30_sent_at IS NOT NULL
+                 AND day_60_sent_at IS NULL
+                 AND cancelled_at <= $1
+                 AND cancelled_at > $2""",
+            now - timedelta(days=60),
+            now - timedelta(days=90),
+        )
+        for row in day60_rows:
+            if await self._send_winback_day60(row["email"]):
+                await db.execute(
+                    "UPDATE winback_emails SET day_60_sent_at = $1 WHERE id = $2",
+                    now, row["id"],
+                )
+                sent += 1
+
+        logger.info("Win-back emails processed: %d sent", sent)
+        return sent
+
+    async def _send_winback_day7(self, email: str) -> bool:
+        """Day 7: Your content health has gone unchecked for a week."""
+        settings = get_settings()
+        try:
+            import resend
+            resend.api_key = settings.resend_api_key
+            await asyncio.to_thread(
+                resend.Emails.send,
+                {
+                    "from": settings.email_from,
+                    "to": [email],
+                    "subject": "Your content health has gone unchecked for a week",
+                    "html": """
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+  </div>
+  <h2 style="font-size:18px;">It's been a week.</h2>
+  <p>Since you cancelled, your blog's content ecosystem has been running unmonitored. New cannibalization pairs could be forming. Orphan posts are accumulating. Your competitors aren't waiting.</p>
+  <p>Your health score, recommendations, and ecosystem map are still available — just pick up where you left off.</p>
+  <div style="text-align:center;margin:20px 0;">
+    <a href="https://enough.app/pricing" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+  </div>
+  <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
+    <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    &bull; Enough — Publish Less. Grow More.
+  </div>
+</div>""",
+                },
+            )
+            return True
+        except Exception as e:
+            logger.error("Win-back day 7 email failed for %s: %s", email, e)
+            return False
+
+    async def _send_winback_day30(self, email: str) -> bool:
+        """Day 30: Here's what changed on your blog since you left."""
+        settings = get_settings()
+        try:
+            import resend
+            resend.api_key = settings.resend_api_key
+            await asyncio.to_thread(
+                resend.Emails.send,
+                {
+                    "from": settings.email_from,
+                    "to": [email],
+                    "subject": "Here's what changed on your blog since you left",
+                    "html": """
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+  </div>
+  <h2 style="font-size:18px;">A lot can change in a month.</h2>
+  <p>Google's algorithms have updated. Your competitors have published new content. Rankings have shifted. Content decay doesn't pause when you stop monitoring.</p>
+  <p>Without Enough, you're flying blind:</p>
+  <ul>
+    <li>No cannibalization alerts when new posts start competing</li>
+    <li>No decay detection when rankings slip</li>
+    <li>No consolidation recommendations to recover lost traffic</li>
+    <li>No ecosystem health tracking</li>
+  </ul>
+  <p>Come back and see what's changed.</p>
+  <div style="text-align:center;margin:20px 0;">
+    <a href="https://enough.app/pricing" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+  </div>
+  <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
+    <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    &bull; Enough
+  </div>
+</div>""",
+                },
+            )
+            return True
+        except Exception as e:
+            logger.error("Win-back day 30 email failed for %s: %s", email, e)
+            return False
+
+    async def _send_winback_day60(self, email: str) -> bool:
+        """Day 60: Final attempt with discount offer."""
+        settings = get_settings()
+        try:
+            import resend
+            resend.api_key = settings.resend_api_key
+            await asyncio.to_thread(
+                resend.Emails.send,
+                {
+                    "from": settings.email_from,
+                    "to": [email],
+                    "subject": "Final offer: 30% off Enough for 3 months",
+                    "html": """
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+  </div>
+  <h2 style="font-size:18px;">We'd like you back.</h2>
+  <p>It's been 2 months since you left Enough. We've been improving the platform — better recommendations, faster analysis, and new AI readiness scoring.</p>
+  <div style="background:#111827;padding:20px;border-radius:8px;text-align:center;margin:20px 0;border:1px solid #22c55e;">
+    <div style="color:#22c55e;font-size:24px;font-weight:700;">30% off for 3 months</div>
+    <div style="color:#94a3b8;font-size:14px;margin-top:8px;">$69/month instead of $99 — just use code COMEBACK30</div>
+  </div>
+  <p>This is our last email. If you'd like to come back, the offer is valid for 14 days.</p>
+  <div style="text-align:center;margin:20px 0;">
+    <a href="https://enough.app/pricing?coupon=COMEBACK30" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Claim 30% Off &rarr;</a>
+  </div>
+  <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
+    <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    &bull; Enough
+  </div>
+</div>""",
+                },
+            )
+            return True
+        except Exception as e:
+            logger.error("Win-back day 60 email failed for %s: %s", email, e)
+            return False
+
     async def check_usage_limits(
         self, db: asyncpg.Connection, user_id: str, feature: str
     ) -> bool:
@@ -220,7 +584,19 @@ class StripeService:
         sub = await self.get_subscription(db, user_id)
         tier = sub["tier"]
         if tier == "past_due":
-            tier = "free"  # Downgrade for past_due
+            # Check grace period: allow access during 7-day grace window
+            from datetime import datetime, timezone
+            grace_row = await db.fetchrow(
+                "SELECT grace_period_ends_at FROM profiles WHERE id = $1::uuid",
+                user_id,
+            )
+            grace_ends = grace_row["grace_period_ends_at"] if grace_row else None
+            if grace_ends and grace_ends > datetime.now(timezone.utc):
+                tier = "growth"  # Still in grace period — keep access
+            else:
+                tier = "free"  # Grace period expired — lock out
+        if tier == "paused":
+            tier = "free"  # Paused subscriptions have no access
 
         limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
 

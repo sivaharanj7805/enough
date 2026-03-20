@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.dependencies import get_current_user_id
+from app.dependencies import get_current_user_id, require_site_limit
 from app.models.schemas import SiteCreate, SiteResponse, SiteListResponse
 from app.utils.encryption import encrypt_value
 
@@ -61,6 +61,7 @@ async def create_site(
     body: SiteCreate,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    _tier: None = Depends(require_site_limit),
 ):
     """Add a new site for crawling."""
     # Validate URLs to prevent SSRF attacks against internal infrastructure
@@ -149,7 +150,7 @@ async def store_google_token(
     """Store an encrypted Google refresh token for GA4/GSC access."""
     encrypted_token = encrypt_value(body.refresh_token)
     result = await db.execute(
-        "UPDATE sites SET google_refresh_token = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+        "UPDATE sites SET google_tokens = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
         encrypted_token, site_id, user_id,
     )
     if result == "UPDATE 0":
@@ -161,5 +162,5 @@ def _sanitize_site_response(row) -> SiteResponse:
     """Build a SiteResponse, stripping encrypted fields from output."""
     data = dict(row)
     data.pop("wordpress_app_password", None)
-    data.pop("google_refresh_token", None)
+    data.pop("google_tokens", None)
     return SiteResponse(**data)

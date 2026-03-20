@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     # Google OAuth
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
-    frontend_url: str = "http://localhost:3000"
+    google_redirect_uri: str = ""
+    frontend_url: str = ""
 
     # OpenAI
     openai_api_key: str = ""
@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # App
     secret_key: str = "change-me-in-production"
     cors_origins: str = "http://localhost:3000"
+
+    # Database pool tuning
+    db_pool_min_size: int = 2
+    db_pool_max_size: int = 10
 
     # Monitoring
     sentry_dsn: str = ""
@@ -99,6 +103,37 @@ def validate_production(settings: "Settings | None" = None) -> None:
         errors.append(
             "CRON_SECRET is not set — cron endpoints are unprotected in production"
         )
+
+    if not settings.stripe_secret_key:
+        errors.append("STRIPE_SECRET_KEY is required in production")
+
+    if not settings.stripe_webhook_secret:
+        errors.append("STRIPE_WEBHOOK_SECRET is required in production")
+
+    if not settings.stripe_price_growth:
+        errors.append("STRIPE_PRICE_GROWTH is required — create a Stripe price and set the ID")
+
+    if not settings.resend_api_key:
+        errors.append("RESEND_API_KEY is required in production — weekly reports need email delivery")
+
+    if not settings.sentry_dsn:
+        _log.warning("SENTRY_DSN is not set — error monitoring is disabled in production")
+
+    if not settings.openai_api_key:
+        errors.append("OPENAI_API_KEY is required in production — embeddings will fail")
+
+    if not settings.anthropic_api_key:
+        errors.append("ANTHROPIC_API_KEY is required in production — Oracle and consolidation will fail")
+
+    if not settings.frontend_url:
+        errors.append("FRONTEND_URL is required in production")
+    elif settings.frontend_url.startswith("http://localhost"):
+        _log.warning("FRONTEND_URL points to localhost in production")
+
+    if not settings.google_redirect_uri:
+        _log.warning("GOOGLE_REDIRECT_URI is not set — Google OAuth will not work")
+    elif settings.google_redirect_uri.startswith("http://localhost"):
+        _log.warning("GOOGLE_REDIRECT_URI points to localhost in production")
 
     if "*" in settings.cors_origin_list:
         _log.warning(

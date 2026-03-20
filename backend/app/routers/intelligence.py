@@ -13,7 +13,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id
+from app.dependencies import get_current_user_id, require_oracle, require_consolidation
 
 limiter = Limiter(key_func=get_remote_address)
 from app.models.schemas import (
@@ -581,6 +581,46 @@ async def get_site_health(
     )
 
 
+@router.get("/{site_id}/intelligence/health/history")
+async def get_health_history(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    limit: int = 90,
+):
+    """Get health score history for trend analysis.
+
+    Returns an array of {score, factor_scores, analyzed_at} sorted newest-first.
+    """
+    await _verify_site(site_id, user_id, db)
+
+    rows = await db.fetch(
+        """SELECT score, factor_scores, analyzed_at
+           FROM health_score_history
+           WHERE site_id = $1
+           ORDER BY analyzed_at DESC
+           LIMIT $2""",
+        site_id, min(limit, 365),
+    )
+
+    import json
+    results = []
+    for r in rows:
+        factors = r["factor_scores"]
+        if isinstance(factors, str):
+            try:
+                factors = json.loads(factors)
+            except (json.JSONDecodeError, TypeError):
+                factors = {}
+        results.append({
+            "score": float(r["score"]),
+            "factor_scores": factors or {},
+            "analyzed_at": r["analyzed_at"].isoformat() if r["analyzed_at"] else None,
+        })
+
+    return results
+
+
 @router.get(
     "/{site_id}/intelligence/consolidation",
     response_model=list[ConsolidationPlanResponse],
@@ -633,6 +673,7 @@ async def generate_consolidation_draft(
     cluster_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    _tier: None = Depends(require_consolidation),
 ):
     """Generate an AI-merged consolidation draft for a cluster."""
     await _verify_site(site_id, user_id, db)
@@ -673,6 +714,7 @@ async def oracle_check(
     body: OracleRequest,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    _tier: None = Depends(require_oracle),
 ):
     """Pre-publish oracle — check new content against the existing ecosystem."""
     await _verify_site(site_id, user_id, db)
@@ -1197,17 +1239,19 @@ async def quick_scan(
         import time
         t0 = time.time()
         try:
-            from app.services.health_scoring import HealthScoringService
-            from app.services.problem_detection import ProblemDetectionService
+            from app.services.health_scoring import HealthScorer
+            from app.services.problem_detection import ProblemDetector
             from app.services.fast_recommendations import generate_fast_recommendations
 
-            hs = HealthScoringService()
-            await hs.score_site(db, site_id)
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                hs = HealthScorer()
+                await hs.score_site(conn, site_id)
 
-            pd = ProblemDetectionService()
-            await pd.detect_problems(db, site_id)
+                pd = ProblemDetector()
+                await pd.detect_all(conn, site_id)
 
-            await generate_fast_recommendations(db, site_id)
+                await generate_fast_recommendations(conn, site_id)
             logger.info("Quick scan complete for %s in %.1fs", site_id, time.time() - t0)
         except Exception as e:
             logger.error("Quick scan failed for %s: %s", site_id, e)

@@ -26,7 +26,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-enough}
       ENVIRONMENT: development
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SUPABASE_URL: ${SUPABASE_URL:-}
@@ -38,8 +38,9 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      CORS_ORIGINS: http://localhost:3000
-      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       postgres:
@@ -61,7 +62,7 @@ services:
     environment:
       NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:-}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_KEY:-}
-      NEXT_PUBLIC_API_URL: http://localhost:8000/v1
+      NEXT_PUBLIC_API_URL: http://backend:8000/v1
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
     depends_on:
       - backend

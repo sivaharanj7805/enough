@@ -84,9 +84,10 @@ class EcosystemVoice:
             if pillar:
                 pillar_title = pillar["title"] or topic
                 if pillar["publish_date"]:
-                    delta = datetime.now(timezone.utc) - pillar["publish_date"].replace(
-                        tzinfo=timezone.utc
-                    )
+                    pub_date = pillar["publish_date"]
+                    if pub_date.tzinfo is None:
+                        pub_date = pub_date.replace(tzinfo=timezone.utc)
+                    delta = datetime.now(timezone.utc) - pub_date
                     age_months = max(1, delta.days // 30)
 
             supporter_count = await db.fetchval(

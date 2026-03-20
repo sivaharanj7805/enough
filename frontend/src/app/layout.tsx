@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { SiteProvider } from '@/providers/SiteProvider';
+import { ToastProvider } from '@/components/ui/Toast';
+import { CookieConsent } from '@/components/ui/CookieConsent';
 
 const APP_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://enough.app';
 
@@ -59,11 +61,20 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-brand-bg text-brand-text antialiased">
-        <AuthProvider>
-          <SiteProvider>
-            {children}
-          </SiteProvider>
-        </AuthProvider>
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-brand-accent focus:text-white focus:rounded-lg"
+        >
+          Skip to main content
+        </a>
+        <ToastProvider>
+          <AuthProvider>
+            <SiteProvider>
+              {children}
+              <CookieConsent />
+            </SiteProvider>
+          </AuthProvider>
+        </ToastProvider>
       </body>
     </html>
   );

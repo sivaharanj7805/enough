@@ -241,7 +241,7 @@ class TopicClusterer:
             # making subtle differences visible to HDBSCAN.
             # Low min_dist on a tight niche collapses everything into one blob.
             min_dist = 0.25
-            n_neighbors = min(5, n_posts - 1)
+            n_neighbors = min(5, max(1, n_posts - 1))
             logger.info("Tight niche detected (%.3f) — using min_dist=0.25, n_neighbors=%d", mean_sim, n_neighbors)
         elif mean_sim > 0.50:
             min_dist = 0.1
@@ -381,8 +381,8 @@ class TopicClusterer:
         )
 
         n = len(post_ids)
-        n_components = min(10, n - 2)
-        n_neighbors = min(10, n - 1)
+        n_components = min(10, max(2, n - 2))
+        n_neighbors = min(10, max(1, n - 1))
 
         # Tighter UMAP params for sub-clustering within a niche
         reducer = umap.UMAP(

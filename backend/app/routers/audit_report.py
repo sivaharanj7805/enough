@@ -2,22 +2,39 @@
 
 Returns a structured JSON report for a site that can be rendered
 as a public shareable page or exported to PDF.
+
+Includes a public PDF audit endpoint (no auth) that accepts URL + email,
+enforces a 50-post limit and rate limits (3 per email per day).
 """
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from typing import Annotated
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi.responses import Response
+from pydantic import BaseModel, EmailStr
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
-from app.database import get_db
+from app.database import get_db, get_pool
 from app.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
+MAX_AUDIT_POSTS = 50
+MAX_AUDITS_PER_EMAIL_PER_DAY = 3
+
+
+class AuditPDFRequest(BaseModel):
+    """Public audit PDF request — no auth required."""
+    url: str
+    email: EmailStr
 
 
 class AuditTopPost(BaseModel):
@@ -122,7 +139,7 @@ async def get_audit_report(
     ) or 0
     orphan_count = await db.fetchval(
         "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id "
-        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan_post'",
+        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan'",
         site_id,
     ) or 0
     thin_count = await db.fetchval(
@@ -332,3 +349,197 @@ async def get_audit_report(
         headline=headline,
         key_findings=key_findings,
     )
+
+
+# ──────────────── Public PDF Audit Endpoint (no auth) ────────────────
+
+
+async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site: dict) -> dict:
+    """Build audit report data dict for a site (reusable by PDF + JSON endpoints)."""
+    total_posts = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id = $1", site_id) or 0
+    overall_health = await db.fetchval(
+        "SELECT AVG(composite_score) FROM post_health_scores phs JOIN posts p ON p.id = phs.post_id WHERE p.site_id = $1",
+        site_id,
+    ) or 0
+    cluster_count = await db.fetchval(
+        "SELECT COUNT(*) FROM clusters WHERE site_id = $1 AND parent_cluster_id IS NULL", site_id
+    ) or 0
+    problem_count = await db.fetchval(
+        "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id WHERE p.site_id = $1",
+        site_id,
+    ) or 0
+    rec_count = await db.fetchval("SELECT COUNT(*) FROM recommendations WHERE site_id = $1", site_id) or 0
+    cann_pair_count = await db.fetchval(
+        "SELECT COUNT(*) FROM cannibalization_pairs cp JOIN clusters cl ON cl.id = cp.cluster_id WHERE cl.site_id = $1",
+        site_id,
+    ) or 0
+    orphan_count = await db.fetchval(
+        "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id "
+        "WHERE p.site_id = $1 AND cp.problem_type = 'orphan'",
+        site_id,
+    ) or 0
+    thin_count = await db.fetchval(
+        "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id "
+        "WHERE p.site_id = $1 AND cp.problem_type = 'thin_content'",
+        site_id,
+    ) or 0
+    exact_dup_count = await db.fetchval(
+        "SELECT COUNT(*) FROM cannibalization_pairs cp JOIN clusters cl ON cl.id = cp.cluster_id "
+        "WHERE cl.site_id = $1 AND cp.cosine_similarity >= 0.99",
+        site_id,
+    ) or 0
+
+    # Worst posts
+    worst_rows = await db.fetch(
+        """SELECT p.title, p.url, phs.composite_score, phs.role, cp.problem_type
+           FROM posts p
+           JOIN post_health_scores phs ON phs.post_id = p.id
+           LEFT JOIN content_problems cp ON cp.post_id = p.id
+           WHERE p.site_id = $1
+           ORDER BY phs.composite_score ASC NULLS LAST
+           LIMIT 5""",
+        site_id,
+    )
+    worst_posts = [
+        {"title": r["title"] or "", "url": r["url"] or "",
+         "health_score": round(r["composite_score"] or 0),
+         "role": r["role"] or "dead_weight", "issue": r["problem_type"]}
+        for r in worst_rows
+    ]
+
+    # Key findings
+    key_findings: list[str] = []
+    if cann_pair_count > 0:
+        key_findings.append(f"{cann_pair_count} posts are cannibalizing each other for the same keywords")
+    if exact_dup_count > 0:
+        key_findings.append(f"{exact_dup_count} near-exact duplicate URL pairs detected")
+    if orphan_count > 0:
+        key_findings.append(f"{orphan_count} orphan posts have no inbound internal links")
+    if thin_count > 0:
+        key_findings.append(f"{thin_count} posts are too thin relative to cluster average")
+    if overall_health < 40:
+        key_findings.append(f"Overall content health is {round(overall_health)}/100 — significant optimization opportunity")
+
+    # Headline
+    if cann_pair_count >= 50:
+        headline = f"Found {cann_pair_count} cannibalizing post pairs across {cluster_count} topic clusters"
+    elif rec_count >= 100:
+        headline = f"Generated {rec_count} specific recommendations across {total_posts} posts"
+    else:
+        headline = f"Analyzed {total_posts} posts across {cluster_count} topic clusters — {problem_count} issues detected"
+
+    return {
+        "site_name": site.get("name") or site.get("domain", ""),
+        "site_domain": site.get("domain", ""),
+        "total_posts": int(total_posts),
+        "analyzed_at": str(site.get("last_crawl_at")) if site.get("last_crawl_at") else None,
+        "overall_health": round(overall_health),
+        "cluster_count": int(cluster_count),
+        "problem_count": int(problem_count),
+        "rec_count": int(rec_count),
+        "cann_pair_count": int(cann_pair_count),
+        "orphan_count": int(orphan_count),
+        "thin_content_count": int(thin_count),
+        "exact_duplicate_count": int(exact_dup_count),
+        "worst_posts": worst_posts,
+        "key_findings": key_findings,
+        "headline": headline,
+    }
+
+
+@router.post("/audit-report/pdf")
+@limiter.limit("6/minute")
+async def generate_audit_pdf_endpoint(
+    request: Request,
+    body: AuditPDFRequest,
+    background_tasks: BackgroundTasks,
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Public PDF audit endpoint — no auth required.
+
+    Accepts a blog URL + email, generates a PDF audit report.
+    Enforces:
+    - 50 post limit per audit
+    - 3 audits per email per day rate limit
+    """
+    # Rate limit: 3 per email per day
+    today = datetime.now(timezone.utc).date()
+    audit_count = await db.fetchval(
+        """SELECT COUNT(*) FROM audit_requests
+           WHERE email = $1 AND created_at::date = $2""",
+        body.email, today,
+    )
+    if (audit_count or 0) >= MAX_AUDITS_PER_EMAIL_PER_DAY:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: maximum {MAX_AUDITS_PER_EMAIL_PER_DAY} audit reports per email per day.",
+        )
+
+    # Find the site by domain (extract domain from URL)
+    from urllib.parse import urlparse
+    parsed = urlparse(body.url if "://" in body.url else f"https://{body.url}")
+    domain = parsed.netloc or parsed.path
+    domain = domain.replace("www.", "").strip("/")
+
+    if not domain:
+        raise HTTPException(400, "Invalid URL")
+
+    site = await db.fetchrow(
+        "SELECT id, name, domain, last_crawl_at FROM sites WHERE domain ILIKE $1 LIMIT 1",
+        f"%{domain}%",
+    )
+    if not site:
+        raise HTTPException(
+            404,
+            f"Blog '{domain}' has not been analyzed yet. Submit it at https://enough.app to get started.",
+        )
+
+    site_id = site["id"]
+
+    # Enforce 50 post limit
+    total_posts = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id = $1", site_id) or 0
+    if total_posts > MAX_AUDIT_POSTS:
+        logger.info(
+            "Audit PDF for %s: capping display at %d posts (site has %d)",
+            domain, MAX_AUDIT_POSTS, total_posts,
+        )
+
+    # Record the audit request
+    await db.execute(
+        """INSERT INTO audit_requests (email, domain, site_id, created_at)
+           VALUES ($1, $2, $3, $4)""",
+        body.email, domain, site_id, datetime.now(timezone.utc),
+    )
+
+    # Build audit data and generate PDF
+    audit_data = await _build_audit_data_for_site(db, site_id, dict(site))
+
+    from app.services.pdf_report import generate_audit_pdf
+    pdf_bytes = generate_audit_pdf(audit_data)
+
+    # Schedule drip email sequence in background
+    background_tasks.add_task(
+        _schedule_drip_sequence, body.email, domain, site_id, audit_data, pdf_bytes,
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="enough-audit-{domain}.pdf"',
+        },
+    )
+
+
+async def _schedule_drip_sequence(
+    email: str, domain: str, site_id: UUID, audit_data: dict, pdf_bytes: bytes,
+) -> None:
+    """Schedule the 3-email drip sequence for an audit lead."""
+    try:
+        from app.services.drip_sequence import DripSequenceService
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            service = DripSequenceService()
+            await service.schedule_drip(db, email, domain, site_id, audit_data, pdf_bytes)
+    except Exception as e:
+        logger.error("Failed to schedule drip for %s: %s", email, e)

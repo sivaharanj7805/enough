@@ -326,7 +326,7 @@ Reply in this exact JSON format:
                     pass
             return {
                 "confidence": "low",
-                "verdict": "publish",
+                "verdict": "review",
                 "reasoning": raw,
                 "recommendation": "Manual review recommended — AI response was not structured.",
             }

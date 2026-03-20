@@ -1,159 +1,303 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
 import {
+  Home,
+  Map,
+  Network,
+  FileText,
   Zap,
-  Compass,
+  AlertTriangle,
+  GitCompare,
+  Merge,
   Sparkles,
-  Settings,
+  BarChart3,
+  Plug,
+  CreditCard,
+  Menu,
+  X,
+  Compass,
   ChevronLeft,
-  ChevronRight,
-  LogOut,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { SiteSelector } from './SiteSelector';
 
-const NAV_ITEMS = [
+/* ─── Navigation structure ─────────────────────── */
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+interface NavSection {
+  header: string;
+  items: NavItem[];
+}
+
+type NavEntry = NavItem | NavSection;
+
+const NAV: NavEntry[] = [
+  { href: '/today', label: 'Today', icon: Home },
   {
-    href: '/today',
-    label: 'Today',
-    icon: Zap,
-    description: 'Your #1 priority',
+    header: 'Explore',
+    items: [
+      { href: '/landscape', label: 'Landscape', icon: Map },
+      { href: '/clusters', label: 'Clusters', icon: Network },
+      { href: '/posts', label: 'Posts', icon: FileText },
+    ],
   },
   {
-    href: '/explore',
-    label: 'Explore',
-    icon: Compass,
-    description: 'Deep dive',
+    header: 'Actions',
+    items: [
+      { href: '/actions', label: 'Recommendations', icon: Zap },
+      { href: '/issues', label: 'Issues', icon: AlertTriangle },
+      { href: '/cannibalization', label: 'Cannibalization', icon: GitCompare },
+      { href: '/consolidation', label: 'Consolidation', icon: Merge },
+    ],
+  },
+  { href: '/oracle', label: 'Oracle', icon: Sparkles },
+  { href: '/overview', label: 'Analytics', icon: BarChart3 },
+  {
+    header: 'Settings',
+    items: [
+      { href: '/settings', label: 'Integrations', icon: Plug },
+      { href: '/billing', label: 'Billing', icon: CreditCard },
+    ],
   },
 ];
 
-const BOTTOM_NAV_ITEMS = [
-  { href: '/settings', label: 'Settings', icon: Settings },
+/* ─── Mobile bottom nav items ──────────────────── */
+
+const MOBILE_NAV: NavItem[] = [
+  { href: '/today', label: 'Today', icon: Home },
+  { href: '/landscape', label: 'Explore', icon: Compass },
+  { href: '/actions', label: 'Actions', icon: Zap },
+  { href: '/oracle', label: 'Oracle', icon: Sparkles },
 ];
 
-export function Sidebar() {
+/* ─── Helpers ──────────────────────────────────── */
+
+function isSection(entry: NavEntry): entry is NavSection {
+  return 'header' in entry;
+}
+
+function isActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/* ─── Sidebar (desktop) ───────────────────────── */
+
+function DesktopSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
+
+  const width = collapsed ? 'w-16' : 'w-60';
+
+  const renderItem = (item: NavItem, indented = false) => {
+    const active = isActive(pathname, item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={clsx(
+          'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150',
+          indented && !collapsed && 'pl-6',
+          active
+            ? 'text-white'
+            : 'text-[#9CA3AF] hover:bg-[#1E1F2B] hover:text-white',
+        )}
+      >
+        {/* Active indicator bar */}
+        {active && (
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r bg-[#3B82F6]" />
+        )}
+        <item.icon size={20} className="flex-shrink-0" />
+        {!collapsed && <span>{item.label}</span>}
+      </Link>
+    );
+  };
 
   return (
     <aside
       className={clsx(
-        'flex flex-col border-r border-brand-border bg-brand-surface transition-all duration-200',
-        collapsed ? 'w-16' : 'w-56'
+        'hidden md:flex flex-col bg-[#0F1117] transition-all duration-200',
+        width,
       )}
     >
-      {/* Logo */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-brand-border">
-        {!collapsed && (
-          <Link href="/today" className="text-xl font-bold tracking-widest text-brand-accent">
+      {/* Top: Logo + collapse */}
+      <div className="flex h-14 items-center justify-between px-4">
+        {!collapsed ? (
+          <Link
+            href="/today"
+            className="text-lg font-bold tracking-widest text-white"
+          >
             ENOUGH
           </Link>
-        )}
+        ) : null}
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="rounded-lg p-1.5 text-brand-text-muted hover:bg-brand-surface-hover hover:text-brand-text"
+          className="rounded-md p-1.5 text-[#9CA3AF] hover:bg-[#1E1F2B] hover:text-white transition-colors duration-150"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          {collapsed ? <Menu size={18} /> : <ChevronLeft size={18} />}
         </button>
       </div>
 
-      {/* Site Selector */}
-      <div className="border-b border-brand-border p-3">
-        {!collapsed && <SiteSelector />}
-      </div>
-
-      {/* Primary Nav */}
-      <nav className="flex-1 space-y-1 p-3 pt-4">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={clsx(
-                'nav-item flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                active
-                  ? 'bg-brand-accent/10 text-brand-accent'
-                  : 'text-brand-text-muted hover:text-brand-text'
-              )}
-            >
-              <item.icon size={20} className="flex-shrink-0" />
-              {!collapsed && (
-                <div>
-                  <div>{item.label}</div>
-                  <div className="text-xs font-normal opacity-60">{item.description}</div>
-                </div>
-              )}
-            </Link>
-          );
-        })}
-
-        {/* Oracle — visual separator, prominent position */}
-        <div className="pt-2">
-          {!collapsed && (
-            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-brand-text-muted/50">
-              AI
-            </p>
-          )}
-          <Link
-            href="/oracle"
-            className={clsx(
-              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-              pathname === '/oracle' || pathname.startsWith('/oracle/')
-                ? 'bg-brand-accent/10 text-brand-accent'
-                : 'text-brand-text-muted hover:bg-brand-surface-hover hover:text-brand-text'
-            )}
-          >
-            <Sparkles size={20} className="flex-shrink-0" />
-            {!collapsed && (
-              <div>
-                <div>Oracle</div>
-                <div className="text-xs font-normal opacity-60">Ask anything</div>
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
+        {NAV.map((entry, idx) => {
+          if (isSection(entry)) {
+            return (
+              <div key={entry.header}>
+                {!collapsed && (
+                  <p className="mt-6 mb-2 px-3 text-[11px] font-medium uppercase tracking-wider text-[#5F6571]">
+                    {entry.header}
+                  </p>
+                )}
+                {collapsed && <div className="mt-4" />}
+                {entry.items.map((item) => renderItem(item, true))}
               </div>
-            )}
-          </Link>
-        </div>
+            );
+          }
+          return renderItem(entry);
+        })}
       </nav>
 
-      {/* Bottom Nav */}
-      <div className="border-t border-brand-border p-3 space-y-1">
-        {BOTTOM_NAV_ITEMS.map((item) => {
-          const active = pathname === item.href;
+      {/* User area */}
+      <div className="border-t border-[#23262F] p-3">
+        <div className="flex items-center gap-3">
+          {/* Avatar placeholder */}
+          <div className="h-8 w-8 flex-shrink-0 rounded-full bg-[#23262F] flex items-center justify-center text-xs font-medium text-[#9CA3AF]">
+            {user?.email?.[0]?.toUpperCase() ?? '?'}
+          </div>
+          {!collapsed && (
+            <span className="truncate text-sm text-[#9CA3AF] max-w-[160px]">
+              {user?.email ?? ''}
+            </span>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ─── Mobile bottom nav + sheet ────────────────── */
+
+function MobileBottomNav() {
+  const pathname = usePathname();
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const toggleSheet = useCallback(() => setSheetOpen((v) => !v), []);
+
+  /* All items that are NOT in the bottom nav (for the "More" sheet) */
+  const allItems: NavItem[] = [];
+  NAV.forEach((entry) => {
+    if (isSection(entry)) {
+      entry.items.forEach((item) => allItems.push(item));
+    } else {
+      allItems.push(entry);
+    }
+  });
+  const mobileHrefs = new Set(MOBILE_NAV.map((i) => i.href));
+  const moreItems = allItems.filter((i) => !mobileHrefs.has(i.href));
+
+  return (
+    <>
+      {/* Bottom bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden items-center justify-around border-t border-[#23262F] bg-[#0F1117] pb-[env(safe-area-inset-bottom)]">
+        {MOBILE_NAV.map((item) => {
+          const active = isActive(pathname, item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
               className={clsx(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                active
-                  ? 'bg-brand-accent/10 text-brand-accent'
-                  : 'text-brand-text-muted hover:bg-brand-surface-hover hover:text-brand-text'
+                'flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 px-1 py-1.5',
+                active ? 'text-[#3B82F6]' : 'text-[#9CA3AF]',
               )}
             >
-              <item.icon size={18} />
-              {!collapsed && <span>{item.label}</span>}
+              <item.icon size={20} />
+              <span className="text-[10px]">{item.label}</span>
             </Link>
           );
         })}
 
-        {/* Sign out */}
+        {/* More button */}
         <button
-          onClick={() => void signOut()}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-brand-text-muted hover:bg-brand-surface-hover hover:text-brand-text transition-colors"
-        >
-          <LogOut size={18} />
-          {!collapsed && (
-            <span className="truncate max-w-[140px]">
-              {user?.email ?? 'Sign out'}
-            </span>
+          onClick={toggleSheet}
+          className={clsx(
+            'flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 px-1 py-1.5',
+            sheetOpen ? 'text-[#3B82F6]' : 'text-[#9CA3AF]',
           )}
+        >
+          <Menu size={20} />
+          <span className="text-[10px]">More</span>
         </button>
-      </div>
-    </aside>
+      </nav>
+
+      {/* Slide-up sheet */}
+      {sheetOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-50 bg-black/50 md:hidden"
+            onClick={toggleSheet}
+          />
+
+          {/* Sheet */}
+          <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden animate-slide-up rounded-t-2xl bg-[#0F1117] px-4 pb-8 pt-4 max-h-[70vh] overflow-y-auto">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-sm font-semibold text-white">
+                Navigation
+              </span>
+              <button
+                onClick={toggleSheet}
+                className="rounded-md p-1.5 text-[#9CA3AF] hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              {moreItems.map((item) => {
+                const active = isActive(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={toggleSheet}
+                    className={clsx(
+                      'flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors duration-150',
+                      active
+                        ? 'text-[#3B82F6]'
+                        : 'text-[#9CA3AF] hover:bg-[#1E1F2B] hover:text-white',
+                    )}
+                  >
+                    <item.icon size={20} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/* ─── Exported Sidebar ─────────────────────────── */
+
+export function Sidebar() {
+  return (
+    <>
+      <DesktopSidebar />
+      <MobileBottomNav />
+    </>
   );
 }

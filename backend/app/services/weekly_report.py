@@ -161,6 +161,20 @@ class WeeklyReportService:
             site_id,
         )
 
+        # Get top pending recommendation (the "do this one thing" from the research)
+        top_rec = await db.fetchrow(
+            """SELECT title, recommendation_type, priority, summary
+               FROM recommendations
+               WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+                 AND status = 'pending'
+               ORDER BY
+                 CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                      WHEN 'medium' THEN 2 ELSE 3 END,
+                 created_at DESC
+               LIMIT 1""",
+            site_id,
+        )
+
         subject = f"Your Ecosystem This Week — {site_name}"
 
         # Build cluster section
@@ -181,6 +195,17 @@ class WeeklyReportService:
             qw_count = quick_win["post_count"]
             qw_html = f'<div style="background:#1a4731;padding:16px;border-radius:8px;margin:16px 0;"><strong style="color:#22c55e;">🎯 Quick Win of the Week</strong><br/><span style="color:#e2e8f0;">Consolidate <strong>{qw_label}</strong> — {qw_count} posts could become 1 strong pillar.</span></div>'
             qw_text = f"\n🎯 Quick Win: Consolidate '{qw_label}' — {qw_count} posts could become 1 strong pillar.\n"
+
+        # Top priority action section
+        priority_html = ""
+        priority_text = ""
+        if top_rec:
+            rec_title = top_rec["title"] or "Review your top recommendation"
+            rec_summary = top_rec["summary"] or ""
+            rec_priority = (top_rec["priority"] or "medium").capitalize()
+            priority_color = "#ef4444" if top_rec["priority"] == "critical" else "#f97316" if top_rec["priority"] == "high" else "#eab308"
+            priority_html = f'<div style="background:#111827;padding:16px;border-radius:8px;border-left:4px solid {priority_color};margin:16px 0;"><strong style="color:{priority_color};">⚡ Your #1 Priority This Week</strong><br/><span style="color:#e2e8f0;font-weight:600;">{rec_title}</span><br/><span style="color:#94a3b8;font-size:13px;">{rec_summary[:200]}</span></div>'
+            priority_text = f"\n⚡ Your #1 Priority: {rec_title}\n   {rec_summary[:200]}\n"
 
         html_body = f"""
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
@@ -222,6 +247,8 @@ class WeeklyReportService:
     </table>
   </div>
 
+  {priority_html}
+
   {qw_html}
 
   <div style="text-align:center;margin-top:24px;">
@@ -243,6 +270,7 @@ Posts: {current['total_posts']} total, {current['active_posts']} active, {curren
 
 Top Clusters:
 {cluster_text}
+{priority_text}
 {qw_text}
 Log in to see your full landscape.
 """

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 export default function DashboardIndex() {
   const router = useRouter();
   useEffect(() => {
-    router.replace('/landscape');
+    router.replace('/today');
   }, [router]);
   return null;
 }

@@ -115,7 +115,7 @@ async def get_valid_token(db, site_id, user_id: str | None = None) -> str | None
         return None
 
     # Guard against corrupted token data (e.g. error responses stored accidentally)
-    if "error" in token_data or "access_token" not in token_data and "refresh_token" not in token_data:
+    if "error" in token_data or ("access_token" not in token_data and "refresh_token" not in token_data):
         logger.warning("Corrupted token data for site %s — clearing", site_id)
         await db.execute("UPDATE sites SET google_tokens = NULL WHERE id = $1", site_id)
         return None

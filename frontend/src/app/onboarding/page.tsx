@@ -24,11 +24,36 @@ interface CrawlStatus {
 }
 
 const PIPELINE_STAGES = [
-  { key: 'crawling', label: 'Crawling posts', emoji: '🕷️' },
-  { key: 'embedding', label: 'Generating embeddings', emoji: '🧠' },
-  { key: 'analyzing', label: 'Running analysis', emoji: '🔬' },
-  { key: 'clustering', label: 'Clustering topics', emoji: '🗂️' },
-  { key: 'completed', label: 'Building recommendations', emoji: '✦' },
+  {
+    key: 'crawling',
+    label: 'Crawling posts',
+    emoji: '🕷️',
+    education: 'We\'re downloading every page on your blog and extracting the text content, headings, links, and metadata.',
+  },
+  {
+    key: 'embedding',
+    label: 'Understanding content',
+    emoji: '🧠',
+    education: 'Each post gets a 1,536-dimension "fingerprint" that captures what it\'s about — so we can find posts that overlap.',
+  },
+  {
+    key: 'analyzing',
+    label: 'Scoring health',
+    emoji: '🔬',
+    education: 'We score each post on 6 factors: traffic, ranking, engagement, freshness, depth, and technical SEO.',
+  },
+  {
+    key: 'clustering',
+    label: 'Clustering topics',
+    emoji: '🗂️',
+    education: 'Posts are grouped by topic similarity using machine learning — revealing your natural content pillars.',
+  },
+  {
+    key: 'completed',
+    label: 'Building recommendations',
+    emoji: '✦',
+    education: 'Prioritizing what to fix first — merges, rewrites, internal links, schema — ordered by traffic impact.',
+  },
 ];
 
 export default function OnboardingPage() {
@@ -38,6 +63,7 @@ export default function OnboardingPage() {
 
   const [step, setStep] = useState<Step>('url');
   const [url, setUrl] = useState('');
+  const [cmsType, setCmsType] = useState('sitemap');
   const [siteName, setSiteName] = useState('');
   const [urlPatterns, setUrlPatterns] = useState('');
   const [siteId, setSiteId] = useState<string | null>(null);
@@ -108,7 +134,7 @@ export default function OnboardingPage() {
         body: JSON.stringify({
           name,
           domain,
-          cms_type: 'sitemap',
+          cms_type: cmsType,
           sitemap_url: sitemapUrl.includes('sitemap') ? sitemapUrl : null,
         }),
       });
@@ -162,6 +188,24 @@ export default function OnboardingPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
+                  CMS type
+                </label>
+                <select
+                  value={cmsType}
+                  onChange={(e) => setCmsType(e.target.value)}
+                  disabled={step === 'creating'}
+                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors appearance-none"
+                >
+                  <option value="wordpress">WordPress</option>
+                  <option value="sitemap">Sitemap</option>
+                  <option value="hubspot">HubSpot</option>
+                  <option value="webflow">Webflow</option>
+                  <option value="ghost">Ghost</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
                   Blog URL or sitemap URL
                 </label>
                 <input
@@ -169,10 +213,13 @@ export default function OnboardingPage() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
-                  placeholder="https://yourblog.com/sitemap.xml"
+                  placeholder="https://yourblog.com"
                   disabled={step === 'creating'}
                   className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
                 />
+                <p className="text-[#64748b] text-xs mt-1.5">
+                  We&apos;ll analyze your blog&apos;s content. This is read-only — we never modify your site.
+                </p>
               </div>
 
               <div>
@@ -290,17 +337,24 @@ export default function OnboardingPage() {
                     <span className="text-lg w-6 text-center">
                       {isDone ? '✓' : isActive ? stage.emoji : '○'}
                     </span>
-                    <span className={`text-sm font-medium ${
-                      isDone ? 'text-[#22c55e]' :
-                      isActive ? 'text-[#e2e8f0]' : 'text-[#475569]'
-                    }`}>
-                      {stage.label}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm font-medium ${
+                        isDone ? 'text-[#22c55e]' :
+                        isActive ? 'text-[#e2e8f0]' : 'text-[#475569]'
+                      }`}>
+                        {stage.label}
+                      </span>
+                      {isActive && stage.education && (
+                        <p className="text-xs text-[#64748b] mt-1 leading-relaxed">
+                          {stage.education}
+                        </p>
+                      )}
+                    </div>
                     {isActive && !isPending && (
-                      <Loader2 size={14} className="ml-auto animate-spin text-[#22c55e]" />
+                      <Loader2 size={14} className="ml-auto flex-shrink-0 animate-spin text-[#22c55e]" />
                     )}
                     {isDone && (
-                      <CheckCircle size={14} className="ml-auto text-[#22c55e]" />
+                      <CheckCircle size={14} className="ml-auto flex-shrink-0 text-[#22c55e]" />
                     )}
                   </div>
                 );
@@ -326,7 +380,7 @@ export default function OnboardingPage() {
 
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => router.push(`/overview?site=${siteId}`)}
+                onClick={() => router.push('/today')}
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#3b82f6] text-white font-semibold py-3 text-sm hover:bg-[#2563eb] transition-colors"
               >
                 View Dashboard <ArrowRight size={16} />

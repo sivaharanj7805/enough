@@ -1,4 +1,13 @@
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/v1';
+const API_BASE = (() => {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (!url) {
+    if (typeof window !== 'undefined') {
+      console.error('NEXT_PUBLIC_API_URL is not set — API calls will fail');
+    }
+    return 'http://localhost:8000/v1';
+  }
+  return url + '/v1';
+})();
 
 export class ApiError extends Error {
   status: number;

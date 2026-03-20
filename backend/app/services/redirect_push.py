@@ -231,9 +231,8 @@ class RedirectPusher:
                     resp = await client.get(check_url)
                     if resp.status_code in (301, 302, 307, 308):
                         location = resp.headers.get("location", "")
-                        if row["new_url"] in location or location.endswith(
-                            row["new_url"]
-                        ):
+                        new_url = row["new_url"]
+                        if location == new_url or location.endswith(new_url) or location.split("?")[0].endswith(new_url):
                             await db.execute(
                                 """
                                 UPDATE redirect_log

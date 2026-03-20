@@ -411,7 +411,7 @@ class ContentChunkerService:
                             embedding = $3, created_at = NOW()
                         """,
                         chunk["chunk_id"], chunk["post_id"],
-                        str(emb_data.embedding),
+                        "[" + ",".join(str(v) for v in emb_data.embedding) + "]",
                     )
                     embedded += 1
             except Exception as e:

@@ -69,12 +69,12 @@ async def get_sites_needing_refresh(
             """
             SELECT s.* FROM sites s
             WHERE s.id IN (
-                SELECT DISTINCT pe.post_id
+                SELECT DISTINCT p.site_id
                 FROM post_embeddings pe
                 JOIN posts p ON pe.post_id = p.id
                 WHERE pe.content_hash != p.content_hash
                   OR pe.updated_at < $1
-                GROUP BY pe.post_id
+                GROUP BY p.site_id
             )
             OR s.id NOT IN (SELECT DISTINCT p.site_id FROM post_embeddings pe JOIN posts p ON pe.post_id = p.id)
             LIMIT 10

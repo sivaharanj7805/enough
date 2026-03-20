@@ -44,7 +44,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_email
     ON profiles(email)
     WHERE email IS NOT NULL;
 
--- Embedding model version index (for model migration queries)
-CREATE INDEX IF NOT EXISTS idx_post_embeddings_model
-    ON post_embeddings(embedding_model)
-    WHERE embedding_model IS NOT NULL;
+-- NOTE: idx_post_embeddings_model moved to 014 (column added there)

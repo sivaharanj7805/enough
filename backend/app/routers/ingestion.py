@@ -39,8 +39,8 @@ async def _update_crawl_progress(site_id: UUID, processed: int, total: int) -> N
                 """,
                 total, processed, site_id,
             )
-    except Exception:
-        pass  # Progress updates are best-effort
+    except Exception as e:
+        logger.debug("Progress update failed (best-effort): %s", e)
 
 
 async def _run_crawl(site_id: UUID, site: dict) -> None:
@@ -142,8 +142,8 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
                     "UPDATE crawl_jobs SET status = 'failed', error = $1, updated_at = NOW() WHERE site_id = $2",
                     str(e)[:500], site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
 
 
 @router.post("/{site_id}/crawl", response_model=TaskTriggerResponse)
@@ -207,8 +207,8 @@ async def crawl_status(
                     thin_content_count=int(thin_count),
                     preview_ready=int(clusters_found) > 0,
                 )
-        except Exception:
-            pass  # Don't fail status check for early findings
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)  # Don't fail status check for early findings
 
     return CrawlStatusResponse(
         site_id=row["site_id"],
@@ -226,7 +226,7 @@ async def _run_analytics_sync(site_id: UUID, site: dict) -> None:
     """Background task: sync GA4 + GSC data."""
     try:
         pool = await get_pool()
-        refresh_token = decrypt_value(site["google_refresh_token"]) if site.get("google_refresh_token") else None
+        refresh_token = decrypt_value(site["google_tokens"]) if site.get("google_tokens") else None
 
         if not refresh_token:
             logger.warning("No Google refresh token for site %s", site_id)
@@ -328,6 +328,221 @@ async def trigger_monthly_reembed(
     return TaskTriggerResponse(message="Monthly re-embed started", site_id=None)
 
 
+@router.post("/cron/winback-emails", response_model=TaskTriggerResponse)
+async def trigger_winback_emails(
+    background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
+):
+    """Process win-back emails for cancelled subscribers.
+
+    Sends:
+    - Day 7 post-cancel: "Your content health has gone unchecked for a week"
+    - Day 30: "Here's what changed on your blog since you left"
+    - Day 60: Final attempt with discount offer
+
+    Wire to a daily cron. Requires X-Cron-Secret header.
+    """
+    async def _process():
+        from app.database import get_pool
+        from app.services.stripe_service import StripeService
+
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            service = StripeService()
+            sent = await service.process_winback_emails(db)
+            logger.info("Win-back processing: sent %d emails", sent)
+
+    background_tasks.add_task(_process)
+    return TaskTriggerResponse(message="Win-back email processing started", site_id=None)
+
+
+@router.post("/cron/process-drips", response_model=TaskTriggerResponse)
+async def trigger_process_drips(
+    background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
+):
+    """Process pending drip emails for audit leads.
+
+    Sends scheduled drip emails (day 2 and day 5 follow-ups) for
+    audit report leads. Wire to a frequent cron (e.g. every 30 min).
+    Requires X-Cron-Secret header.
+    """
+    async def _process():
+        from app.database import get_pool
+        from app.services.drip_sequence import DripSequenceService
+
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            service = DripSequenceService()
+            sent = await service.process_pending_drips(db)
+            logger.info("Drip processing: sent %d emails", sent)
+
+    background_tasks.add_task(_process)
+    return TaskTriggerResponse(message="Drip email processing started", site_id=None)
+
+
+@router.post("/cron/weekly-digest", response_model=TaskTriggerResponse)
+async def trigger_weekly_digest(
+    background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
+):
+    """Send weekly ecosystem email digest to all users.
+
+    Sends a personalized email per site with:
+    - Health score delta (this week vs last)
+    - Top recommendation ("do this one thing")
+    - Quick win consolidation opportunity
+    - Post breakdown changes
+
+    Requires X-Cron-Secret header. Wire to a weekly cron (e.g. Monday 9am).
+    """
+    async def _send_digests():
+        from app.database import get_pool
+        from app.services.weekly_report import WeeklyReportService
+
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            service = WeeklyReportService()
+            sent = await service.send_all_reports(db)
+            logger.info("Weekly digest: sent %d reports", sent)
+
+    background_tasks.add_task(_send_digests)
+    return TaskTriggerResponse(message="Weekly digest emails queued", site_id=None)
+
+
+@router.get("/{site_id}/pipeline/status")
+async def get_pipeline_status(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get full pipeline status with stage tracking, partial results, and time estimates.
+
+    Returns a richer status than the intelligence pipeline-status endpoint,
+    including crawl stage info, partial results availability, and ETA.
+    """
+    row = await db.fetchrow(
+        "SELECT id FROM sites WHERE id = $1 AND user_id = $2", site_id, user_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    # Check crawl_jobs (primary pipeline tracker)
+    crawl = await db.fetchrow(
+        "SELECT status, started_at, completed_at, posts_found, posts_processed, error FROM crawl_jobs WHERE site_id = $1",
+        site_id,
+    )
+    # Check intelligence pipeline_jobs
+    pipeline = await db.fetchrow(
+        "SELECT status, current_step, steps_completed, started_at, completed_at, error FROM pipeline_jobs WHERE site_id = $1",
+        site_id,
+    )
+
+    # Determine overall status
+    if not crawl and not pipeline:
+        return {
+            "status": "idle",
+            "current_stage": None,
+            "completed_stages": [],
+            "partial_results_available": False,
+            "estimated_time_remaining": None,
+            "started_at": None,
+            "completed_at": None,
+        }
+
+    # Map crawl_jobs status to pipeline stages
+    STAGE_MAP = {
+        "crawling": "crawling",
+        "embedding": "embedding",
+        "analyzing": "health_scoring",
+        "clustering": "clustering",
+        "completed": None,
+        "failed": None,
+    }
+
+    # Determine current stage and completed stages
+    completed_stages: list[str] = []
+    current_stage = None
+    status = "idle"
+    started_at = None
+    completed_at = None
+    error = None
+
+    if crawl:
+        started_at = crawl["started_at"]
+        crawl_status = crawl["status"] or "idle"
+
+        if crawl_status == "completed":
+            completed_stages.append("crawling")
+            completed_stages.append("embedding")
+            status = "completed"
+            completed_at = crawl["completed_at"]
+        elif crawl_status == "failed":
+            status = "failed"
+            error = crawl["error"]
+        elif crawl_status == "crawling":
+            status = "running"
+            current_stage = "crawling"
+        elif crawl_status in ("embedding", "analyzing", "clustering"):
+            status = "running"
+            completed_stages.append("crawling")
+            if crawl_status in ("analyzing", "clustering"):
+                completed_stages.append("embedding")
+            if crawl_status == "clustering":
+                completed_stages.append("clustering")
+            current_stage = STAGE_MAP.get(crawl_status, crawl_status)
+
+    # Overlay intelligence pipeline_jobs if available
+    if pipeline:
+        pipe_status = pipeline["status"] or "idle"
+        pipe_steps = pipeline["steps_completed"] or []
+        if pipe_status == "running":
+            status = "running"
+            current_stage = pipeline["current_step"]
+            # Merge completed stages
+            for step in pipe_steps:
+                if step not in completed_stages:
+                    completed_stages.append(step)
+        elif pipe_status == "completed":
+            status = "completed"
+            completed_at = pipeline["completed_at"] or completed_at
+            for step in pipe_steps:
+                if step not in completed_stages:
+                    completed_stages.append(step)
+        elif pipe_status == "failed" and status != "running":
+            status = "failed"
+            error = pipeline["error"] or error
+
+    # Check if partial results are available
+    partial_results_available = False
+    if completed_stages:
+        # If clustering is done, we have partial results
+        has_clusters = await db.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM clusters WHERE site_id = $1)", site_id,
+        )
+        partial_results_available = bool(has_clusters)
+
+    # Estimate time remaining (rough heuristic based on post count + stage)
+    estimated_time_remaining = None
+    if status == "running" and started_at:
+        post_count = crawl["posts_found"] or 0 if crawl else 0
+        # Rough estimates: crawling ~2s/post, embedding ~1s/post, analysis ~0.5s/post
+        total_estimate = max(120, post_count * 3.5)  # seconds
+        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+        remaining = max(0, total_estimate - elapsed)
+        estimated_time_remaining = round(remaining)
+
+    return {
+        "status": status,
+        "current_stage": current_stage,
+        "completed_stages": completed_stages,
+        "partial_results_available": partial_results_available,
+        "estimated_time_remaining": estimated_time_remaining,
+        "started_at": started_at.isoformat() if started_at else None,
+        "completed_at": completed_at.isoformat() if completed_at else None,
+    }
+
+
 async def _verify_ownership(site_id: UUID, user_id: str, db: asyncpg.Connection) -> None:
     """Quick ownership check without returning full site data."""
     row = await db.fetchrow(
@@ -379,8 +594,8 @@ async def _pipeline_step(pool, site_id: UUID, step_name: str, status: str, fn) -
                        WHERE site_id = $2""",
                     f"[{step_name}]: {str(e)[:200]}; ", site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
         return False
 
 
@@ -475,8 +690,8 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
                     "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
                     str(e)[:500], site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
 
 
 class PipelineOptions(BaseModel):
@@ -572,8 +787,8 @@ async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
                     "UPDATE crawl_jobs SET status='failed', error=$1, updated_at=NOW() WHERE site_id=$2",
                     str(e)[:500], site_id,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to update error status in DB: %s", exc)
 
 
 @router.post("/{site_id}/pipeline/refresh", response_model=TaskTriggerResponse)

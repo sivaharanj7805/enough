@@ -48,13 +48,15 @@ async def lifespan(app: FastAPI):
     logger.info("Enough backend shutdown complete")
 
 
+_is_production = os.environ.get("ENVIRONMENT", "production") == "production"
+
 app = FastAPI(
     title="Enough",
     description="Content Ecosystem Intelligence Platform — Phase 1 API",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs",  # Protected by auth in production
-    redoc_url="/redoc",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
 )
 
 # ── Security Middleware (order matters — outermost first) ──

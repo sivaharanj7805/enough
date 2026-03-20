@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Sparkles, X, Send, RotateCcw } from 'lucide-react';
+import { Sparkles, X, Send, RotateCcw, ExternalLink } from 'lucide-react';
 import { clsx } from 'clsx';
+import Link from 'next/link';
 import { useSite } from '@/lib/hooks/useSite';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
@@ -90,7 +91,7 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
       {/* Panel */}
       <div
         className={clsx(
-          'fixed top-0 right-0 h-full w-full max-w-lg bg-[#111827] border-l border-[#1e293b] z-50',
+          'fixed top-0 right-0 h-full w-[400px] bg-[#111827] border-l border-[#1e293b] z-50',
           'flex flex-col shadow-2xl transition-transform duration-300',
           open ? 'translate-x-0' : 'translate-x-full'
         )}
@@ -105,6 +106,15 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/oracle"
+              onClick={onClose}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-[#64748b] hover:text-[#e2e8f0] hover:bg-[#1e293b] transition-colors"
+              title="Open Full View"
+            >
+              <ExternalLink size={13} />
+              <span>Full View</span>
+            </Link>
             {verdict && (
               <button
                 onClick={handleReset}
@@ -157,7 +167,7 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
                   />
                 ))}
               </div>
-              <p className="text-sm text-[#64748b]">Reading your content ecosystem…</p>
+              <p className="text-sm text-[#64748b]">Thinking...</p>
             </div>
           )}
 
