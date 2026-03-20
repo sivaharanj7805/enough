@@ -63,6 +63,7 @@ export default function OnboardingPage() {
 
   const [step, setStep] = useState<Step>('url');
   const [url, setUrl] = useState('');
+  const [cmsType, setCmsType] = useState('sitemap');
   const [siteName, setSiteName] = useState('');
   const [urlPatterns, setUrlPatterns] = useState('');
   const [siteId, setSiteId] = useState<string | null>(null);
@@ -133,7 +134,7 @@ export default function OnboardingPage() {
         body: JSON.stringify({
           name,
           domain,
-          cms_type: 'sitemap',
+          cms_type: cmsType,
           sitemap_url: sitemapUrl.includes('sitemap') ? sitemapUrl : null,
         }),
       });
@@ -187,6 +188,24 @@ export default function OnboardingPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
+                  CMS type
+                </label>
+                <select
+                  value={cmsType}
+                  onChange={(e) => setCmsType(e.target.value)}
+                  disabled={step === 'creating'}
+                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors appearance-none"
+                >
+                  <option value="wordpress">WordPress</option>
+                  <option value="sitemap">Sitemap</option>
+                  <option value="hubspot">HubSpot</option>
+                  <option value="webflow">Webflow</option>
+                  <option value="ghost">Ghost</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
                   Blog URL or sitemap URL
                 </label>
                 <input
@@ -194,10 +213,13 @@ export default function OnboardingPage() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
-                  placeholder="https://yourblog.com/sitemap.xml"
+                  placeholder="https://yourblog.com"
                   disabled={step === 'creating'}
                   className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
                 />
+                <p className="text-[#64748b] text-xs mt-1.5">
+                  We&apos;ll analyze your blog&apos;s content. This is read-only — we never modify your site.
+                </p>
               </div>
 
               <div>

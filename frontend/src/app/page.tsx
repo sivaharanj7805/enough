@@ -1,401 +1,532 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Spinner } from '@/components/ui/Spinner';
 import Link from 'next/link';
 import {
-  Map,
-  Network,
-  Sparkles,
-  Wrench,
+  Shield,
+  Clock,
+  Zap,
+  Link as LinkIcon,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
   ArrowRight,
   Check,
-  BarChart3,
-  TrendingUp,
-  Layers,
+  AlertTriangle,
+  TrendingDown,
+  Trash2,
 } from 'lucide-react';
 
+/* ─── Validation ─── */
+const URL_RE = /^https?:\/\/.+\..+/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/* ─── FAQ Data ─── */
+const FAQ_ITEMS = [
+  {
+    q: 'Is it read-only?',
+    a: 'Yes. We crawl and read your blog content, but we never modify, publish, or delete anything on your site.',
+  },
+  {
+    q: 'How long does analysis take?',
+    a: '20-25 minutes for most blogs. You can browse partial results while the pipeline runs.',
+  },
+  {
+    q: 'Do I need to cancel my existing SEO tool?',
+    a: "No. Enough complements tools like Ahrefs, SEMrush, and Surfer. We focus specifically on content ecosystem health \u2014 the cannibalization, decay, and structural problems they don\u2019t catch.",
+  },
+  {
+    q: "What if it\u2019s not worth it?",
+    a: "We offer a 30-day money-back guarantee, no questions asked. If you don\u2019t find value, we\u2019ll refund you.",
+  },
+  {
+    q: 'Can I try it first?',
+    a: "Yes. Enter your blog URL above and we\u2019ll send you a free audit report with your health score and issue count. No credit card required.",
+  },
+];
+
+/* ─── Pricing Data ─── */
+const PLANS = {
+  growth: {
+    name: 'Growth',
+    monthlyPrice: 99,
+    annualPrice: 990,
+    monthlyEquiv: '$82.50',
+    features: [
+      '500 posts',
+      '1 site',
+      'Full analysis pipeline',
+      'Weekly digest email',
+      'Pre-Publish Oracle',
+      'GSC & GA4 integration',
+      'Unlimited recommendations',
+      'Impact tracking',
+      'PDF reports',
+      'Weekly re-analysis',
+    ],
+  },
+  scale: {
+    name: 'Scale',
+    monthlyPrice: 249,
+    annualPrice: 2490,
+    monthlyEquiv: '$207.50',
+    features: [
+      '2,000 posts',
+      '3 sites',
+      'White-label reports',
+      'Priority pipeline',
+      'Consolidation drafts',
+      'API access',
+      'Daily re-analysis',
+      'Everything in Growth',
+    ],
+  },
+};
+
+/* ─── Landing Page Component ─── */
 function LandingPage() {
+  const [url, setUrl] = useState('');
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{ url?: string; email?: string; form?: string }>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [annual, setAnnual] = useState(false);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
+
+  const validate = useCallback(() => {
+    const errs: { url?: string; email?: string } = {};
+    if (!URL_RE.test(url)) errs.url = 'Enter a valid URL starting with http:// or https://';
+    if (!EMAIL_RE.test(email)) errs.email = 'Enter a valid email address';
+    return errs;
+  }, [url, email]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const errs = validate();
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setLoading(true);
+    setErrors({});
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/audit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, email }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.message || 'Something went wrong. Please try again.');
+      }
+      setSubmitted(true);
+    } catch (err: unknown) {
+      setErrors({ form: err instanceof Error ? err.message : 'Something went wrong. Please try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleFaq = (i: number) => {
+    setOpenFaq(openFaq === i ? null : i);
+  };
+
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-text">
-      {/* Nav */}
-      <nav className="border-b border-brand-border">
-        <div className="mx-auto max-w-6xl flex items-center justify-between px-6 py-4">
-          <span className="text-xl font-bold text-brand-accent">Enough</span>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/login"
-              className="text-sm text-brand-text-muted hover:text-brand-text transition-colors"
-            >
-              Log in
-            </Link>
+    <div className="min-h-screen bg-[#0B0D11] text-[#E8EAED]">
+      {/* ════════════════════════════════════════════════
+          1. HERO
+         ════════════════════════════════════════════════ */}
+      <section className="py-24 px-6">
+        <div className="mx-auto max-w-3xl text-center">
+          <h1 className="text-[48px] font-semibold tracking-tight leading-[1.1]">
+            Your blog is fighting itself.
+            <br />
+            <span className="text-[#3B82F6]">We&apos;ll show you where.</span>
+          </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-[14px] leading-relaxed text-[#9BA1AD]">
+            Content cannibalization silently kills your rankings. Posts compete against each other,
+            traffic decays, and dead weight drags your domain down. Enough finds every issue and
+            tells you exactly what to fix.
+          </p>
+
+          {/* Audit Form */}
+          {submitted ? (
+            <div className="mt-10 rounded-xl border border-[#23262F] bg-[#13151B] p-6 text-center">
+              <Check size={32} className="mx-auto mb-3 text-green-400" />
+              <p className="text-lg font-semibold">Audit requested!</p>
+              <p className="mt-2 text-[14px] text-[#9BA1AD]">
+                We&apos;ll crawl your blog and send the report to your inbox within 25 minutes.
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="mt-10">
+              <div className="flex flex-col sm:flex-row items-stretch gap-3">
+                <div className="flex-1">
+                  <input
+                    type="url"
+                    placeholder="https://yourblog.com"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="w-full rounded-lg border border-[#23262F] bg-[#13151B] px-4 py-3 text-[14px] text-[#E8EAED] placeholder-[#9BA1AD]/50 outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-colors"
+                  />
+                  {errors.url && (
+                    <p className="mt-1 text-left text-xs text-red-400">{errors.url}</p>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <input
+                    type="email"
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-lg border border-[#23262F] bg-[#13151B] px-4 py-3 text-[14px] text-[#E8EAED] placeholder-[#9BA1AD]/50 outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-colors"
+                  />
+                  {errors.email && (
+                    <p className="mt-1 text-left text-xs text-red-400">{errors.email}</p>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#3B82F6] px-6 py-3 text-[14px] font-semibold text-white hover:bg-[#2563EB] disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Requesting...
+                    </>
+                  ) : (
+                    'Get Your Free Audit'
+                  )}
+                </button>
+              </div>
+              {errors.form && (
+                <p className="mt-3 text-sm text-red-400">{errors.form}</p>
+              )}
+            </form>
+          )}
+
+          {/* Secondary CTA */}
+          <div className="mt-4">
             <Link
               href="/signup"
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-white hover:bg-brand-accent-hover transition-colors"
+              className="inline-flex items-center gap-2 rounded-lg border border-[#23262F] px-6 py-3 text-[14px] font-medium text-[#E8EAED] hover:bg-[#13151B] transition-colors"
             >
-              Start Your Analysis
+              Subscribe &amp; Start Fixing
               <ArrowRight size={14} />
             </Link>
           </div>
-        </div>
-      </nav>
 
-      {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 py-24 text-center">
-        <h1 className="text-5xl font-bold leading-tight tracking-tight sm:text-6xl">
-          Publish Less.{' '}
-          <span className="text-brand-accent">Grow More.</span>
-        </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-lg text-brand-text-muted">
-          Every content tool tells you to create more. Enough is the only one that tells
-          you when more is less. See your content library as a living ecosystem —
-          and make it thrive.
-        </p>
-        <div className="mt-10 flex items-center justify-center gap-4">
-          <Link
-            href="/signup"
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-6 py-3 text-base font-semibold text-white hover:bg-brand-accent-hover transition-colors"
-          >
-            See Your Ecosystem
-            <ArrowRight size={18} />
-          </Link>
-          <Link
-            href="#features"
-            className="inline-flex items-center gap-2 rounded-lg border border-brand-border px-6 py-3 text-base font-medium text-brand-text hover:bg-brand-surface transition-colors"
-          >
-            Learn More
-          </Link>
-        </div>
-
-        {/* Landscape SVG Illustration */}
-        <div className="mt-16 rounded-xl border border-brand-border bg-brand-surface p-1 shadow-2xl">
-          <div className="rounded-lg bg-brand-bg overflow-hidden">
-            <svg viewBox="0 0 900 320" className="w-full" xmlns="http://www.w3.org/2000/svg">
-              {/* Sky gradient */}
-              <defs>
-                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0f172a" />
-                  <stop offset="100%" stopColor="#1e293b" />
-                </linearGradient>
-                <linearGradient id="forestGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#166534" />
-                  <stop offset="100%" stopColor="#14532d" />
-                </linearGradient>
-                <linearGradient id="swampGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#365314" />
-                  <stop offset="100%" stopColor="#1a2e05" />
-                </linearGradient>
-                <linearGradient id="desertGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#92400e" />
-                  <stop offset="100%" stopColor="#78350f" />
-                </linearGradient>
-                <linearGradient id="seedbedGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#15803d" />
-                  <stop offset="100%" stopColor="#166534" />
-                </linearGradient>
-              </defs>
-              <rect width="900" height="320" fill="url(#sky)" />
-
-              {/* Stars */}
-              {[
-                [120, 25], [280, 15], [400, 35], [550, 20], [700, 30], [820, 18],
-                [60, 50], [350, 55], [650, 45], [780, 55],
-              ].map(([cx, cy], i) => (
-                <circle key={`star-${i}`} cx={cx} cy={cy} r={1} fill="#94a3b8" opacity={0.6} />
-              ))}
-
-              {/* ── FOREST region (left) ── */}
-              {/* Hills */}
-              <path d="M0 200 Q50 140 100 180 Q150 130 200 170 Q230 160 260 190 L260 320 L0 320Z"
-                    fill="url(#forestGrad)" opacity={0.9} />
-              {/* Trees — tall triangles */}
-              {[[30, 195], [55, 185], [80, 190], [110, 175], [135, 180], [160, 168], [185, 172], [210, 165], [240, 185]].map(
-                ([x, y], i) => (
-                  <g key={`tree-${i}`}>
-                    <polygon points={`${x},${y - 45} ${x - 10},${y} ${x + 10},${y}`} fill="#22c55e" opacity={0.7 + (i % 3) * 0.1} />
-                    <polygon points={`${x},${y - 60} ${x - 8},${y - 25} ${x + 8},${y - 25}`} fill="#4ade80" opacity={0.6} />
-                    <rect x={x - 2} y={y} width={4} height={8} fill="#854d0e" opacity={0.6} />
-                  </g>
-                )
-              )}
-              {/* Forest label */}
-              <text x="130" y="290" textAnchor="middle" fill="#4ade80" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>FOREST</text>
-              <text x="130" y="305" textAnchor="middle" fill="#86efac" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Thriving</text>
-
-              {/* ── SWAMP region ── */}
-              <path d="M260 190 Q290 210 330 200 Q370 215 410 195 Q430 200 440 210 L440 320 L260 320Z"
-                    fill="url(#swampGrad)" opacity={0.85} />
-              {/* Swamp vegetation — messy, tangled */}
-              {[[275, 200], [305, 195], [330, 200], [360, 198], [390, 195], [415, 200]].map(
-                ([x, y], i) => (
-                  <g key={`swamp-${i}`}>
-                    {/* Tangled roots/vines */}
-                    <path d={`M${x} ${y} Q${x - 5} ${y - 15} ${x + 3} ${y - 25} Q${x + 8} ${y - 30} ${x - 2} ${y - 35}`}
-                          fill="none" stroke="#65a30d" strokeWidth={1.5} opacity={0.5} />
-                    <path d={`M${x + 5} ${y} Q${x + 12} ${y - 20} ${x + 2} ${y - 28}`}
-                          fill="none" stroke="#4d7c0f" strokeWidth={1} opacity={0.4} />
-                    <circle cx={x} cy={y + 5} r={5} fill="#1a2e05" opacity={0.3} />
-                  </g>
-                )
-              )}
-              {/* Murky water highlights */}
-              <ellipse cx="350" cy="245" rx="60" ry="4" fill="#365314" opacity={0.3} />
-              <text x="350" y="290" textAnchor="middle" fill="#a3e635" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>SWAMP</text>
-              <text x="350" y="305" textAnchor="middle" fill="#bef264" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Competing</text>
-
-              {/* ── DESERT region ── */}
-              <path d="M440 210 Q480 185 530 195 Q580 175 630 195 Q650 190 660 200 L660 320 L440 320Z"
-                    fill="url(#desertGrad)" opacity={0.85} />
-              {/* Sand dunes */}
-              <path d="M450 230 Q490 215 530 225 Q570 210 610 220 Q640 215 660 225 L660 250 L440 250Z"
-                    fill="#b45309" opacity={0.3} />
-              {/* Dead stumps */}
-              {[[475, 215], [520, 205], [565, 200], [610, 210]].map(
-                ([x, y], i) => (
-                  <g key={`stump-${i}`}>
-                    <rect x={x - 2} y={y - 10} width={4} height={14} fill="#78350f" opacity={0.5} />
-                    <line x1={x - 5} y1={y - 7} x2={x} y2={y - 12} stroke="#78350f" strokeWidth={1.5} opacity={0.4} />
-                    <line x1={x + 5} y1={y - 5} x2={x} y2={y - 10} stroke="#78350f" strokeWidth={1.5} opacity={0.4} />
-                  </g>
-                )
-              )}
-              {/* Tumbleweed */}
-              <circle cx="555" cy="225" r={6} fill="none" stroke="#a16207" strokeWidth={1} opacity={0.4} strokeDasharray="2 2" />
-              <text x="550" y="290" textAnchor="middle" fill="#fbbf24" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>DESERT</text>
-              <text x="550" y="305" textAnchor="middle" fill="#fde68a" fontSize="8" fontFamily="sans-serif" opacity={0.5}>Declining</text>
-
-              {/* ── SEEDBED region (right) ── */}
-              <path d="M660 200 Q700 185 750 195 Q800 180 850 190 Q875 195 900 200 L900 320 L660 320Z"
-                    fill="url(#seedbedGrad)" opacity={0.85} />
-              {/* Small sprouts */}
-              {[[690, 200], [720, 192], [755, 188], [790, 185], [825, 190], [860, 195]].map(
-                ([x, y], i) => (
-                  <g key={`sprout-${i}`}>
-                    <line x1={x} y1={y} x2={x} y2={y - 12 - (i % 3) * 4} stroke="#22c55e" strokeWidth={1.5} opacity={0.6} />
-                    <ellipse cx={x - 4} cy={y - 12 - (i % 3) * 4} rx={4} ry={2.5} fill="#4ade80" opacity={0.5} />
-                    <ellipse cx={x + 4} cy={y - 14 - (i % 3) * 4} rx={4} ry={2.5} fill="#86efac" opacity={0.4} />
-                  </g>
-                )
-              )}
-              {/* Soil texture */}
-              <path d="M660 240 Q720 235 780 240 Q840 235 900 240 L900 260 L660 260Z"
-                    fill="#15803d" opacity={0.15} />
-              <text x="780" y="290" textAnchor="middle" fill="#4ade80" fontSize="11" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>SEEDBED</text>
-              <text x="780" y="305" textAnchor="middle" fill="#86efac" fontSize="8" fontFamily="sans-serif" opacity={0.5}>New Growth</text>
-
-              {/* Terrain divider lines */}
-              <line x1="260" y1="180" x2="260" y2="320" stroke="#334155" strokeWidth={0.5} opacity={0.3} />
-              <line x1="440" y1="195" x2="440" y2="320" stroke="#334155" strokeWidth={0.5} opacity={0.3} />
-              <line x1="660" y1="195" x2="660" y2="320" stroke="#334155" strokeWidth={0.5} opacity={0.3} />
-            </svg>
-            <p className="py-3 text-xs text-brand-text-muted text-center">
-              Your content ecosystem — forests thrive, swamps need clearing, deserts need revival, seedbeds hold new growth.
-            </p>
+          {/* Trust badges */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-6 text-[12px] text-[#9BA1AD]">
+            <span className="inline-flex items-center gap-1.5">
+              <Shield size={14} className="text-[#3B82F6]" />
+              Read-only
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Check size={14} className="text-[#3B82F6]" />
+              30-day money-back
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Shield size={14} className="text-[#3B82F6]" />
+              Your data stays private
+            </span>
           </div>
         </div>
       </section>
 
-      {/* How it Works */}
-      <section className="border-t border-brand-border bg-brand-surface/50 py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold mb-12">How It Works</h2>
-          <div className="grid grid-cols-3 gap-8">
+      {/* ════════════════════════════════════════════════
+          2. SOCIAL PROOF BAR
+         ════════════════════════════════════════════════ */}
+      <section className="border-y border-[#23262F] bg-[#13151B]/60 py-8">
+        <div className="mx-auto max-w-5xl px-6">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-12 text-center">
+            <div>
+              <p className="text-lg font-semibold text-[#E8EAED]">958 posts</p>
+              <p className="text-[12px] text-[#9BA1AD]">Analyzed on Close.com&apos;s blog</p>
+            </div>
+            <div className="hidden sm:block h-8 w-px bg-[#23262F]" />
+            <div>
+              <p className="text-lg font-semibold text-[#E8EAED]">200 cannibalization pairs</p>
+              <p className="text-[12px] text-[#9BA1AD]">and 24 exact duplicates found</p>
+            </div>
+            <div className="hidden sm:block h-8 w-px bg-[#23262F]" />
+            <div>
+              <p className="text-lg font-semibold text-[#3B82F6]">1,247 blogs analyzed</p>
+              <p className="text-[12px] text-[#9BA1AD]">and counting</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════
+          3. PROBLEM STATEMENT
+         ════════════════════════════════════════════════ */}
+      <section className="py-24 px-6">
+        <div className="mx-auto max-w-4xl">
+          <h2 className="text-center text-[28px] font-semibold mb-14">
+            Three problems killing your organic traffic
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              {
+                icon: AlertTriangle,
+                title: 'Posts competing against each other',
+                desc: 'Multiple articles target the same keywords. Google picks one; the rest cannibalize each other.',
+              },
+              {
+                icon: TrendingDown,
+                title: 'Content decaying over time',
+                desc: 'Posts that once ranked are quietly losing traffic. Without monitoring, you won\u2019t notice until it\u2019s too late.',
+              },
+              {
+                icon: Trash2,
+                title: 'Dead weight dragging you down',
+                desc: 'Thin, outdated, and duplicate pages dilute your domain authority and waste crawl budget.',
+              },
+            ].map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="rounded-xl border border-[#23262F] bg-[#13151B] p-6">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/10">
+                  <Icon size={20} className="text-red-400" />
+                </div>
+                <h3 className="text-[14px] font-semibold mb-2">{title}</h3>
+                <p className="text-[14px] leading-relaxed text-[#9BA1AD]">{desc}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-10 text-center text-[#3B82F6] font-semibold text-lg">
+            We find all of it in 25 minutes.
+          </p>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════
+          4. HOW IT WORKS
+         ════════════════════════════════════════════════ */}
+      <section className="py-24 px-6 border-t border-[#23262F]">
+        <div className="mx-auto max-w-4xl">
+          <h2 className="text-center text-[28px] font-semibold mb-14">How it works</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               {
                 step: '1',
-                title: 'Connect',
-                desc: 'Link your CMS, Google Analytics, and Search Console. We ingest your entire content library.',
-                icon: Layers,
+                icon: LinkIcon,
+                title: 'Connect your blog',
+                desc: 'Paste your URL. We read your sitemap and crawl every post. Read-only \u2014 we never touch your content.',
               },
               {
                 step: '2',
-                title: 'See',
-                desc: 'Your content becomes a living landscape. Forests, swamps, deserts — each cluster tells a story.',
-                icon: Map,
+                icon: BarChart3,
+                title: 'We analyze everything',
+                desc: 'Embeddings, clustering, health scoring, cannibalization detection. 25 minutes, fully automated.',
               },
               {
                 step: '3',
-                title: 'Act',
-                desc: 'Consolidate swamps, revive deserts, protect forests. Fewer posts, more impact.',
-                icon: TrendingUp,
+                icon: Zap,
+                title: 'Act on specific fixes',
+                desc: 'Not vague suggestions. Actual meta descriptions to copy. Specific posts to merge. Redirect maps ready to implement.',
               },
-            ].map(({ step, title, desc, icon: Icon }) => (
+            ].map(({ step, icon: Icon, title, desc }) => (
               <div key={step} className="text-center">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-accent/20">
-                  <Icon size={24} className="text-brand-accent" />
+                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-[#3B82F6]/15">
+                  <Icon size={24} className="text-[#3B82F6]" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">{title}</h3>
-                <p className="text-sm text-brand-text-muted">{desc}</p>
+                <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-[#3B82F6]">
+                  Step {step}
+                </div>
+                <h3 className="text-[16px] font-semibold mb-2">{title}</h3>
+                <p className="text-[14px] leading-relaxed text-[#9BA1AD]">{desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Features */}
-      <section id="features" className="py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold mb-12">Built for Content Strategists</h2>
-          <div className="grid grid-cols-2 gap-8">
-            {[
-              {
-                icon: Map,
-                title: 'The Landscape',
-                desc: 'See your entire content library as a living ecosystem. Each cluster is a biome — forests thriving, swamps choking, deserts wasting.',
-              },
-              {
-                icon: Network,
-                title: 'Content Overlap Detection',
-                desc: 'Find posts competing against each other for the same keywords. Stop fighting yourself in search results.',
-              },
-              {
-                icon: Sparkles,
-                title: 'Pre-Publish Oracle',
-                desc: 'Before you publish, ask the Oracle. It checks your draft against your entire library and warns you of potential conflicts.',
-              },
-              {
-                icon: Wrench,
-                title: 'Consolidation Engine',
-                desc: 'AI-powered consolidation plans with redirect maps, merged drafts, and one-click push to WordPress.',
-              },
-            ].map(({ icon: Icon, title, desc }) => (
-              <div
-                key={title}
-                className="rounded-xl border border-brand-border bg-brand-surface p-6"
-              >
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-brand-accent/20">
-                  <Icon size={20} className="text-brand-accent" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2">{title}</h3>
-                <p className="text-sm text-brand-text-muted">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Social Proof */}
-      <section className="border-t border-brand-border bg-brand-surface/50 py-20">
-        <div className="mx-auto max-w-4xl px-6 text-center">
-          <div className="rounded-xl border border-brand-border bg-brand-surface p-8">
-            <BarChart3 size={32} className="mx-auto mb-4 text-brand-accent" />
-            <p className="text-2xl font-semibold text-brand-text mb-2">
-              Increase traffic 35% by publishing 40% less
-            </p>
-            <p className="text-sm text-brand-text-muted">
-              Content teams using Enough focus on quality over quantity — and the numbers prove it.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold mb-12">Simple Pricing</h2>
-          <div className="grid grid-cols-2 gap-6 max-w-3xl mx-auto">
-            {[
-              {
-                name: 'Growth',
-                price: '$99',
-                features: [
-                  '1 site, up to 500 posts',
-                  'Full content landscape & dashboard',
-                  'Pre-Publish Oracle (AI assistant)',
-                  'Content overlap detection',
-                  '5 AI consolidation drafts/mo',
-                  'Weekly ecosystem reports',
-                  'Prioritized recommendations',
-                ],
-                cta: 'Start Growth Plan',
-                highlighted: true,
-              },
-              {
-                name: 'Scale',
-                price: '$299',
-                features: [
-                  'Up to 10 sites, 5,000 posts',
-                  'Everything in Growth',
-                  'Unlimited consolidations',
-                  'Impact tracking & reporting',
-                  'Priority support',
-                ],
-                cta: 'Start Scale Plan',
-                highlighted: false,
-              },
-            ].map((plan) => (
-              <div
-                key={plan.name}
-                className={`rounded-xl border p-6 flex flex-col ${
-                  plan.highlighted
-                    ? 'border-brand-accent bg-brand-accent/5 ring-2 ring-brand-accent'
-                    : 'border-brand-border bg-brand-surface'
-                }`}
-              >
-                <h3 className="text-lg font-bold mb-1">{plan.name}</h3>
-                <div className="mb-4">
-                  <span className="text-3xl font-bold">{plan.price}</span>
-                  <span className="text-brand-text-muted">/mo</span>
-                </div>
-                <ul className="space-y-2 flex-1 mb-6">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-sm">
-                      <Check size={14} className="text-brand-accent shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/signup"
-                  className={`block w-full rounded-lg py-2.5 text-center text-sm font-medium transition-colors ${
-                    plan.highlighted
-                      ? 'bg-brand-accent text-white hover:bg-brand-accent-hover'
-                      : 'border border-brand-border text-brand-text hover:bg-brand-surface-hover'
-                  }`}
-                >
-                  {plan.cta}
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="border-t border-brand-border py-20">
-        <div className="mx-auto max-w-4xl px-6 text-center">
-          <h2 className="text-3xl font-bold mb-4">
-            Your content library is a living ecosystem.
-          </h2>
-          <p className="text-lg text-brand-text-muted mb-8">
-            Time to see it.
+      {/* ════════════════════════════════════════════════
+          5. PRICING
+         ════════════════════════════════════════════════ */}
+      <section className="py-24 px-6 border-t border-[#23262F]">
+        <div className="mx-auto max-w-3xl">
+          <h2 className="text-center text-[28px] font-semibold mb-4">Simple, transparent pricing</h2>
+          <p className="text-center text-[14px] text-[#9BA1AD] mb-8">
+            30-day money-back guarantee on every plan.
           </p>
-          <Link
-            href="/signup"
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-8 py-3 text-base font-semibold text-white hover:bg-brand-accent-hover transition-colors"
-          >
-            Start Your Analysis
-            <ArrowRight size={18} />
-          </Link>
+
+          {/* Annual toggle */}
+          <div className="flex items-center justify-center gap-3 mb-10">
+            <span className={`text-[14px] ${!annual ? 'text-[#E8EAED]' : 'text-[#9BA1AD]'}`}>Monthly</span>
+            <button
+              onClick={() => setAnnual(!annual)}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                annual ? 'bg-[#3B82F6]' : 'bg-[#23262F]'
+              }`}
+              aria-label="Toggle annual billing"
+            >
+              <span
+                className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
+                  annual ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <span className={`text-[14px] ${annual ? 'text-[#E8EAED]' : 'text-[#9BA1AD]'}`}>
+              Annual
+            </span>
+            {annual && (
+              <span className="rounded-full bg-green-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-green-400">
+                2 months free
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Growth */}
+            <div className="rounded-xl border border-[#3B82F6] bg-[#13151B] p-6 ring-2 ring-[#3B82F6] flex flex-col">
+              <h3 className="text-lg font-semibold">{PLANS.growth.name}</h3>
+              <div className="mt-2 mb-1">
+                <span className="text-4xl font-bold">
+                  ${annual ? PLANS.growth.annualPrice.toLocaleString() : PLANS.growth.monthlyPrice}
+                </span>
+                <span className="text-[#9BA1AD] text-[14px]">
+                  /{annual ? 'year' : 'mo'}
+                </span>
+              </div>
+              {annual && (
+                <p className="text-[12px] text-[#9BA1AD] mb-3">
+                  Instead of ${(PLANS.growth.monthlyPrice * 12).toLocaleString()}/year
+                </p>
+              )}
+              {!annual && <div className="mb-3" />}
+              <ul className="space-y-2.5 flex-1 mb-6">
+                {PLANS.growth.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2 text-[14px]">
+                    <Check size={14} className="text-[#3B82F6] shrink-0 mt-0.5" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-2 mb-4 text-[12px] text-[#9BA1AD]">
+                <Shield size={12} className="text-[#3B82F6]" />
+                30-day money-back guarantee
+              </div>
+              <Link
+                href="/signup"
+                className="block w-full rounded-lg bg-[#3B82F6] py-3 text-center text-[14px] font-semibold text-white hover:bg-[#2563EB] transition-colors"
+              >
+                Start Growth Plan
+              </Link>
+            </div>
+
+            {/* Scale */}
+            <div className="rounded-xl border border-[#23262F] bg-[#13151B] p-6 flex flex-col">
+              <h3 className="text-lg font-semibold">{PLANS.scale.name}</h3>
+              <div className="mt-2 mb-1">
+                <span className="text-4xl font-bold">
+                  ${annual ? PLANS.scale.annualPrice.toLocaleString() : PLANS.scale.monthlyPrice}
+                </span>
+                <span className="text-[#9BA1AD] text-[14px]">
+                  /{annual ? 'year' : 'mo'}
+                </span>
+              </div>
+              {annual && (
+                <p className="text-[12px] text-[#9BA1AD] mb-3">
+                  Instead of ${(PLANS.scale.monthlyPrice * 12).toLocaleString()}/year
+                </p>
+              )}
+              {!annual && <div className="mb-3" />}
+              <ul className="space-y-2.5 flex-1 mb-6">
+                {PLANS.scale.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2 text-[14px]">
+                    <Check size={14} className="text-[#3B82F6] shrink-0 mt-0.5" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-2 mb-4 text-[12px] text-[#9BA1AD]">
+                <Shield size={12} className="text-[#3B82F6]" />
+                30-day money-back guarantee
+              </div>
+              <Link
+                href="/signup"
+                className="block w-full rounded-lg border border-[#23262F] py-3 text-center text-[14px] font-semibold text-[#E8EAED] hover:bg-[#23262F] transition-colors"
+              >
+                Start Scale Plan
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-brand-border py-8">
-        <div className="mx-auto max-w-6xl px-6 flex items-center justify-between">
-          <span className="text-sm text-brand-text-muted">
-            © {new Date().getFullYear()} Enough. Publish less. Grow more.
+      {/* ════════════════════════════════════════════════
+          6. FAQ
+         ════════════════════════════════════════════════ */}
+      <section className="py-24 px-6 border-t border-[#23262F]">
+        <div className="mx-auto max-w-2xl">
+          <h2 className="text-center text-[28px] font-semibold mb-10">Frequently asked questions</h2>
+          <div className="space-y-2">
+            {FAQ_ITEMS.map((item, i) => (
+              <div key={i} className="rounded-xl border border-[#23262F] bg-[#13151B]">
+                <button
+                  onClick={() => toggleFaq(i)}
+                  className="flex w-full items-center justify-between px-6 py-4 text-left"
+                >
+                  <span className="text-[14px] font-semibold">{item.q}</span>
+                  {openFaq === i ? (
+                    <ChevronUp size={18} className="text-[#9BA1AD] shrink-0 ml-4" />
+                  ) : (
+                    <ChevronDown size={18} className="text-[#9BA1AD] shrink-0 ml-4" />
+                  )}
+                </button>
+                {openFaq === i && (
+                  <div className="px-6 pb-4">
+                    <p className="text-[14px] leading-relaxed text-[#9BA1AD]">{item.a}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════
+          7. FOOTER
+         ════════════════════════════════════════════════ */}
+      <footer className="border-t border-[#23262F] py-8 px-6">
+        <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-4">
+          <span className="text-[12px] text-[#9BA1AD]">
+            &copy; 2025 Enough. All rights reserved.
           </span>
-          <div className="flex items-center gap-6 text-sm text-brand-text-muted">
-            <Link href="/login" className="hover:text-brand-text transition-colors">Log in</Link>
-            <Link href="/signup" className="hover:text-brand-text transition-colors">Sign up</Link>
-            <Link href="/terms" className="hover:text-brand-text transition-colors">Terms</Link>
-            <Link href="/privacy" className="hover:text-brand-text transition-colors">Privacy</Link>
+          <div className="flex items-center gap-6 text-[12px] text-[#9BA1AD]">
+            <Link href="/terms" className="hover:text-[#E8EAED] transition-colors">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:text-[#E8EAED] transition-colors">
+              Privacy
+            </Link>
+            <a href="mailto:hello@enough.app" className="hover:text-[#E8EAED] transition-colors">
+              Contact
+            </a>
           </div>
         </div>
       </footer>
+
+      {/* ════════════════════════════════════════════════
+          STICKY MOBILE CTA
+         ════════════════════════════════════════════════ */}
+      <div className="fixed bottom-0 left-0 right-0 sm:hidden border-t border-[#23262F] bg-[#0B0D11]/95 backdrop-blur-sm px-4 py-3 z-50">
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="block w-full rounded-lg bg-[#3B82F6] py-3 text-center text-[14px] font-semibold text-white hover:bg-[#2563EB] transition-colors"
+        >
+          Get Your Free Audit
+        </a>
+      </div>
     </div>
   );
 }
@@ -412,7 +543,7 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-[#0B0D11]">
         <Spinner size="lg" />
       </div>
     );
@@ -420,7 +551,7 @@ export default function HomePage() {
 
   if (user) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-[#0B0D11]">
         <Spinner size="lg" />
       </div>
     );

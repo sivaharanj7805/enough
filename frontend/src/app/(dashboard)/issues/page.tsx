@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useSite } from '@/lib/hooks/useSite';
 import { useProblems } from '@/lib/hooks/useApi';
@@ -20,9 +20,20 @@ import {
   Ghost,
   BarChart3,
   Filter,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  Sparkles,
+  Wand2,
+  XCircle,
 } from 'lucide-react';
 
-type IssueTab = 'all' | 'cannibalization' | 'decay' | 'thin' | 'seo' | 'orphan' | 'readability';
+type IssueTab = 'all' | 'cannibalization' | 'decay' | 'thin' | 'seo' | 'orphan' | 'readability' | 'ai_readiness';
+
+type SortField = 'severity' | 'type' | 'post';
+type SortDir = 'asc' | 'desc';
+
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 const TABS: Array<{ key: IssueTab; label: string; icon: React.ElementType; types: string[] }> = [
   { key: 'all', label: 'All Issues', icon: AlertTriangle, types: [] },
@@ -31,6 +42,7 @@ const TABS: Array<{ key: IssueTab; label: string; icon: React.ElementType; types
   { key: 'decay', label: 'Decay', icon: TrendingDown, types: ['content_decay', 'proxy_decay'] },
   { key: 'orphan', label: 'Orphans', icon: Ghost, types: ['orphan'] },
   { key: 'readability', label: 'Readability', icon: BookOpen, types: ['readability_too_complex'] },
+  { key: 'ai_readiness', label: 'AI Readiness', icon: Sparkles, types: ['ai_no_schema', 'ai_low_citability', 'ai_missing_eeat', 'ai_poor_extraction'] },
 ];
 
 const ISSUE_LABELS: Record<string, { label: string; description: string; icon: React.ElementType }> = {
@@ -50,7 +62,16 @@ const ISSUE_LABELS: Record<string, { label: string; description: string; icon: R
   readability_too_complex: { label: 'Hard to Read', description: 'Readability score is below threshold for the site\'s industry', icon: BookOpen },
   velocity_decline: { label: 'Publishing Decline', description: 'Publishing frequency has dropped significantly', icon: TrendingDown },
   duplicate_content: { label: 'Duplicate Content', description: 'Identical content exists at another URL — set up a 301 redirect', icon: AlertTriangle },
+  ai_no_schema: { label: 'No Schema Markup', description: 'Missing structured data that AI models use for citations', icon: Sparkles },
+  ai_low_citability: { label: 'Low Citability', description: 'Content is not structured for AI citation — add clear claims and sources', icon: Sparkles },
+  ai_missing_eeat: { label: 'Missing E-E-A-T Signals', description: 'No author bio, credentials, or experience signals found', icon: Sparkles },
+  ai_poor_extraction: { label: 'Poor AI Extraction', description: 'Content structure makes it hard for AI models to extract key facts', icon: Sparkles },
 };
+
+function SortIcon({ field, currentField, currentDir }: { field: SortField; currentField: SortField; currentDir: SortDir }) {
+  if (field !== currentField) return <ChevronsUpDown size={12} className="text-brand-text-muted/50" />;
+  return currentDir === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />;
+}
 
 export default function IssuesDashboardPage() {
   const { currentSite } = useSite();
@@ -59,6 +80,8 @@ export default function IssuesDashboardPage() {
   const [activeTab, setActiveTab] = useState<IssueTab>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<SortField>('severity');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   // Group problems by type for tab counts
   const tabCounts = useMemo(() => {
@@ -94,10 +117,27 @@ export default function IssuesDashboardPage() {
       result = result.filter((p) => p.severity === severityFilter);
     }
 
-    return result;
-  }, [problems, activeTab, severityFilter]);
+    // Sort
+    result = [...result].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'severity':
+          cmp = (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4);
+          break;
+        case 'type':
+          cmp = a.problem_type.localeCompare(b.problem_type);
+          break;
+        case 'post':
+          cmp = a.post_id.localeCompare(b.post_id);
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
 
-  // Group by severity for summary
+    return result;
+  }, [problems, activeTab, severityFilter, sortField, sortDir]);
+
+  // Severity breakdown for the active tab
   const severityCounts = useMemo(() => {
     const counts = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const p of filteredProblems) {
@@ -106,6 +146,18 @@ export default function IssuesDashboardPage() {
     }
     return counts;
   }, [filteredProblems]);
+
+  const handleSort = useCallback(
+    (field: SortField) => {
+      if (sortField === field) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortField(field);
+        setSortDir('asc');
+      }
+    },
+    [sortField]
+  );
 
   if (isLoading) {
     return (
@@ -125,31 +177,29 @@ export default function IssuesDashboardPage() {
         </p>
       </div>
 
-      {/* Severity Summary */}
-      <div className="grid grid-cols-4 gap-4">
-        {Object.entries(severityCounts).map(([sev, count]) => (
-          <button
-            key={sev}
-            onClick={() => setSeverityFilter(severityFilter === sev ? 'all' : sev)}
-            className={`rounded-xl border p-4 text-left transition-all duration-200 ${
-              severityFilter === sev
-                ? 'border-brand-accent bg-brand-accent/5'
-                : 'border-brand-border bg-brand-surface hover:border-brand-border-hover'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: SEVERITY_COLORS[sev as keyof typeof SEVERITY_COLORS] }}
-              />
-              <span className="text-xs font-medium uppercase tracking-wider text-brand-text-muted">
-                {sev}
-              </span>
-            </div>
-            <p className="text-2xl font-bold text-brand-text mt-2">{count}</p>
-          </button>
-        ))}
-      </div>
+      {/* Bulk Actions Bar */}
+      {filteredProblems.length > 0 && (
+        <Card className="!p-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs font-medium text-brand-text-muted">Bulk Actions:</span>
+            <button
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors"
+            >
+              <Wand2 size={12} />
+              Generate recommendations for selected
+            </button>
+            <button
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-surface-hover text-brand-text-muted text-xs font-medium hover:text-brand-text transition-colors"
+            >
+              <XCircle size={12} />
+              Dismiss all low-severity
+            </button>
+            <span className="ml-auto text-xs text-brand-text-muted">
+              {filteredProblems.length} issues in view
+            </span>
+          </div>
+        </Card>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-brand-border">
@@ -172,6 +222,62 @@ export default function IssuesDashboardPage() {
             </span>
           </button>
         ))}
+      </div>
+
+      {/* Severity Breakdown for Active Tab */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {(Object.entries(severityCounts) as Array<[string, number]>).map(([sev, count]) => {
+          const color = SEVERITY_COLORS[sev as keyof typeof SEVERITY_COLORS];
+          return (
+            <button
+              key={sev}
+              onClick={() => setSeverityFilter(severityFilter === sev ? 'all' : sev)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                severityFilter === sev
+                  ? 'ring-2 ring-offset-1 ring-offset-brand-bg'
+                  : 'hover:opacity-80'
+              }`}
+              style={{
+                backgroundColor: `${color}15`,
+                color: color,
+                ...(severityFilter === sev ? { ringColor: color } : {}),
+              }}
+            >
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+              {sev}: {count}
+            </button>
+          );
+        })}
+        {severityFilter !== 'all' && (
+          <button
+            onClick={() => setSeverityFilter('all')}
+            className="text-xs text-brand-text-muted hover:text-brand-text transition-colors"
+          >
+            Clear filter
+          </button>
+        )}
+      </div>
+
+      {/* Sortable Column Headers */}
+      <div className="flex items-center gap-4 px-4 py-2 bg-brand-bg/50 rounded-lg border border-brand-border/50">
+        <button
+          onClick={() => handleSort('severity')}
+          className="flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-brand-text-muted hover:text-brand-text"
+        >
+          Severity <SortIcon field="severity" currentField={sortField} currentDir={sortDir} />
+        </button>
+        <button
+          onClick={() => handleSort('type')}
+          className="flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-brand-text-muted hover:text-brand-text"
+        >
+          Type <SortIcon field="type" currentField={sortField} currentDir={sortDir} />
+        </button>
+        <button
+          onClick={() => handleSort('post')}
+          className="flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-brand-text-muted hover:text-brand-text ml-auto"
+        >
+          Post <SortIcon field="post" currentField={sortField} currentDir={sortDir} />
+        </button>
       </div>
 
       {/* Issues List */}

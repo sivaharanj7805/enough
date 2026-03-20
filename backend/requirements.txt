@@ -48,3 +48,6 @@ numpy==2.2.2
 anthropic==0.42.0
 networkx
 rank_bm25
+
+# PDF generation
+reportlab>=4.0

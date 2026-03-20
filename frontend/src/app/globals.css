@@ -2,15 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── CSS Custom Properties ── */
+:root {
+  /* Light mode colors */
+  --color-bg: #FFFFFF;
+  --color-surface: #F9FAFB;
+  --color-surface-hover: #F3F4F6;
+  --color-border: #E5E7EB;
+  --color-border-hover: #D1D5DB;
+  --color-text: #111827;
+  --color-text-secondary: #4B5563;
+  --color-text-tertiary: #9CA3AF;
+  --color-accent: #2563EB;
+  --color-accent-hover: #1D4ED8;
+  --color-accent-muted: #DBEAFE;
+  --color-success: #16A34A;
+  --color-success-muted: #DCFCE7;
+  --color-warning: #D97706;
+  --color-warning-muted: #FEF3C7;
+  --color-critical: #DC2626;
+  --color-critical-muted: #FEE2E2;
+
+  /* Timing constants */
+  --timing-instant: 0ms;
+  --timing-fast: 100ms;
+  --timing-normal: 200ms;
+  --timing-smooth: 300ms;
+  --timing-deliberate: 500ms;
+  --easing-default: cubic-bezier(0.25, 0.1, 0.25, 1.0);
+}
+
+.dark {
+  --color-bg: #0B0D11;
+  --color-surface: #13151B;
+  --color-surface-hover: #1A1D26;
+  --color-border: #23262F;
+  --color-border-hover: #2E323D;
+  --color-text: #E8EAED;
+  --color-text-secondary: #9BA1AD;
+  --color-text-tertiary: #5F6571;
+  --color-accent: #3B82F6;
+  --color-accent-hover: #2563EB;
+  --color-accent-muted: #1E3A5F;
+  --color-success: #22C55E;
+  --color-success-muted: #14532D;
+  --color-warning: #F59E0B;
+  --color-warning-muted: #422006;
+  --color-critical: #EF4444;
+  --color-critical-muted: #450A0A;
+}
 
 html {
   color-scheme: dark;
 }
 
 body {
-  background-color: #0a0f1a;
-  color: #e2e8f0;
+  background-color: #0B0D11;
+  color: #E8EAED;
   font-family: 'Inter', system-ui, sans-serif;
 }
 
@@ -144,3 +194,31 @@ body {
   to   { transform: translateY(0); opacity: 1; }
 }
 .toast-in { animation: toast-in 0.2s ease-out forwards; }
+
+/* Toast slide animations */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideOutRight {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(100%); opacity: 0; }
+}
+.toast-slide-in { animation: slideInRight var(--timing-normal, 200ms) ease-out forwards; }
+.toast-slide-out { animation: slideOutRight var(--timing-normal, 200ms) ease-in forwards; }
+
+/* Health score counter tick */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.count-up { animation: countUp 0.3s ease-out forwards; }
+
+/* ── Accessibility: Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

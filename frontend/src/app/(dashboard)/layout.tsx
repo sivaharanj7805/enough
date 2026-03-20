@@ -57,18 +57,25 @@ export default function DashboardLayout({
   // Still waiting for redirect — don't flash dashboard content
   if (!isPaid && !isUnpaidPage) return null;
 
+  const isOraclePage = pathname === '/oracle' || pathname.startsWith('/oracle/');
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-auto bg-brand-bg p-6">
-          {children}
+        <main
+          id="main-content"
+          className="flex-1 overflow-auto bg-[#0B0D11]"
+        >
+          <div className="mx-auto max-w-[1200px] px-6 py-6 md:px-16">
+            {children}
+          </div>
         </main>
       </div>
 
-      {/* Persistent Oracle FAB — only for paying users */}
-      {isPaid && (
+      {/* Persistent Oracle FAB — only for paying users, hidden on /oracle page */}
+      {isPaid && !isOraclePage && (
         <button
           onClick={() => setOracleOpen(true)}
           className="fixed bottom-6 right-6 z-30 flex items-center gap-2 px-4 py-3 rounded-full

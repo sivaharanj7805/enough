@@ -2,22 +2,30 @@
 
 Returns a structured JSON report for a site that can be rendered
 as a public shareable page or exported to PDF.
+
+Includes a public PDF audit endpoint (no auth) that accepts URL + email,
+enforces a 50-post limit and rate limits (3 per email per day).
 """
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 from typing import Annotated
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi.responses import Response
+from pydantic import BaseModel, EmailStr
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
-from app.database import get_db
+from app.database import get_db, get_pool
 from app.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 class AuditTopPost(BaseModel):

@@ -3,16 +3,24 @@ import { ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface EmptyStateProps {
+  /** Monochrome illustration icon — rendered large and muted */
   icon?: LucideIcon;
+  /** Clear headline */
   title: string;
+  /** Helpful subtext explaining the state */
   description: string;
-  /** Primary CTA */
+  /** Primary CTA label */
   actionLabel?: string;
+  /** Primary CTA link (renders an anchor) */
   actionHref?: string;
+  /** Primary CTA click handler (renders a button when no href) */
   onAction?: () => void;
-  /** Secondary CTA */
+  /** Secondary action label */
   secondaryLabel?: string;
+  /** Secondary action link */
   secondaryHref?: string;
+  /** Secondary action click handler (renders a button when no href) */
+  onSecondaryAction?: () => void;
   /** Show demo data banner */
   showDemoBanner?: boolean;
   className?: string;
@@ -23,6 +31,17 @@ interface EmptyStateProps {
  *
  * Research: empty states that show value (demo data, clear next step) retain
  * 75% more users than blank screens with "no data" messages.
+ *
+ * Usage:
+ *   <EmptyState
+ *     icon={Search}
+ *     title="No posts analyzed yet"
+ *     description="Posts will appear here once the crawl completes."
+ *     actionLabel="Start analysis"
+ *     actionHref="/onboarding"
+ *     secondaryLabel="Learn more"
+ *     onSecondaryAction={() => openDocs()}
+ *   />
  */
 export function EmptyState({
   icon: Icon,
@@ -33,20 +52,29 @@ export function EmptyState({
   onAction,
   secondaryLabel,
   secondaryHref,
+  onSecondaryAction,
   showDemoBanner,
   className,
 }: EmptyStateProps) {
   return (
-    <div className={`text-center py-12 px-6 ${className ?? ''}`}>
+    <div className={`text-center py-16 px-6 ${className ?? ''}`}>
+      {/* Monochrome illustration — large, muted icon */}
       {Icon && (
-        <div className="mx-auto mb-4 w-12 h-12 rounded-xl bg-[#1e293b] flex items-center justify-center">
-          <Icon size={24} className="text-[#64748b]" />
+        <div className="mx-auto mb-6 w-20 h-20 rounded-2xl bg-[#1e293b]/60 flex items-center justify-center">
+          <Icon size={40} className="text-[#475569]" strokeWidth={1.5} />
         </div>
       )}
+
+      {/* Clear headline */}
       <h3 className="text-lg font-semibold text-[#e2e8f0] mb-2">{title}</h3>
-      <p className="text-sm text-[#64748b] max-w-md mx-auto mb-6">{description}</p>
+
+      {/* Helpful subtext */}
+      <p className="text-sm text-[#64748b] max-w-md mx-auto mb-8 leading-relaxed">
+        {description}
+      </p>
 
       <div className="flex flex-col items-center gap-3">
+        {/* Primary CTA — link variant */}
         {actionLabel && actionHref && (
           <Link
             href={actionHref}
@@ -55,6 +83,8 @@ export function EmptyState({
             {actionLabel} <ArrowRight size={14} />
           </Link>
         )}
+
+        {/* Primary CTA — button variant */}
         {actionLabel && onAction && !actionHref && (
           <button
             onClick={onAction}
@@ -63,6 +93,8 @@ export function EmptyState({
             {actionLabel} <ArrowRight size={14} />
           </button>
         )}
+
+        {/* Secondary action — link variant */}
         {secondaryLabel && secondaryHref && (
           <Link
             href={secondaryHref}
@@ -70,6 +102,16 @@ export function EmptyState({
           >
             {secondaryLabel}
           </Link>
+        )}
+
+        {/* Secondary action — button variant */}
+        {secondaryLabel && onSecondaryAction && !secondaryHref && (
+          <button
+            onClick={onSecondaryAction}
+            className="text-xs text-[#64748b] hover:text-[#94a3b8] transition-colors"
+          >
+            {secondaryLabel}
+          </button>
         )}
       </div>
 
