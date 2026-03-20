@@ -1243,13 +1243,15 @@ async def quick_scan(
             from app.services.problem_detection import ProblemDetector
             from app.services.fast_recommendations import generate_fast_recommendations
 
-            hs = HealthScorer()
-            await hs.score_site(db, site_id)
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                hs = HealthScorer()
+                await hs.score_site(conn, site_id)
 
-            pd = ProblemDetector()
-            await pd.detect_all(db, site_id)
+                pd = ProblemDetector()
+                await pd.detect_all(conn, site_id)
 
-            await generate_fast_recommendations(db, site_id)
+                await generate_fast_recommendations(conn, site_id)
             logger.info("Quick scan complete for %s in %.1fs", site_id, time.time() - t0)
         except Exception as e:
             logger.error("Quick scan failed for %s: %s", site_id, e)

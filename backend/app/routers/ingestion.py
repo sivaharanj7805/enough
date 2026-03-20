@@ -226,7 +226,7 @@ async def _run_analytics_sync(site_id: UUID, site: dict) -> None:
     """Background task: sync GA4 + GSC data."""
     try:
         pool = await get_pool()
-        refresh_token = decrypt_value(site["google_refresh_token"]) if site.get("google_refresh_token") else None
+        refresh_token = decrypt_value(site["google_tokens"]) if site.get("google_tokens") else None
 
         if not refresh_token:
             logger.warning("No Google refresh token for site %s", site_id)

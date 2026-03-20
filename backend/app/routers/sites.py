@@ -162,5 +162,5 @@ def _sanitize_site_response(row) -> SiteResponse:
     """Build a SiteResponse, stripping encrypted fields from output."""
     data = dict(row)
     data.pop("wordpress_app_password", None)
-    data.pop("google_refresh_token", None)
+    data.pop("google_tokens", None)
     return SiteResponse(**data)
