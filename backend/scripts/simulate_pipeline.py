@@ -6,12 +6,13 @@ to demonstrate what the system produces at each stage.
 """
 
 import json
+import os
 import sys
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
 # Add parent dir so imports work
-sys.path.insert(0, "/home/ubuntu/Projects/enough/backend")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.health_scoring import (
     _compute_trend, _ranking_score, _engagement_score,

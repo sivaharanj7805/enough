@@ -24,6 +24,7 @@ async def get_pool() -> asyncpg.Pool:
             min_size=settings.db_pool_min_size,
             max_size=settings.db_pool_max_size,
             command_timeout=60,
+            ssl="require",
         )
         logger.info("Database connection pool created")
     return _pool
