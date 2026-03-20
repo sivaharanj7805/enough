@@ -52,4 +52,7 @@ CREATE TABLE IF NOT EXISTS winback_emails (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_winback_user ON winback_emails(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_winback_user ON winback_emails(user_id);
+
+-- Grace period for payment failures (7-day window before lockout)
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS grace_period_ends_at TIMESTAMPTZ;
