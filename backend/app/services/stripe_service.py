@@ -132,7 +132,7 @@ class StripeService:
         async with db.transaction():
             # Record the event for idempotency
             await db.execute(
-                "INSERT INTO webhook_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                "INSERT INTO webhook_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT (event_id) DO NOTHING",
                 event_id,
                 event_type,
             )
