@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ArrowLeft, X, ExternalLink, BarChart2, Leaf, Sparkles } from 'lucide-react';
+import { ArrowLeft, X, ExternalLink, BarChart2, Leaf, Sparkles, MapPin, Volume2, VolumeX } from 'lucide-react';
 import { useSite } from '@/lib/hooks/useSite';
 import { useClusters, useCannibalizationPairs } from '@/lib/hooks/useApi';
 import { EcosystemCanvas, type CannPair } from '@/components/landscape/EcosystemCanvas';
@@ -15,6 +15,11 @@ import { EcosystemNarrative } from '@/components/landscape/EcosystemNarrative';
 import { EcosystemOverlay } from '@/components/landscape/EcosystemOverlay';
 import { OnboardingTour } from '@/components/landscape/OnboardingTour';
 import { CreatureLegend } from '@/components/landscape/CreatureLegend';
+import { SeasonsOverlay } from '@/components/landscape/SeasonsOverlay';
+import { ContentPlannerOverlay } from '@/components/landscape/ContentPlannerOverlay';
+import { Minimap } from '@/components/landscape/Minimap';
+import { useEcosystemSounds } from '@/lib/hooks/useEcosystemSounds';
+import { useEasterEggs } from '@/lib/hooks/useEasterEggs';
 import { ROLE_COLORS, ROLE_LABELS, TREND_ICONS, TREND_COLORS } from '@/lib/constants';
 import type { PostHealth, ClusterDetail, CannibalizationPair, Recommendation } from '@/lib/types';
 import type { EcosystemState } from '@/lib/constants';
@@ -51,6 +56,9 @@ export default function LandscapePage() {
   const [selectedPost, setSelectedPost] = useState<PostHealth | null>(null);
   const [activeCreature, setActiveCreature] = useState<CreatureType>(null);
   const [viewMode, setViewMode] = useState<'ecosystem' | 'data'>('ecosystem');
+  const [plannerVisible, setPlannerVisible] = useState(false);
+  const sounds = useEcosystemSounds();
+  useEasterEggs();
 
   const { data: ecosystemVisuals } = useEcosystemVisuals(currentSite?.id ?? null);
   const { data: cannPairsRaw } = useCannibalizationPairs(currentSite?.id ?? null);
@@ -144,27 +152,55 @@ export default function LandscapePage() {
     <div className="flex h-full -m-6">
       {/* Main canvas */}
       <div className="flex-1 relative">
-        {/* View toggle */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex rounded-lg border border-brand-border bg-brand-surface/95 backdrop-blur-sm p-0.5">
+        {/* View toggle + toolbar */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
+          <div className="flex rounded-lg border border-brand-border bg-brand-surface/95 backdrop-blur-sm p-0.5">
+            <button
+              onClick={() => setViewMode('ecosystem')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'ecosystem'
+                  ? 'bg-brand-accent text-black'
+                  : 'text-brand-text-muted hover:text-brand-text'
+              }`}
+            >
+              <Leaf size={12} /> Ecosystem
+            </button>
+            <button
+              onClick={() => setViewMode('data')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'data'
+                  ? 'bg-brand-accent text-black'
+                  : 'text-brand-text-muted hover:text-brand-text'
+              }`}
+            >
+              <BarChart2 size={12} /> Data View
+            </button>
+          </div>
+
+          {/* Content Planner toggle */}
           <button
-            onClick={() => setViewMode('ecosystem')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              viewMode === 'ecosystem'
-                ? 'bg-brand-accent text-black'
-                : 'text-brand-text-muted hover:text-brand-text'
+            onClick={() => setPlannerVisible(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors backdrop-blur-sm ${
+              plannerVisible
+                ? 'bg-green-500/20 border-green-500/30 text-green-400'
+                : 'bg-brand-surface/95 border-brand-border text-brand-text-muted hover:text-brand-text'
             }`}
+            title="Toggle content planner overlay"
           >
-            <Leaf size={12} /> Ecosystem
+            <MapPin size={12} /> Planner
           </button>
+
+          {/* Sound toggle */}
           <button
-            onClick={() => setViewMode('data')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              viewMode === 'data'
-                ? 'bg-brand-accent text-black'
-                : 'text-brand-text-muted hover:text-brand-text'
+            onClick={sounds.toggle}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-xs font-medium transition-colors backdrop-blur-sm ${
+              sounds.enabled
+                ? 'bg-blue-500/20 border-blue-500/30 text-blue-400'
+                : 'bg-brand-surface/95 border-brand-border text-brand-text-muted hover:text-brand-text'
             }`}
+            title={sounds.enabled ? 'Disable sounds' : 'Enable sounds'}
           >
-            <BarChart2 size={12} /> Data View
+            {sounds.enabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
           </button>
         </div>
 
@@ -212,6 +248,24 @@ export default function LandscapePage() {
                 clusters={effectiveClusters}
               />
             )}
+
+            {/* Seasons overlay — visual seasonal effects */}
+            <SeasonsOverlay />
+
+            {/* Content planner overlay */}
+            <ContentPlannerOverlay
+              clusters={effectiveClusters}
+              visible={plannerVisible}
+            />
+
+            {/* Minimap */}
+            <Minimap
+              clusters={effectiveClusters}
+              canvasWidth={800}
+              canvasHeight={600}
+              viewportTransform={null}
+              onNavigate={() => {}}
+            />
 
             {/* Creature legend */}
             <CreatureLegend />
