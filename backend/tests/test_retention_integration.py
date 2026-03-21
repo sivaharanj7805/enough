@@ -373,7 +373,7 @@ async def test_get_impact_card_not_found(app_with_mocks):
 async def test_get_steward_profile(app_with_mocks):
     app, conn = app_with_mocks
 
-    with patch("app.routers.retention.StewardService") as MockSvc:
+    with patch("app.services.steward.StewardService") as MockSvc:
         svc = MockSvc.return_value
         svc.get_profile = AsyncMock(return_value={
             "user_id": TEST_USER_ID,
