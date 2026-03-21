@@ -12,7 +12,7 @@ def test_cron_endpoint_blocked_with_no_secret_in_production():
     from fastapi import HTTPException
 
     async def run():
-        with patch("app.dependencies.get_settings") as mock_settings:
+        with patch("app.config.get_settings") as mock_settings:
             mock_settings.return_value = Settings(
                 environment="production",
                 cron_secret="",  # Not set
@@ -31,7 +31,7 @@ def test_cron_endpoint_warns_but_passes_in_dev_with_no_secret():
     import asyncio
 
     async def run():
-        with patch("app.dependencies.get_settings") as mock_settings:
+        with patch("app.config.get_settings") as mock_settings:
             mock_settings.return_value = Settings(
                 environment="development",
                 cron_secret="",
@@ -50,7 +50,7 @@ def test_cron_rejects_wrong_secret():
     from fastapi import HTTPException
 
     async def run():
-        with patch("app.dependencies.get_settings") as mock_settings:
+        with patch("app.config.get_settings") as mock_settings:
             mock_settings.return_value = Settings(
                 environment="production",
                 cron_secret="correct-secret",
@@ -69,7 +69,7 @@ def test_cron_accepts_correct_secret():
     import asyncio
 
     async def run():
-        with patch("app.dependencies.get_settings") as mock_settings:
+        with patch("app.config.get_settings") as mock_settings:
             mock_settings.return_value = Settings(
                 cron_secret="correct-secret",
             )

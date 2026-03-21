@@ -29,6 +29,7 @@ class TestAuthDependency:
         mock_settings = MagicMock()
         mock_settings.supabase_key = "some-key"
         mock_settings.supabase_url = "https://test.supabase.co"
+        mock_settings.supabase_jwt_secret = secret
         mock_settings.secret_key = secret
 
         with patch("app.config.get_settings", return_value=mock_settings):
@@ -49,6 +50,7 @@ class TestAuthDependency:
         mock_settings = MagicMock()
         mock_settings.supabase_key = "some-key"
         mock_settings.supabase_url = "https://test.supabase.co"
+        mock_settings.supabase_jwt_secret = secret
         mock_settings.secret_key = secret
 
         with patch("app.config.get_settings", return_value=mock_settings):
@@ -106,6 +108,7 @@ class TestAuthDependency:
         mock_settings = MagicMock()
         mock_settings.supabase_key = "some-key"
         mock_settings.supabase_url = "https://test.supabase.co"
+        mock_settings.supabase_jwt_secret = secret
         mock_settings.secret_key = secret
 
         with patch("app.config.get_settings", return_value=mock_settings):

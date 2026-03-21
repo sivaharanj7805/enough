@@ -43,6 +43,13 @@ def test_validate_production_passes_with_valid_config():
         supabase_url="https://example.supabase.co",
         supabase_jwt_secret="valid-jwt-secret",
         cron_secret="valid-cron-secret",
+        stripe_secret_key="sk_test_abc123",
+        stripe_webhook_secret="whsec_abc123",
+        stripe_price_growth="price_abc123",
+        resend_api_key="re_abc123",
+        openai_api_key="sk-abc123",
+        anthropic_api_key="sk-ant-abc123",
+        frontend_url="https://enough.app",
     )
     # Should not raise
     validate_production(settings)
@@ -71,6 +78,13 @@ def test_validate_production_warns_on_cors_wildcard(caplog):
         supabase_url="https://example.supabase.co",
         supabase_jwt_secret="valid-jwt-secret",
         cron_secret="valid-cron-secret",
+        stripe_secret_key="sk_test_abc123",
+        stripe_webhook_secret="whsec_abc123",
+        stripe_price_growth="price_abc123",
+        resend_api_key="re_abc123",
+        openai_api_key="sk-abc123",
+        anthropic_api_key="sk-ant-abc123",
+        frontend_url="https://enough.app",
         cors_origins="*",
     )
     with caplog.at_level(logging.WARNING):
