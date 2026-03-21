@@ -370,6 +370,61 @@ export interface RecommendationListResponse {
   by_priority: Record<string, number>;
 }
 
+// ─── Position Alerts & Monitoring ────────────────
+export interface PositionAlert {
+  id: string;
+  site_id: string;
+  post_id: string | null;
+  alert_type: 'position_drop' | 'position_gain' | 'new_competitor' | 'new_post_detected';
+  keyword: string | null;
+  old_position: number | null;
+  new_position: number | null;
+  details: Record<string, unknown>;
+  status: string;
+  detected_at: string | null;
+  post_title: string | null;
+  post_url: string | null;
+}
+
+export interface AlertsListResponse {
+  alerts: PositionAlert[];
+  total: number;
+}
+
+export interface SinceLastVisitResponse {
+  new_problems_count: number;
+  new_alerts_count: number;
+  completed_recommendations_count: number;
+  new_alerts: PositionAlert[];
+  last_visit: string | null;
+}
+
+export interface ROISummary {
+  completed_recommendations: number;
+  estimated_traffic_recovery: number;
+  estimated_traffic_value: number;
+  days_active: number;
+  health_score_change: number | null;
+  initial_health_score: number | null;
+  current_health_score: number | null;
+}
+
+export interface TopContentGap {
+  gap_id: string;
+  query: string;
+  impressions: number;
+  avg_position: number | null;
+  cluster_label: string | null;
+  brief_text: string | null;
+}
+
+export interface BatchPushMetaResponse {
+  total: number;
+  pushed: number;
+  failed: number;
+  details: Array<{ rec_id: string; error?: string; success?: boolean }>;
+}
+
 // ─── Auth ────────────────────────────────────────
 export interface AuthUser {
   id: string;

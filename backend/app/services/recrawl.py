@@ -263,6 +263,17 @@ async def run_daily_refresh() -> dict:
         try:
             await refresh_analytics(site["id"], site)
             results["sites_refreshed"] += 1
+
+            # Run position monitoring after fresh GSC data
+            try:
+                from app.services.position_monitor import PositionMonitor
+                async with pool.acquire() as db:
+                    monitor = PositionMonitor()
+                    alert_counts = await monitor.check_position_changes(db, site["id"])
+                    results.setdefault("position_alerts", 0)
+                    results["position_alerts"] += sum(alert_counts.values())
+            except Exception as pe:
+                logger.error("Position monitor failed for site %s: %s", site["id"], pe)
         except Exception as e:
             logger.error("Daily refresh failed for site %s: %s", site["id"], e)
             results["errors"] += 1
@@ -285,6 +296,29 @@ async def run_weekly_recrawl() -> dict:
             results["sites_recrawled"] += 1
             results["new_posts"] += r["new"]
             results["updated_posts"] += r["updated"]
+
+            # Check new posts for cannibalization and cluster fit
+            if r["new"] > 0:
+                try:
+                    from app.services.new_content_checker import NewContentChecker
+                    async with pool.acquire() as db:
+                        # Find new post IDs (posts created in the last hour)
+                        new_post_rows = await db.fetch(
+                            """
+                            SELECT id FROM posts
+                            WHERE site_id = $1
+                              AND created_at > NOW() - INTERVAL '1 hour'
+                            """,
+                            site["id"],
+                        )
+                        if new_post_rows:
+                            checker = NewContentChecker()
+                            new_ids = [row["id"] for row in new_post_rows]
+                            alerts = await checker.check_new_posts(db, site["id"], new_ids)
+                            results.setdefault("new_post_alerts", 0)
+                            results["new_post_alerts"] += alerts
+                except Exception as nce:
+                    logger.error("New content check failed for site %s: %s", site["id"], nce)
         except Exception as e:
             logger.error("Weekly recrawl failed for site %s: %s", site["id"], e)
             results["errors"] += 1

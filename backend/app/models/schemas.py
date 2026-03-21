@@ -591,3 +591,80 @@ class EcosystemVisualsResponse(BaseModel):
     animals: dict[str, list[AnimalData]]
     water_quality_note: str | None = None
     terrain_features: dict[str, list[TerrainFeature]]
+
+
+# ──────────────────────────── Action Gap & Monitoring ────────────────────────────
+
+class PushMetaRequest(BaseModel):
+    """Request to push title/meta description to WordPress."""
+    post_id: UUID
+    title: str | None = None
+    meta_description: str | None = None
+
+
+class PushMetaResponse(BaseModel):
+    """Result of pushing meta to WordPress."""
+    post_id: UUID
+    pushed_fields: list[str]
+    error: str | None = None
+    success: bool
+
+
+class PositionAlertResponse(BaseModel):
+    """A position monitoring alert."""
+    id: str
+    site_id: str
+    post_id: str | None = None
+    alert_type: str
+    keyword: str | None = None
+    old_position: float | None = None
+    new_position: float | None = None
+    details: dict = {}
+    status: str
+    detected_at: str | None = None
+    post_title: str | None = None
+    post_url: str | None = None
+
+
+class AlertsListResponse(BaseModel):
+    """List of position alerts."""
+    alerts: list[PositionAlertResponse]
+    total: int
+
+
+class SinceLastVisitResponse(BaseModel):
+    """Changes since user's last visit."""
+    new_problems_count: int
+    new_alerts_count: int
+    completed_recommendations_count: int
+    new_alerts: list[PositionAlertResponse] = []
+    last_visit: str | None = None
+
+
+class BatchPushMetaResponse(BaseModel):
+    """Result of batch pushing meta to WordPress."""
+    total: int
+    pushed: int
+    failed: int
+    details: list[dict] = []
+
+
+class TopContentGapResponse(BaseModel):
+    """Top content gap for the Today view."""
+    gap_id: str
+    query: str
+    impressions: int
+    avg_position: float | None
+    cluster_label: str | None
+    brief_text: str | None
+
+
+class ROISummaryResponse(BaseModel):
+    """ROI summary for the Today view."""
+    completed_recommendations: int
+    estimated_traffic_recovery: int
+    estimated_traffic_value: float
+    days_active: int
+    health_score_change: float | None = None
+    initial_health_score: float | None = None
+    current_health_score: float | None = None

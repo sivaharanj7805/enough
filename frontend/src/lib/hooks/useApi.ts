@@ -18,6 +18,10 @@ import type {
   ContentProblemSummary,
   Recommendation,
   RecommendationListResponse,
+  AlertsListResponse,
+  SinceLastVisitResponse,
+  ROISummary,
+  TopContentGap,
 } from '@/lib/types';
 import type { EcosystemVisualsResponse } from '@/lib/types/phase6';
 
@@ -167,4 +171,36 @@ interface Subscription {
 
 export function useSubscription() {
   return useSWRFetch<Subscription>('/billing/subscription');
+}
+
+// ─── Monitoring & ROI ───────────────────────────
+
+export function useAlerts(siteId: string | null) {
+  return useSWRFetch<AlertsListResponse>(
+    siteId ? `/sites/${siteId}/intelligence/alerts` : null
+  );
+}
+
+export function useSinceLastVisit(siteId: string | null) {
+  return useSWRFetch<SinceLastVisitResponse>(
+    siteId ? `/sites/${siteId}/intelligence/since-last-visit` : null
+  );
+}
+
+export function useROISummary(siteId: string | null) {
+  return useSWRFetch<ROISummary>(
+    siteId ? `/sites/${siteId}/intelligence/roi-summary` : null
+  );
+}
+
+export function useHealthHistory(siteId: string | null) {
+  return useSWRFetch<Array<{ score: number; factor_scores: Record<string, number>; analyzed_at: string | null }>>(
+    siteId ? `/sites/${siteId}/intelligence/health/history` : null
+  );
+}
+
+export function useTopContentGap(siteId: string | null) {
+  return useSWRFetch<TopContentGap | null>(
+    siteId ? `/sites/${siteId}/intelligence/top-content-gap` : null
+  );
 }

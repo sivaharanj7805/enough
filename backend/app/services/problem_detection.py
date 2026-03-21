@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 class ProblemDetector:
     """Detect content problems across a site."""
 
+    _first_detected_map: dict[tuple, datetime] = {}
+
+    def _get_first_detected(self, post_id, problem_type: str):
+        """Look up preserved first_detected_at for a continuing problem."""
+        return self._first_detected_map.get((str(post_id), problem_type))
+
     async def detect_all(self, db: asyncpg.Connection, site_id: UUID) -> dict[str, int]:
         """Run all problem detection scans for a site.
 
@@ -60,6 +66,25 @@ class ProblemDetector:
         )
         has_ga4 = (ga4_count or 0) > 0
         has_gsc = (gsc_count or 0) > 0
+
+        # Preserve first_detected_at for continuing problems
+        # Save existing problem fingerprints before clearing
+        existing_problems = await db.fetch(
+            """
+            SELECT post_id, problem_type, first_detected_at
+            FROM content_problems
+            WHERE site_id = $1
+            """,
+            site_id,
+        )
+        first_detected_map: dict[tuple, datetime] = {}
+        for ep in existing_problems:
+            key = (str(ep["post_id"]), ep["problem_type"])
+            if ep["first_detected_at"]:
+                first_detected_map[key] = ep["first_detected_at"]
+
+        # Store the map for use in insert methods
+        self._first_detected_map = first_detected_map
 
         # Clear old problems (idempotent)
         await db.execute(
@@ -262,10 +287,11 @@ class ProblemDetector:
 
             await db.execute(
                 """
-                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+                VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
                 ON CONFLICT (post_id, problem_type) DO UPDATE SET
-                    severity = $4, details = $5, detected_at = NOW()
+                    severity = $4, details = $5, detected_at = NOW(),
+                    first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
                 """,
                 r["id"], site_id, problem_type, severity,
                 json.dumps({
@@ -273,7 +299,7 @@ class ProblemDetector:
                     "recent_clicks": recent_c,
                     "previous_clicks": prev_c,
                     "drop_percent": round(pct_drop, 1),
-                }),
+                }), self._get_first_detected(r["id"], problem_type),
             )
             found += 1
 
@@ -300,17 +326,18 @@ class ProblemDetector:
 
             await db.execute(
                 """
-                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+                VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
                 ON CONFLICT (post_id, problem_type) DO UPDATE SET
-                    severity = $4, details = $5, detected_at = NOW()
+                    severity = $4, details = $5, detected_at = NOW(),
+                    first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
                 """,
                 r["id"], site_id, "decay_mild", "medium",
                 json.dumps({
                     "signal": "stale_plus_low_ranking",
                     "months_since_update": round(months_old, 1),
                     "avg_position": round(float(r["avg_pos"]), 1),
-                }),
+                }), self._get_first_detected(r["id"], "decay_mild"),
             )
             found += 1
 
@@ -347,17 +374,18 @@ class ProblemDetector:
 
             await db.execute(
                 """
-                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+                VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
                 ON CONFLICT (post_id, problem_type) DO UPDATE SET
-                    severity = $4, details = $5, detected_at = NOW()
+                    severity = $4, details = $5, detected_at = NOW(),
+                    first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
                 """,
                 r["id"], site_id, f"decay_{severity}", severity,
                 json.dumps({
                     "signal": "position_drop",
                     "best_historic_position": round(best_pos, 1),
                     "current_position": round(cur_pos, 1),
-                }),
+                }), self._get_first_detected(r["id"], f"decay_{severity}"),
             )
             found += 1
 
@@ -485,14 +513,16 @@ class ProblemDetector:
 
             await db.execute(
                 """
-                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+                VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
                 ON CONFLICT (post_id, problem_type) DO UPDATE SET
-                    severity = $4, details = $5, detected_at = NOW()
+                    severity = $4, details = $5, detected_at = NOW(),
+                    first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
                 """,
                 r["id"], site_id, "thin_content",
                 "high" if r["word_count"] < threshold * 0.5 else "medium",
                 json.dumps({"word_count": r["word_count"]}),
+                self._get_first_detected(r["id"], "thin_content"),
             )
             found += 1
 
@@ -521,17 +551,18 @@ class ProblemDetector:
         for r in below_avg_rows:
             await db.execute(
                 """
-                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+                VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
                 ON CONFLICT (post_id, problem_type) DO UPDATE SET
-                    severity = $4, details = $5, detected_at = NOW()
+                    severity = $4, details = $5, detected_at = NOW(),
+                    first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
                 """,
                 r["id"], site_id, "thin_below_cluster_avg", "medium",
                 json.dumps({
                     "word_count": r["word_count"],
                     "cluster_avg": round(float(r["cluster_avg"]), 0),
                     "ratio": round(r["word_count"] / float(r["cluster_avg"]), 2),
-                }),
+                }), self._get_first_detected(r["id"], "thin_below_cluster_avg"),
             )
             found += 1
 
@@ -556,16 +587,17 @@ class ProblemDetector:
         for r in bounce_rows:
             await db.execute(
                 """
-                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+                VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
                 ON CONFLICT (post_id, problem_type) DO UPDATE SET
-                    severity = $4, details = $5, detected_at = NOW()
+                    severity = $4, details = $5, detected_at = NOW(),
+                    first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
                 """,
                 r["id"], site_id, "thin_high_bounce", "high",
                 json.dumps({
                     "avg_bounce_rate": round(float(r["avg_bounce"]), 2),
                     "avg_time_seconds": round(float(r["avg_time"]), 1),
-                }),
+                }), self._get_first_detected(r["id"], "thin_high_bounce"),
             )
             found += 1
 
@@ -840,8 +872,8 @@ class ProblemDetector:
         "serp_opportunity_missed": 0.6,
     }
 
-    @staticmethod
     async def _insert_problem(
+        self,
         db: asyncpg.Connection,
         post_id: UUID,
         site_id: UUID,
@@ -857,10 +889,12 @@ class ProblemDetector:
         details["severity_score"] = round(type_weight * 100)
         await db.execute(
             """
-            INSERT INTO content_problems (post_id, site_id, problem_type, severity, details)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+            VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
             ON CONFLICT (post_id, problem_type) DO UPDATE SET
-                severity = $4, details = $5, detected_at = NOW()
+                severity = $4, details = $5, detected_at = NOW(),
+                first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
             """,
             post_id, site_id, problem_type, severity, json.dumps(details),
+            self._get_first_detected(post_id, problem_type),
         )

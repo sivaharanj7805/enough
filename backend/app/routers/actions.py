@@ -1,11 +1,12 @@
-"""Action Layer endpoints — ecosystem voice, content calendar, redirect push."""
+"""Action Layer endpoints — ecosystem voice, content calendar, redirect push, meta push."""
 
 import logging
 from uuid import UUID
 from typing import Annotated
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 
 from app.database import get_db, get_pool
 from app.dependencies import get_current_user_id
@@ -17,6 +18,9 @@ from app.models.schemas import (
     RedirectStatusResponse,
     RedirectStatusEntry,
     TaskTriggerResponse,
+    PushMetaRequest,
+    PushMetaResponse,
+    BatchPushMetaResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -273,3 +277,292 @@ async def verify_redirects(
         verified=result["verified"],
         failed=result["failed"],
     )
+
+
+# ──────────────── Redirect Map Download ────────────────
+
+
+@router.get(
+    "/{site_id}/intelligence/consolidation/{cluster_id}/redirect-map",
+    response_class=PlainTextResponse,
+)
+async def download_redirect_map(
+    site_id: UUID,
+    cluster_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    format: str = Query("htaccess", pattern=r"^(htaccess|wordpress|csv)$"),
+):
+    """Download a redirect map for a consolidation plan in various formats.
+
+    Formats: htaccess (Apache), wordpress (Redirection plugin CSV), csv (generic).
+    """
+    await _verify_site(site_id, user_id, db)
+
+    from app.services.consolidation import ConsolidationPlanner
+
+    planner = ConsolidationPlanner()
+    plan = await planner.get_plan_detail(db, cluster_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Consolidation plan not found")
+
+    redirect_map = plan.get("redirect_map", [])
+    if not redirect_map:
+        raise HTTPException(status_code=404, detail="No redirects in this plan")
+
+    content = ConsolidationPlanner.export_redirect_map(redirect_map, fmt=format)
+
+    ext = {"htaccess": ".htaccess", "wordpress": ".csv", "csv": ".csv"}[format]
+    media_type = "text/csv" if format in ("wordpress", "csv") else "text/plain"
+
+    return PlainTextResponse(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="redirects-{cluster_id}{ext}"',
+        },
+    )
+
+
+# ──────────────── WordPress Meta Push ────────────────
+
+
+@router.post(
+    "/{site_id}/actions/push-meta",
+    response_model=PushMetaResponse,
+)
+async def push_meta_to_wordpress(
+    site_id: UUID,
+    body: PushMetaRequest,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Push title and meta description updates to WordPress via REST API."""
+    await _verify_site(site_id, user_id, db)
+
+    site = await db.fetchrow(
+        "SELECT wordpress_url, wordpress_app_password, cms_type FROM sites WHERE id = $1",
+        site_id,
+    )
+    if not site or site["cms_type"] != "wordpress" or not site["wordpress_url"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Site is not a WordPress site or missing WordPress URL",
+        )
+
+    from app.utils.encryption import decrypt_value
+    import httpx
+
+    wp_url = site["wordpress_url"].rstrip("/")
+    app_password = ""
+    if site["wordpress_app_password"]:
+        app_password = decrypt_value(site["wordpress_app_password"])
+
+    post = await db.fetchrow(
+        "SELECT id, url, slug FROM posts WHERE id = $1 AND site_id = $2",
+        body.post_id,
+        site_id,
+    )
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    slug = post["slug"] or post["url"].rstrip("/").split("/")[-1]
+    pushed_fields = []
+    error = None
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            search_resp = await client.get(
+                f"{wp_url}/wp-json/wp/v2/posts",
+                params={"slug": slug, "per_page": 1},
+                headers={"Authorization": f"Basic {app_password}"},
+            )
+            if search_resp.status_code != 200 or not search_resp.json():
+                raise ValueError(f"Could not find WordPress post with slug '{slug}'")
+
+            wp_post_id = search_resp.json()[0]["id"]
+
+            update_data = {}
+            if body.title:
+                update_data["title"] = body.title
+                pushed_fields.append("title")
+            if body.meta_description:
+                update_data["meta"] = {
+                    "_yoast_wpseo_metadesc": body.meta_description,
+                    "rank_math_description": body.meta_description,
+                }
+                update_data["excerpt"] = body.meta_description
+                pushed_fields.append("meta_description")
+
+            if not update_data:
+                raise ValueError("No fields to update")
+
+            resp = await client.post(
+                f"{wp_url}/wp-json/wp/v2/posts/{wp_post_id}",
+                json=update_data,
+                headers={
+                    "Authorization": f"Basic {app_password}",
+                    "Content-Type": "application/json",
+                },
+            )
+            if resp.status_code not in (200, 201):
+                error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+
+    except Exception as e:
+        error = str(e)[:300]
+        logger.error("Meta push failed for post %s: %s", body.post_id, e)
+
+    return PushMetaResponse(
+        post_id=body.post_id,
+        pushed_fields=pushed_fields if not error else [],
+        error=error,
+        success=error is None,
+    )
+
+
+# ──────────────── Batch Push SEO Fixes ────────────────
+
+
+@router.post(
+    "/{site_id}/actions/batch-push-meta",
+    response_model=BatchPushMetaResponse,
+)
+async def batch_push_meta_to_wordpress(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Push all AI-generated meta descriptions and titles to WordPress at once.
+
+    Finds all pending SEO fix recommendations that have AI-generated
+    meta_description or suggested_title, and pushes them to WordPress.
+    Marks successful recs as completed.
+    """
+    await _verify_site(site_id, user_id, db)
+
+    site = await db.fetchrow(
+        "SELECT wordpress_url, wordpress_app_password, cms_type FROM sites WHERE id = $1",
+        site_id,
+    )
+    if not site or site["cms_type"] != "wordpress" or not site["wordpress_url"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Site is not a WordPress site or missing WordPress URL",
+        )
+
+    import json as _json
+
+    # Find all pending recs with AI-generated meta/title content
+    rows = await db.fetch(
+        """
+        SELECT r.id, r.post_id, r.ai_generated_content
+        FROM recommendations r
+        WHERE r.site_id = $1
+          AND r.status = 'pending'
+          AND r.ai_generated_content IS NOT NULL
+          AND (
+            r.ai_generated_content::text LIKE '%meta_description%'
+            OR r.ai_generated_content::text LIKE '%suggested_title%'
+            OR r.ai_generated_content::text LIKE '%new_title%'
+            OR r.ai_generated_content::text LIKE '%suggested_new_title%'
+          )
+        ORDER BY CASE r.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                 WHEN 'medium' THEN 2 ELSE 3 END
+        """,
+        site_id,
+    )
+
+    if not rows:
+        return BatchPushMetaResponse(total=0, pushed=0, failed=0, details=[])
+
+    from app.utils.encryption import decrypt_value
+    import httpx
+
+    wp_url = site["wordpress_url"].rstrip("/")
+    app_password = ""
+    if site["wordpress_app_password"]:
+        app_password = decrypt_value(site["wordpress_app_password"])
+
+    total = len(rows)
+    pushed = 0
+    failed = 0
+    details = []
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for row in rows:
+            ai = row["ai_generated_content"]
+            if isinstance(ai, str):
+                try:
+                    ai = _json.loads(ai)
+                except (ValueError, TypeError):
+                    continue
+            if not isinstance(ai, dict):
+                continue
+
+            meta_desc = ai.get("meta_description")
+            title = ai.get("suggested_title") or ai.get("new_title") or ai.get("suggested_new_title")
+
+            if not meta_desc and not title:
+                continue
+
+            post = await db.fetchrow(
+                "SELECT slug, url FROM posts WHERE id = $1",
+                row["post_id"],
+            )
+            if not post:
+                continue
+
+            slug = post["slug"] or post["url"].rstrip("/").split("/")[-1]
+            entry_error = None
+
+            try:
+                search_resp = await client.get(
+                    f"{wp_url}/wp-json/wp/v2/posts",
+                    params={"slug": slug, "per_page": 1},
+                    headers={"Authorization": f"Basic {app_password}"},
+                )
+                if search_resp.status_code != 200 or not search_resp.json():
+                    entry_error = f"WordPress post not found for slug '{slug}'"
+                else:
+                    wp_post_id = search_resp.json()[0]["id"]
+                    update_data = {}
+                    if title:
+                        update_data["title"] = title
+                    if meta_desc:
+                        update_data["meta"] = {
+                            "_yoast_wpseo_metadesc": meta_desc,
+                            "rank_math_description": meta_desc,
+                        }
+                        update_data["excerpt"] = meta_desc
+
+                    resp = await client.post(
+                        f"{wp_url}/wp-json/wp/v2/posts/{wp_post_id}",
+                        json=update_data,
+                        headers={
+                            "Authorization": f"Basic {app_password}",
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    if resp.status_code not in (200, 201):
+                        entry_error = f"HTTP {resp.status_code}"
+
+            except Exception as e:
+                entry_error = str(e)[:200]
+
+            if entry_error:
+                failed += 1
+                details.append({"rec_id": str(row["id"]), "error": entry_error})
+            else:
+                pushed += 1
+                details.append({"rec_id": str(row["id"]), "success": True})
+                # Mark recommendation as completed
+                await db.execute(
+                    "UPDATE recommendations SET status = 'completed', updated_at = NOW() WHERE id = $1",
+                    row["id"],
+                )
+
+    logger.info(
+        "Batch meta push for site %s: %d pushed, %d failed out of %d",
+        site_id, pushed, failed, total,
+    )
+    return BatchPushMetaResponse(total=total, pushed=pushed, failed=failed, details=details)
