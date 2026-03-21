@@ -612,48 +612,6 @@ class TestSecurityEdgeCases:
 
 
 # ═══════════════════════════════════════════════
-# Migration Completeness
-# ═══════════════════════════════════════════════
-
-class TestMigrationCompleteness:
-
-    def _read_all_migrations(self):
-        import os
-        sql = ""
-        for fname in sorted(os.listdir("migrations")):
-            if fname.endswith(".sql"):
-                with open(os.path.join("migrations", fname)) as f:
-                    sql += f.read() + "\n"
-        return sql
-
-    def test_posts_table_has_all_columns(self):
-        sql = self._read_all_migrations()
-        for col in ["url", "slug", "title", "body_text", "publish_date",
-                     "modified_date", "word_count", "content_hash",
-                     "x_pos", "y_pos", "headings", "meta_description", "http_status"]:
-            assert col in sql, f"Missing column: {col}"
-
-    def test_content_problems_has_correct_constraints(self):
-        sql = self._read_all_migrations()
-        assert "UNIQUE(post_id, problem_type)" in sql
-
-    def test_recommendations_has_status_default(self):
-        sql = self._read_all_migrations()
-        assert "DEFAULT 'pending'" in sql
-
-    def test_hnsw_index_params(self):
-        sql = self._read_all_migrations()
-        assert "m = 16" in sql
-        assert "ef_construction = 64" in sql
-
-    def test_pipeline_steps_constraint(self):
-        sql = self._read_all_migrations()
-        for step in ["clustering", "positions_2d", "cannibalization",
-                      "health_scoring", "problem_detection", "recommendations"]:
-            assert f"'{step}'" in sql
-
-
-# ═══════════════════════════════════════════════
 # Token Guard Edge Cases
 # ═══════════════════════════════════════════════
 

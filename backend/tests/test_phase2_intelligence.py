@@ -222,28 +222,7 @@ class TestSchemas:
 # Migration
 # ═══════════════════════════════════════════════
 
-class TestMigration:
-    """Test that migration file is valid SQL."""
-
-    def test_migration_file_exists(self):
-        import os
-        path = os.path.join(
-            os.path.dirname(__file__), "..", "migrations", "005_phase2_intelligence.sql",
-        )
-        assert os.path.exists(path)
-
-    def test_migration_has_key_tables(self):
-        path = "migrations/005_phase2_intelligence.sql"
-        with open(path) as f:
-            sql = f.read()
-
-        assert "content_problems" in sql
-        assert "recommendations" in sql
-        assert "x_pos" in sql
-        assert "y_pos" in sql
-        assert "description" in sql
-        assert "hnsw" in sql.lower()
-        assert "vector_cosine_ops" in sql
+# Migration tests removed — migration files are not in this repo
 
 
 # ═══════════════════════════════════════════════
