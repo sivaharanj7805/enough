@@ -69,7 +69,7 @@ async def test_send_weekly_report(app_with_mocks):
     # db.fetch returns sites
     conn._fetch_returns = [[make_record(id=TEST_SITE_ID)]]
 
-    with patch("app.routers.retention.WeeklyReportService") as MockSvc:
+    with patch("app.services.weekly_report.WeeklyReportService") as MockSvc:
         svc = MockSvc.return_value
         svc.send_report = AsyncMock(return_value=True)
 
@@ -86,7 +86,7 @@ async def test_send_weekly_report_no_sites(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetch_returns = [[]]
 
-    with patch("app.routers.retention.WeeklyReportService"):
+    with patch("app.services.weekly_report.WeeklyReportService"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post("/v1/reports/send-weekly", headers=AUTH_HEADER)
@@ -104,7 +104,7 @@ async def test_get_report_history(app_with_mocks):
     # _verify_site
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.WeeklyReportService") as MockSvc:
+    with patch("app.services.weekly_report.WeeklyReportService") as MockSvc:
         svc = MockSvc.return_value
         svc.get_history = AsyncMock(return_value=[
             {
@@ -152,7 +152,7 @@ async def test_start_impact_tracking(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.ImpactTracker") as MockTracker:
+    with patch("app.services.impact_tracker.ImpactTracker") as MockTracker:
         tracker = MockTracker.return_value
         tracker.start_tracking = AsyncMock(return_value=TEST_TRACKING_ID)
         tracker.get_all_for_site = AsyncMock(return_value=[
@@ -200,7 +200,7 @@ async def test_list_impact_trackings(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.ImpactTracker") as MockTracker:
+    with patch("app.services.impact_tracker.ImpactTracker") as MockTracker:
         tracker = MockTracker.return_value
         tracker.get_all_for_site = AsyncMock(return_value=[])
 
@@ -223,7 +223,7 @@ async def test_get_impact_detail(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.ImpactTracker") as MockTracker:
+    with patch("app.services.impact_tracker.ImpactTracker") as MockTracker:
         tracker = MockTracker.return_value
         tracker.get_detail = AsyncMock(return_value={
             "tracking": {
@@ -271,7 +271,7 @@ async def test_get_impact_detail_not_found(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.ImpactTracker") as MockTracker:
+    with patch("app.services.impact_tracker.ImpactTracker") as MockTracker:
         tracker = MockTracker.return_value
         tracker.get_detail = AsyncMock(side_effect=ValueError("Not found"))
 
@@ -293,7 +293,7 @@ async def test_check_impact(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.ImpactTracker") as MockTracker:
+    with patch("app.services.impact_tracker.ImpactTracker") as MockTracker:
         tracker = MockTracker.return_value
         tracker.check_impact = AsyncMock(return_value={
             "traffic_change_pct": 15.0,
@@ -320,7 +320,7 @@ async def test_get_impact_card(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.ImpactTracker") as MockTracker:
+    with patch("app.services.impact_tracker.ImpactTracker") as MockTracker:
         tracker = MockTracker.return_value
         tracker.generate_impact_card = AsyncMock(return_value={
             "tracking_id": TEST_TRACKING_ID,
@@ -352,7 +352,7 @@ async def test_get_impact_card_not_found(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.retention.ImpactTracker") as MockTracker:
+    with patch("app.services.impact_tracker.ImpactTracker") as MockTracker:
         tracker = MockTracker.return_value
         tracker.generate_impact_card = AsyncMock(side_effect=ValueError("Not found"))
 

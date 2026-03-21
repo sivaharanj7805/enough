@@ -72,7 +72,7 @@ async def test_get_cluster_narrative_success(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists(), _cluster_exists()]
 
-    with patch("app.routers.actions.EcosystemVoice") as MockVoice:
+    with patch("app.services.ecosystem_voice.EcosystemVoice") as MockVoice:
         voice = MockVoice.return_value
         voice.get_narrative = AsyncMock(return_value={
             "cluster_id": TEST_CLUSTER_ID,
@@ -97,7 +97,7 @@ async def test_get_cluster_narrative_not_found(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists(), _cluster_exists()]
 
-    with patch("app.routers.actions.EcosystemVoice") as MockVoice:
+    with patch("app.services.ecosystem_voice.EcosystemVoice") as MockVoice:
         voice = MockVoice.return_value
         voice.get_narrative = AsyncMock(return_value=None)
 
@@ -166,7 +166,7 @@ async def test_get_calendar_success(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.actions.CalendarRestraint") as MockCal:
+    with patch("app.services.calendar_restraint.CalendarRestraint") as MockCal:
         cal = MockCal.return_value
         cal.get_recommendations = AsyncMock(return_value={
             "site_id": TEST_SITE_ID,
@@ -224,7 +224,7 @@ async def test_push_redirects_success(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.actions.RedirectPusher") as MockPusher:
+    with patch("app.services.redirect_push.RedirectPusher") as MockPusher:
         pusher = MockPusher.return_value
         pusher.push_redirects = AsyncMock(return_value={
             "site_id": TEST_SITE_ID,
@@ -286,7 +286,7 @@ async def test_get_redirect_status(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.actions.RedirectPusher") as MockPusher:
+    with patch("app.services.redirect_push.RedirectPusher") as MockPusher:
         pusher = MockPusher.return_value
         pusher.get_status = AsyncMock(return_value={
             "site_id": TEST_SITE_ID,
@@ -316,7 +316,7 @@ async def test_verify_redirects(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.actions.RedirectPusher") as MockPusher:
+    with patch("app.services.redirect_push.RedirectPusher") as MockPusher:
         pusher = MockPusher.return_value
         pusher.verify_redirects = AsyncMock(return_value={
             "site_id": TEST_SITE_ID,
