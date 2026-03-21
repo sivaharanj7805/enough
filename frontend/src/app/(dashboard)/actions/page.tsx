@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useSite } from '@/lib/hooks/useSite';
 import { mutate } from 'swr';
 import type { Recommendation } from '@/lib/types';
 
@@ -52,6 +53,58 @@ function CopyBtn({ text, label }: { text: string; label?: string }) {
     >
       {copied ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
       {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+function PushToWPBtn({
+  siteId,
+  postId,
+  title,
+  metaDescription,
+  token,
+}: {
+  siteId: string;
+  postId: string;
+  title?: string;
+  metaDescription?: string;
+  token: string | null;
+}) {
+  const [pushing, setPushing] = useState(false);
+  const [result, setResult] = useState<'success' | 'error' | null>(null);
+
+  const handlePush = async () => {
+    if (!siteId || !token) return;
+    setPushing(true);
+    try {
+      const res = await apiFetch(`/sites/${siteId}/actions/push-meta`, {
+        method: 'POST',
+        body: JSON.stringify({ post_id: postId, title, meta_description: metaDescription }),
+        token: token ?? undefined,
+      });
+      setResult(res.success ? 'success' : 'error');
+    } catch {
+      setResult('error');
+    }
+    setPushing(false);
+    setTimeout(() => setResult(null), 3000);
+  };
+
+  return (
+    <button
+      onClick={() => void handlePush()}
+      disabled={pushing || result === 'success'}
+      className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+    >
+      {result === 'success' ? (
+        <><Check size={12} /> Pushed to WP</>
+      ) : result === 'error' ? (
+        <><XCircle size={12} /> Failed</>
+      ) : pushing ? (
+        <>Pushing...</>
+      ) : (
+        <>Push to WordPress</>
+      )}
     </button>
   );
 }
@@ -99,6 +152,7 @@ function ActionCard({
   expanded,
   onToggle,
   onStatusUpdate,
+  cmsType,
 }: {
   rec: Recommendation;
   siteId: string;
@@ -106,7 +160,9 @@ function ActionCard({
   expanded: boolean;
   onToggle: () => void;
   onStatusUpdate: (recId: string, newStatus: string, previousStatus: string, label: string) => void;
+  cmsType?: string;
 }) {
+  const currentSite = { id: siteId, cms_type: cmsType };
   const priorityColor = SEVERITY_COLORS[rec.priority as keyof typeof SEVERITY_COLORS] || SEVERITY_COLORS.low;
   const typeInfo = TYPE_CONFIG[rec.recommendation_type] || { label: rec.recommendation_type, icon: Lightbulb, color: '#6b7280' };
   const statusInfo = STATUS_CONFIG[rec.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.pending;
@@ -276,6 +332,78 @@ function ActionCard({
                     <CopyBtn text={ai.outline} label="outline" />
                   </div>
                 )}
+              </div>
+            );
+          })()}
+
+          {/* ── Action Buttons from RAG data ── */}
+          {(() => {
+            const ai = (rec.ai_generated_content ?? {}) as Record<string, unknown>;
+            const isWordPress = currentSite?.cms_type === 'wordpress';
+            const hasMeta = ai.meta_description || ai.suggested_title || ai.new_title || ai.suggested_new_title;
+            const clusterId = ai.cluster_id as string | undefined;
+            const isMerge = ['merge', 'redirect', 'consolidate'].includes(rec.recommendation_type);
+            const linkTargets = ai.link_targets as Array<{ title: string; url: string; similarity: number; suggested_anchor: string }> | undefined;
+
+            if (!hasMeta && !clusterId && !linkTargets) return null;
+
+            return (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {/* Push to WordPress — uses /push-meta endpoint */}
+                {isWordPress && hasMeta && (
+                  <PushToWPBtn
+                    siteId={currentSite?.id ?? ''}
+                    postId={rec.post_id}
+                    title={(ai.suggested_title || ai.new_title || ai.suggested_new_title) as string | undefined}
+                    metaDescription={ai.meta_description as string | undefined}
+                    token={token}
+                  />
+                )}
+                {/* Deep link to consolidation flow */}
+                {isMerge && clusterId && (
+                  <Link
+                    href={`/consolidation/${clusterId}`}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#f97316]/10 text-[#f97316] hover:bg-[#f97316]/20 transition-colors"
+                  >
+                    <Layers size={12} /> Start Consolidation →
+                  </Link>
+                )}
+                {/* Redirect map download */}
+                {isMerge && clusterId && (
+                  <a
+                    href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/v1/sites/${currentSite?.id}/intelligence/consolidation/${clusterId}/redirect-map?format=htaccess`}
+                    download
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#64748b]/10 text-[#94a3b8] hover:bg-[#64748b]/20 transition-colors"
+                  >
+                    <FileText size={12} /> Download Redirects
+                  </a>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Interlink targets from RAG (specific posts + anchor text) ── */}
+          {(() => {
+            const ai = (rec.ai_generated_content ?? {}) as Record<string, unknown>;
+            const linkTargets = ai.link_targets as Array<{ title: string; url: string; similarity: number; suggested_anchor: string }> | undefined;
+            if (!linkTargets || linkTargets.length === 0) return null;
+
+            return (
+              <div className="mt-3 rounded-lg bg-brand-bg p-3 border border-brand-border/50">
+                <p className="text-xs font-medium text-brand-text-muted mb-2">Link from these posts:</p>
+                <div className="space-y-1.5">
+                  {linkTargets.map((target, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[10px] text-green-500 font-mono flex-shrink-0">{Math.round(target.similarity * 100)}%</span>
+                        <a href={target.url} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-text truncate hover:text-blue-400">
+                          {target.title}
+                        </a>
+                      </div>
+                      <CopyBtn text={target.suggested_anchor} label="anchor text" />
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })()}
@@ -663,6 +791,7 @@ export default function ActionQueuePage() {
               rec={rec}
               siteId={siteId!}
               token={session?.access_token}
+              cmsType={currentSite?.cms_type}
               expanded={expandedId === rec.id}
               onToggle={() => setExpandedId(expandedId === rec.id ? null : rec.id)}
               onStatusUpdate={handleStatusUpdate}

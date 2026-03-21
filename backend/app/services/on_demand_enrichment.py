@@ -222,3 +222,53 @@ async def enrich_recommendation(
 
     logger.info("Enriched recommendation %s on-demand", rec_id)
     return {"enriched": True, "guidance": enrichment}
+
+
+async def auto_enrich_top_recs(
+    db: asyncpg.Connection,
+    site_id: UUID,
+    limit: int = 10,
+) -> int:
+    """Auto-enrich the highest-priority recommendations that lack AI content.
+
+    Called at the end of the intelligence pipeline to ensure top recs
+    have rich, actionable AI-generated guidance without requiring
+    the user to click "Get AI Analysis" manually.
+
+    Uses the same RAG context + Claude pipeline as on-demand enrichment.
+    """
+    rows = await db.fetch(
+        """
+        SELECT id FROM recommendations
+        WHERE site_id = $1
+          AND ai_generated_content IS NULL
+          AND status = 'pending'
+        ORDER BY
+            CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                 WHEN 'medium' THEN 2 ELSE 3 END,
+            created_at DESC
+        LIMIT $2
+        """,
+        site_id,
+        limit,
+    )
+
+    if not rows:
+        logger.info("No recs to auto-enrich for site %s", site_id)
+        return 0
+
+    enriched = 0
+    for row in rows:
+        try:
+            result = await enrich_recommendation(db, row["id"], site_id)
+            if "error" not in result:
+                enriched += 1
+        except Exception as e:
+            logger.warning("Auto-enrich failed for rec %s: %s", row["id"], e)
+            continue
+
+    logger.info(
+        "Auto-enriched %d/%d top recs for site %s",
+        enriched, len(rows), site_id,
+    )
+    return enriched

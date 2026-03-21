@@ -46,6 +46,7 @@ from app.models.schemas import (
     PositionAlertResponse,
     SinceLastVisitResponse,
     ROISummaryResponse,
+    TopContentGapResponse,
 )
 
 from app.utils.task_retry import with_retry
@@ -265,9 +266,26 @@ async def _run_full_pipeline(site_id: UUID) -> None:
 
         await _update_pipeline_status(
             pool, site_id,
+            current_step="auto_enrichment",
+            step_completed="recommendations",
+        )
+
+        # Step 5b: Auto-enrich top recommendations with RAG context + Claude
+        # Ensures the highest-priority recs have rich AI content without
+        # requiring user to click "Get AI Analysis" manually
+        try:
+            from app.services.on_demand_enrichment import auto_enrich_top_recs
+            async with pool.acquire() as conn:
+                enriched = await auto_enrich_top_recs(conn, site_id, limit=10)
+                logger.info("Pipeline step 5b complete: %d recs auto-enriched", enriched)
+        except Exception as e:
+            logger.warning("Auto-enrichment failed (non-fatal): %s", e)
+
+        await _update_pipeline_status(
+            pool, site_id,
             status="completed",
             current_step=None,
-            step_completed="recommendations",
+            step_completed="auto_enrichment",
             completed=True,
         )
         logger.info("BG task: full pipeline complete for site %s", site_id)
@@ -1746,4 +1764,51 @@ async def get_roi_summary(
         health_score_change=round(health_change, 1) if health_change is not None else None,
         initial_health_score=round(initial_health, 1) if initial_health is not None else None,
         current_health_score=round(current_health, 1) if current_health is not None else None,
+    )
+
+
+# ──────────────── Top Content Gap ────────────────
+
+
+@router.get(
+    "/{site_id}/intelligence/top-content-gap",
+    response_model=TopContentGapResponse | None,
+)
+async def get_top_content_gap(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get the top content gap for the Today view — a high-impression query with no targeted post.
+
+    Uses content_gaps table populated by the gap analyzer, joined with cluster
+    labels for context. Returns the highest-opportunity gap that doesn't have
+    a brief yet.
+    """
+    await _verify_site(site_id, user_id, db)
+
+    row = await db.fetchrow(
+        """
+        SELECT cg.id, cg.query, cg.impressions, cg.avg_position,
+               c.label AS cluster_label, cg.brief
+        FROM content_gaps cg
+        LEFT JOIN clusters c ON c.id = cg.closest_cluster_id
+        WHERE cg.site_id = $1
+          AND cg.status = 'open'
+        ORDER BY cg.impressions DESC
+        LIMIT 1
+        """,
+        site_id,
+    )
+
+    if not row:
+        return None
+
+    return TopContentGapResponse(
+        gap_id=str(row["id"]),
+        query=row["query"],
+        impressions=row["impressions"],
+        avg_position=float(row["avg_position"]) if row["avg_position"] else None,
+        cluster_label=row["cluster_label"],
+        brief_text=row["brief"],
     )

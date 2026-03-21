@@ -319,6 +319,7 @@ async def generate_fast_recommendations(
     # ── Cannibalization recommendations ──
     cann_pairs = await db.fetch("""
         SELECT cp.id, cp.post_a_id, cp.post_b_id, cp.cosine_similarity, cp.severity,
+               cp.cluster_id,
                pa.title as title_a, pa.url as url_a, pa.word_count as wc_a,
                pa.language as lang_a,
                pb.title as title_b, pb.url as url_b, pb.word_count as wc_b,
@@ -386,10 +387,20 @@ async def generate_fast_recommendations(
             priority = "medium"
             effort = 1.5
 
+        # Store cluster_id + redirect info in ai_generated_content so the
+        # UI can deep-link to consolidation flow and show redirect downloads
+        import json as _json
+        cann_ai_content = _json.dumps({
+            "cluster_id": str(pair["cluster_id"]) if pair["cluster_id"] else None,
+            "post_a_url": pair["url_a"],
+            "post_b_url": pair["url_b"],
+            "cosine_similarity": round(cos, 3),
+        })
+
         recs_to_insert.append((
             pair["post_a_id"], site_id, None, "merge" if cos >= 0.90 else "differentiate",
             priority, effort, "high" if cos >= 0.90 else "medium",
-            title, summary, actions, None,
+            title, summary, actions, cann_ai_content,
             "high" if cos >= 0.85 else "medium",  # confidence
         ))
 
@@ -437,6 +448,22 @@ async def generate_fast_recommendations(
             "Aim for anchor text that describes the target topic, not generic 'click here'.",
         ]
 
+        # Store specific link targets from RAG (pgvector similarity) in
+        # ai_generated_content so the UI can show exact posts + anchor text
+        import json as _json
+        link_targets_data = _json.dumps({
+            "link_targets": [
+                {
+                    "post_id": str(s["id"]),
+                    "title": s["title"],
+                    "url": s["url"],
+                    "similarity": round(float(s["similarity"]), 2),
+                    "suggested_anchor": orphan["title"].lower()[:60],
+                }
+                for s in link_sources[:5]
+            ]
+        })
+
         key = (orphan["id"], "interlink")
         if key not in seen_post_types:
             seen_post_types.add(key)
@@ -445,7 +472,7 @@ async def generate_fast_recommendations(
                 "high", 0.5, "medium",
                 f"Fix orphan: {orphan['title'][:60]}",
                 f"This post has no inbound internal links. Link to it from {len(link_sources)} related posts that cover similar topics.",
-                actions, None,
+                actions, link_targets_data,
                 "high",  # confidence — orphan detection is 100% objective
             ))
 

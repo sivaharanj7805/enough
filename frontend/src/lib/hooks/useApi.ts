@@ -21,6 +21,7 @@ import type {
   AlertsListResponse,
   SinceLastVisitResponse,
   ROISummary,
+  TopContentGap,
 } from '@/lib/types';
 import type { EcosystemVisualsResponse } from '@/lib/types/phase6';
 
@@ -195,5 +196,11 @@ export function useROISummary(siteId: string | null) {
 export function useHealthHistory(siteId: string | null) {
   return useSWRFetch<Array<{ score: number; factor_scores: Record<string, number>; analyzed_at: string | null }>>(
     siteId ? `/sites/${siteId}/intelligence/health/history` : null
+  );
+}
+
+export function useTopContentGap(siteId: string | null) {
+  return useSWRFetch<TopContentGap | null>(
+    siteId ? `/sites/${siteId}/intelligence/top-content-gap` : null
   );
 }

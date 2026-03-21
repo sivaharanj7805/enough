@@ -641,6 +641,24 @@ class SinceLastVisitResponse(BaseModel):
     last_visit: str | None = None
 
 
+class BatchPushMetaResponse(BaseModel):
+    """Result of batch pushing meta to WordPress."""
+    total: int
+    pushed: int
+    failed: int
+    details: list[dict] = []
+
+
+class TopContentGapResponse(BaseModel):
+    """Top content gap for the Today view."""
+    gap_id: str
+    query: str
+    impressions: int
+    avg_position: float | None
+    cluster_label: str | None
+    brief_text: str | None
+
+
 class ROISummaryResponse(BaseModel):
     """ROI summary for the Today view."""
     completed_recommendations: int

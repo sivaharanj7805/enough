@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSite } from '@/lib/hooks/useSite';
-import { useSiteHealth, useRecommendations, useAIScores, useClusters, useProblems, useSinceLastVisit, useROISummary } from '@/lib/hooks/useApi';
+import { useSiteHealth, useRecommendations, useAIScores, useClusters, useProblems, useSinceLastVisit, useROISummary, useTopContentGap } from '@/lib/hooks/useApi';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -225,6 +225,68 @@ function SinceLastVisitCard({ data }: { data: SinceLastVisitResponse }) {
           <span>&middot; {data.completed_recommendations_count} completed </span>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Content Gap Card ───────────────────────────────
+function ContentGapCard({
+  gap,
+  siteId,
+  token,
+}: {
+  gap: { query: string; impressions: number; cluster_label: string | null; brief_text: string | null };
+  siteId: string;
+  token: string | null;
+}) {
+  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState(false);
+  const router = useRouter();
+
+  const handleGenerateBrief = async () => {
+    if (!siteId || !token) return;
+    setGenerating(true);
+    try {
+      await apiFetch(`/sites/${siteId}/intelligence/briefs`, {
+        method: 'POST',
+        body: JSON.stringify({ topic: gap.query }),
+        token: token ?? undefined,
+      });
+      setGenerated(true);
+    } catch {
+      // silent
+    }
+    setGenerating(false);
+  };
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#7c3aed]/5 border border-[#7c3aed]/20">
+      <Zap size={16} className="text-[#a78bfa] flex-shrink-0" />
+      <div className="flex-1">
+        <p className="text-sm text-[#e2e8f0]">
+          {gap.cluster_label && (
+            <span className="text-[#a78bfa] font-medium">Your {gap.cluster_label} cluster has a gap: </span>
+          )}
+          no post covers &ldquo;<span className="font-medium">{gap.query}</span>&rdquo;
+          <span className="text-[#64748b]"> ({gap.impressions.toLocaleString()} impressions/mo)</span>
+        </p>
+      </div>
+      {generated ? (
+        <button
+          onClick={() => router.push('/briefs')}
+          className="flex-shrink-0 text-xs font-medium text-[#a78bfa] hover:text-[#c4b5fd] transition-colors"
+        >
+          View Brief &rarr;
+        </button>
+      ) : (
+        <button
+          onClick={() => void handleGenerateBrief()}
+          disabled={generating}
+          className="flex-shrink-0 text-xs font-medium text-[#a78bfa] hover:text-[#c4b5fd] transition-colors disabled:opacity-50"
+        >
+          {generating ? 'Generating...' : 'Generate Brief →'}
+        </button>
+      )}
     </div>
   );
 }
@@ -714,6 +776,7 @@ export default function TodayPage() {
   const { data: problems } = useProblems(currentSite?.id ?? null);
   const { data: sinceLastVisit } = useSinceLastVisit(currentSite?.id ?? null);
   const { data: roiSummary } = useROISummary(currentSite?.id ?? null);
+  const { data: topGap } = useTopContentGap(currentSite?.id ?? null);
   const { session } = useAuth();
   const token =
     session?.access_token ??
@@ -979,6 +1042,15 @@ export default function TodayPage() {
 
       {/* ── ROI Card ── */}
       {roiSummary && <ROICard roi={roiSummary} />}
+
+      {/* ── Content Gap Card (ongoing content planning) ── */}
+      {topGap && (
+        <ContentGapCard
+          gap={topGap}
+          siteId={currentSite?.id ?? ''}
+          token={token}
+        />
+      )}
 
       {/* ── Alert tray ── */}
       {(() => {

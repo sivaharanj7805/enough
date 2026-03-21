@@ -409,6 +409,22 @@ export interface ROISummary {
   current_health_score: number | null;
 }
 
+export interface TopContentGap {
+  gap_id: string;
+  query: string;
+  impressions: number;
+  avg_position: number | null;
+  cluster_label: string | null;
+  brief_text: string | null;
+}
+
+export interface BatchPushMetaResponse {
+  total: number;
+  pushed: number;
+  failed: number;
+  details: Array<{ rec_id: string; error?: string; success?: boolean }>;
+}
+
 // ─── Auth ────────────────────────────────────────
 export interface AuthUser {
   id: string;
