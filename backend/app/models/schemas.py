@@ -226,6 +226,8 @@ class SiteHealthResponse(BaseModel):
     data_completeness: float = 1.0  # 0.0-1.0, fraction of signals available
     modified_date_coverage: float = 0.0  # fraction of posts with a known modified_date
     ai_enriched_count: int = 0  # number of recommendations with AI guidance
+    post_limit: int = 500  # tier limit for posts
+    post_usage_pct: float = 0.0  # percentage of post limit used
 
 
 class PillarPostInfo(BaseModel):

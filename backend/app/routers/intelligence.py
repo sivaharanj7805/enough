@@ -587,6 +587,15 @@ async def get_site_health(
         site_id,
     )
 
+    # Post limit for upsell trigger
+    from app.services.stripe_service import TIER_LIMITS
+    tier = await db.fetchval(
+        "SELECT subscription_status FROM profiles WHERE id = $1::uuid", user_id,
+    ) or "growth"
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS["growth"])
+    post_limit = limits.get("posts", 500)
+    post_usage_pct = (total_posts / post_limit * 100) if post_limit > 0 else 0.0
+
     return SiteHealthResponse(
         content_health_score=float(avg_health),
         total_posts=total_posts,
@@ -600,6 +609,8 @@ async def get_site_health(
         data_completeness=data_completeness,
         modified_date_coverage=round(modified_date_coverage, 3),
         ai_enriched_count=int(ai_enriched_count or 0),
+        post_limit=post_limit,
+        post_usage_pct=round(post_usage_pct, 1),
     )
 
 

@@ -336,5 +336,8 @@ class DripSequenceService:
   </div>
   <p style="font-size:14px;">Every day you wait, your competing posts are splitting traffic, your orphan content is invisible to Google, and your thin posts are dragging down your domain authority.</p>
   <p style="font-size:14px;">We have <strong>{rec_count} specific, actionable fixes</strong> ready for you. Each one tells you exactly what to do, which post to fix, and what impact to expect.</p>
-  <p style="font-size:14px;color:#22c55e;font-weight:600;">$99/month. 30-day money-back guarantee. Cancel anytime.</p>"""
+  <p style="font-size:14px;color:#22c55e;font-weight:600;">$99/month. 30-day money-back guarantee. Cancel anytime.</p>
+  <div style="margin-top:24px;padding-top:16px;border-top:1px solid #1f2937;">
+    <p style="font-size:12px;color:#64748b;">P.S. Know another content team or agency? Forward them this report &mdash; or have them request a free audit at <a href="https://enough.app" style="color:#22c55e;">enough.app</a>.</p>
+  </div>"""
         return self._base_wrapper(inner)

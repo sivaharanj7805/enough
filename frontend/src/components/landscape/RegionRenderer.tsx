@@ -5,8 +5,10 @@
 
 import * as d3 from 'd3';
 import { ECOSYSTEM_COLORS, type EcosystemState } from '@/lib/constants';
-import { drawVegetation, drawBloomling, drawRustmite, drawFogling, type VegetationConfig, type CreatureType } from './VegetationRenderer';
 import type { PostHealth } from '@/lib/types';
+
+type VegetationConfig = { color: string; size: number };
+type CreatureType = string;
 
 export interface RegionData {
   id: string;
@@ -192,33 +194,7 @@ export function renderRegion(
         onClickPost(post);
       });
 
-    const config: VegetationConfig = {
-      role: post.role ?? 'dead_weight',
-      traffic: post.traffic_contribution ?? 0,
-      maxTraffic,
-      isNew: isNewPost(post),
-    };
-
-    drawVegetation(vegGroup, config);
-
-    // Draw creature overlay (offset to the right of the tree)
-    const creature = getCreatureType(post);
-    if (creature) {
-      const creatureGroup = g.append('g')
-        .attr('transform', `translate(${px + 14},${py - 5})`)
-        .attr('cursor', 'pointer')
-        .attr('class', `creature creature-${creature}`)
-        .on('click', (event: MouseEvent) => {
-          event.stopPropagation();
-          if (onClickCreature) onClickCreature(post, creature);
-        });
-
-      const creatureScale = 0.7 + (config.traffic / (maxTraffic + 0.001)) * 0.4;
-
-      if (creature === 'bloomling') drawBloomling(creatureGroup, creatureScale);
-      else if (creature === 'rustmite') drawRustmite(creatureGroup, creatureScale);
-      else if (creature === 'fogling') drawFogling(creatureGroup, creatureScale);
-    }
+    // Vegetation and creature rendering removed (renderers deleted)
   });
 
   // Label above region

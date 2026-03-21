@@ -3,11 +3,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import type { EcosystemVisualsResponse, ClusterPositions } from '@/lib/types/phase6';
 import type { ClusterDetail } from '@/lib/types';
-import * as RiverRenderer from './RiverRenderer';
-import * as GrassRenderer from './GrassRenderer';
-import * as WeatherRenderer from './WeatherRenderer';
-import * as AnimalRenderer from './AnimalRenderer';
-import * as TerrainFeatureRenderer from './TerrainFeatureRenderer';
 
 interface EcosystemOverlayProps {
   visuals: EcosystemVisualsResponse;
@@ -82,22 +77,7 @@ export function EcosystemOverlay({ visuals, clusters }: EcosystemOverlayProps) {
 
       const clusterPositions = getClusterPositions();
 
-      // Render layers in order (back to front)
-      // 1. Fog weather (behind everything)
-      // 2. Rivers + water particles
-      RiverRenderer.draw(ctx, visuals.rivers, clusterPositions, timestamp);
-
-      // 3. Grass around cluster edges
-      GrassRenderer.draw(ctx, visuals.grass, clusterPositions, timestamp);
-
-      // 4. Terrain features (boulders, erosion, mushrooms)
-      TerrainFeatureRenderer.draw(ctx, visuals.terrain_features, clusterPositions, timestamp);
-
-      // 5. Ground animals (foxes, deer)
-      AnimalRenderer.draw(ctx, visuals.animals, clusterPositions, timestamp);
-
-      // 6. Weather effects (clouds, rain, sun above)
-      WeatherRenderer.draw(ctx, visuals.weather, clusterPositions, timestamp);
+      // Render layers removed (renderers deleted)
 
       animFrameRef.current = requestAnimationFrame(animate);
     };

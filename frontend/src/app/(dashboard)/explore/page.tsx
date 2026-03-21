@@ -33,7 +33,7 @@ export default function ExplorePage() {
   const { currentSite } = useSite();
 
   const [activeTab, setActiveTab] = useState<TabId>(
-    (searchParams.get('tab') as TabId) ?? 'clusters'
+    (searchParams.get('tab') as TabId) ?? 'cannibalization'
   );
 
   useEffect(() => {
