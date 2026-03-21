@@ -24,9 +24,11 @@ class TestComputeTrend:
         assert trend == "dead"
         assert score == 0.0
 
-    def test_dead_zero_everything(self):
+    def test_unknown_zero_everything(self):
+        """Zero everything = unknown (no data, not necessarily dead)."""
         trend, score = _compute_trend(0, 0, 0)
-        assert trend == "dead"
+        assert trend == "unknown"
+        assert score == 30.0
 
     def test_growing_significant_increase(self):
         """30%+ increase = growing."""
@@ -101,26 +103,26 @@ class TestFreshnessScore:
     def test_2_months_old(self):
         now = datetime.now(timezone.utc)
         two_months_ago = now - timedelta(days=60)
-        assert _freshness_score(two_months_ago, now) == 80.0
+        assert _freshness_score(two_months_ago, now) == 90.0
 
     def test_4_months_old(self):
         now = datetime.now(timezone.utc)
         four_months_ago = now - timedelta(days=120)
-        assert _freshness_score(four_months_ago, now) == 60.0
+        assert _freshness_score(four_months_ago, now) == 75.0
 
     def test_9_months_old(self):
         now = datetime.now(timezone.utc)
         nine_months_ago = now - timedelta(days=270)
-        assert _freshness_score(nine_months_ago, now) == 40.0
+        assert _freshness_score(nine_months_ago, now) == 60.0
 
     def test_2_years_old(self):
         now = datetime.now(timezone.utc)
         two_years_ago = now - timedelta(days=730)
-        assert _freshness_score(two_years_ago, now) == 0.0
+        assert _freshness_score(two_years_ago, now) == 50.0
 
     def test_no_date(self):
         now = datetime.now(timezone.utc)
-        assert _freshness_score(None, now) == 20.0
+        assert _freshness_score(None, now) == 60.0
 
 
 class TestContentDepthScore:
@@ -153,15 +155,16 @@ class TestTechnicalSEOScore:
     """Test technical SEO checklist scoring."""
 
     def test_all_checks_pass(self):
+        """8-check scoring: meta + title(partial) + headings + outbound + inbound = 56.25 (no body_html)."""
         score = _technical_seo_score(
             meta_description="A good description of the page content.",
-            title="Perfect Title Length Here",  # 25 chars
+            title="Perfect Title Length Here",  # 25 chars (20-70 = partial credit)
             headings=[{"level": "h2", "text": "Section"}],
             has_outbound=True,
             has_inbound=True,
         )
-        # Title is slightly short (25 < 30), so partial credit
-        assert score >= 80
+        # 5 of 8 checks pass (title partial): 12.5*4 + 6.25 = 56.25
+        assert score >= 50
 
     def test_no_checks_pass(self):
         score = _technical_seo_score(
@@ -171,17 +174,18 @@ class TestTechnicalSEOScore:
             has_outbound=False,
             has_inbound=False,
         )
-        assert score <= 10
+        assert score == 0.0
 
     def test_partial_pass(self):
         score = _technical_seo_score(
             meta_description="A good description of the page content.",
-            title="Good Title for Blog Post About SEO Tips",
+            title="Good Title for Blog Post About SEO Tips",  # 40 chars, full credit
             headings=None,
             has_outbound=True,
             has_inbound=False,
         )
-        assert 40 <= score <= 70
+        # meta(12.5) + title(12.5) + outbound(12.5) = 37.5
+        assert 30 <= score <= 45
 
 
 class TestAssignRole:

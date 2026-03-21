@@ -23,6 +23,15 @@ from app.utils.url_normalize import normalize_url, urls_are_same
 from app.utils.token_guard import truncate_for_api, truncate_body_texts
 
 
+def _has_umap():
+    try:
+        import umap  # noqa: F401
+        import hdbscan  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 # ═══════════════════════════════════════════════
 # Health Scoring — Every Factor Thoroughly
 # ═══════════════════════════════════════════════
@@ -155,19 +164,19 @@ class TestFreshnessScoreEdgeCases:
         now = datetime.now(timezone.utc)
         exactly_1m = now - timedelta(days=31)
         score = _freshness_score(exactly_1m, now)
-        assert score == 80.0
+        assert score == 90.0
 
     def test_exact_boundary_3_months(self):
         now = datetime.now(timezone.utc)
         exactly_3m = now - timedelta(days=92)
         score = _freshness_score(exactly_3m, now)
-        assert score == 60.0
+        assert score == 75.0
 
     def test_very_old_post(self):
         now = datetime.now(timezone.utc)
         ancient = now - timedelta(days=3650)
         score = _freshness_score(ancient, now)
-        assert score == 0.0
+        assert score == 45.0  # Evergreen floor for non-time-sensitive content
 
 
 class TestContentDepthEdgeCases:
@@ -215,11 +224,11 @@ class TestTechnicalSEOEdgeCases:
 
     def test_title_exactly_30_chars(self):
         score = _technical_seo_score(None, "A" * 30, None, False, False)
-        assert score >= 20
+        assert score == 12.5  # 1 of 8 checks: title in 30-60 range
 
     def test_title_exactly_60_chars(self):
         score = _technical_seo_score(None, "A" * 60, None, False, False)
-        assert score >= 20
+        assert score == 12.5  # 1 of 8 checks: title in 30-60 range
 
     def test_title_29_chars(self):
         score_29 = _technical_seo_score(None, "A" * 29, None, False, False)
@@ -229,7 +238,7 @@ class TestTechnicalSEOEdgeCases:
     def test_headings_as_json_string(self):
         headings_json = json.dumps([{"level": "h2", "text": "Test"}])
         score = _technical_seo_score(None, "Title", headings_json, False, False)
-        assert score >= 20
+        assert score == 12.5  # Only headings check passes ("Title" is 5 chars, too short)
 
     def test_headings_invalid_json(self):
         score = _technical_seo_score(None, "Title", "not json", False, False)
@@ -245,6 +254,7 @@ class TestTechnicalSEOEdgeCases:
         assert score == 0.0
 
     def test_all_pass(self):
+        """5 of 8 checks pass without body_html (no OG, JSON-LD, canonical)."""
         title = "A Perfect Blog Post Title For SEO"  # 33 chars (30-60 range)
         assert 30 <= len(title) <= 60
         score = _technical_seo_score(
@@ -253,7 +263,8 @@ class TestTechnicalSEOEdgeCases:
             [{"level": "h2", "text": "Section 1"}, {"level": "h3", "text": "Sub"}],
             True, True,
         )
-        assert score == 100.0
+        # 5 checks × 12.5 = 62.5 (no body_html → OG/JSON-LD/canonical fail)
+        assert score == 62.5
 
 
 class TestRoleAssignment:
@@ -426,6 +437,7 @@ class TestClusteringEdgeCases:
             assert pos_tuple not in pos_set
             pos_set.add(pos_tuple)
 
+    @pytest.mark.skipif(not _has_umap(), reason="umap-learn not installed")
     def test_adaptive_min_cluster_size_small(self):
         clusterer = TopicClusterer.__new__(TopicClusterer)
         rng = np.random.RandomState(42)
@@ -433,6 +445,7 @@ class TestClusteringEdgeCases:
         labels, pos = clusterer._run_clustering_and_2d(embeddings, 10)
         assert len(labels) == 10
 
+    @pytest.mark.skipif(not _has_umap(), reason="umap-learn not installed")
     def test_adaptive_min_cluster_size_medium(self):
         clusterer = TopicClusterer.__new__(TopicClusterer)
         rng = np.random.RandomState(42)
