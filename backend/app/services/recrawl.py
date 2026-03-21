@@ -256,6 +256,29 @@ async def run_daily_refresh() -> dict:
     pool = await get_pool()
     results = {"sites_refreshed": 0, "errors": 0}
 
+    # Clean up stale pipeline jobs (stuck after server restart/deploy)
+    async with pool.acquire() as db:
+        stale_crawl = await db.execute(
+            """UPDATE crawl_jobs SET status = 'failed', error = 'stale - server restart', updated_at = NOW()
+               WHERE status IN ('crawling', 'embedding', 'analyzing', 'clustering')
+                 AND updated_at < NOW() - INTERVAL '2 hours'"""
+        )
+        stale_pipe = await db.execute(
+            """UPDATE pipeline_jobs SET status = 'failed', error = 'stale - server restart'
+               WHERE status = 'running' AND started_at < NOW() - INTERVAL '2 hours'"""
+        )
+        stale_audit = await db.execute(
+            """UPDATE pending_audit_pipelines SET status = 'failed', error = 'stale - server restart'
+               WHERE status IN ('pending', 'running') AND started_at < NOW() - INTERVAL '2 hours'"""
+        )
+        logger.info("Stale job cleanup: crawl=%s, pipeline=%s, audit=%s", stale_crawl, stale_pipe, stale_audit)
+
+        # Clean up anonymous audit sites older than 30 days
+        deleted_anon = await db.execute(
+            "DELETE FROM sites WHERE user_id IS NULL AND created_at < NOW() - INTERVAL '30 days'"
+        )
+        logger.info("Anonymous site cleanup: %s", deleted_anon)
+
     async with pool.acquire() as db:
         sites = await get_sites_needing_refresh(db, "analytics_daily")
 

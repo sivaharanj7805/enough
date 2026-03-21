@@ -672,6 +672,11 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
         await _pipeline_step(pool, site_id, "recommendations", "analyzing",
                              lambda db: generate_fast_recommendations(db, site_id))
 
+        # Step 10b: AI citability scoring
+        from app.services.ai_citability import AICitabilityService
+        await _pipeline_step(pool, site_id, "ai_citability", "analyzing",
+                             lambda db: AICitabilityService().score_site(db, site_id))
+
         # Mark complete
         async with pool.acquire() as db:
             await db.execute(

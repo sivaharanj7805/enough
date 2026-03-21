@@ -75,6 +75,18 @@ class DripSequenceService:
         sent = 0
         for row in rows:
             try:
+                # Check email opt-out before sending
+                opted_out = await db.fetchval(
+                    "SELECT 1 FROM email_optouts WHERE email = $1",
+                    row["email"].lower().strip(),
+                )
+                if opted_out:
+                    await db.execute(
+                        "UPDATE audit_drip_emails SET status = 'skipped', error = 'opted out' WHERE id = $1",
+                        row["id"],
+                    )
+                    continue
+
                 email_num = row["email_number"]
                 if email_num == 1:
                     # Email 1 should already be sent during schedule_drip,
@@ -274,17 +286,17 @@ class DripSequenceService:
     # ── HTML Templates ──
 
     def _base_wrapper(self, inner_html: str, email: str = "") -> str:
-        """Wrap email content in Enough-branded template."""
+        """Wrap email content in Enough-branded template (white, professional)."""
         unsubscribe = f"https://enough.app/unsubscribe?email={email}" if email else "#"
         return f"""
-<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;padding:32px;border-radius:12px;border:1px solid #e5e7eb;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
-    <p style="color:#94a3b8;font-size:12px;margin:4px 0 0 0;">Publish Less. Grow More.</p>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Publish Less. Grow More.</p>
   </div>
   {inner_html}
   <div style="text-align:center;margin-top:32px;">
-    <a href="https://enough.app/pricing" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Subscribe to Enough &rarr;</a>
+    <a href="https://enough.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Subscribe to Enough &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:11px;">
     <a href="{unsubscribe}" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a>
@@ -293,21 +305,21 @@ class DripSequenceService:
 </div>"""
 
     def _email_1_html(self, blog_name: str, domain: str, score: int, rec_count: int) -> str:
-        score_color = "#22c55e" if score >= 65 else "#eab308" if score >= 40 else "#ef4444"
+        score_color = "#16a34a" if score >= 65 else "#ca8a04" if score >= 40 else "#dc2626"
         inner = f"""
-  <h2 style="font-size:18px;margin:0 0 8px;">Your Blog Health Audit is Ready</h2>
-  <p style="color:#94a3b8;font-size:14px;">Hi! We've finished analyzing <strong>{blog_name}</strong>.</p>
+  <h2 style="font-size:18px;margin:0 0 8px;color:#111827;">Your Blog Health Audit is Ready</h2>
+  <p style="color:#64748b;font-size:14px;">Hi! We've finished analyzing <strong>{blog_name}</strong>.</p>
   <div style="text-align:center;margin:24px 0;">
     <div style="font-size:48px;font-weight:700;color:{score_color};">{score}/100</div>
-    <div style="color:#94a3b8;font-size:13px;">Blog Health Score</div>
+    <div style="color:#64748b;font-size:13px;">Blog Health Score</div>
   </div>
-  <p style="font-size:14px;">Your full audit report is attached as a PDF. Inside you'll find:</p>
-  <ul style="color:#e2e8f0;font-size:14px;padding-left:20px;">
+  <p style="font-size:14px;color:#374151;">Your full audit report is attached as a PDF. Inside you'll find:</p>
+  <ul style="color:#374151;font-size:14px;padding-left:20px;">
     <li>Issue breakdown by category</li>
     <li>Top 5 posts needing attention</li>
     <li>Key findings about your content ecosystem</li>
   </ul>
-  <p style="font-size:14px;">We also generated <strong>{rec_count} specific recommendations</strong> to improve your blog. Subscribe to see them all.</p>"""
+  <p style="font-size:14px;color:#374151;">We also generated <strong>{rec_count} specific recommendations</strong> to improve your blog. Subscribe to see them all.</p>"""
         return self._base_wrapper(inner)
 
     def _email_2_html(
@@ -315,29 +327,29 @@ class DripSequenceService:
         rec_title: str, rec_summary: str, post_title: str,
     ) -> str:
         inner = f"""
-  <h2 style="font-size:18px;margin:0 0 8px;">One of {rec_count} Fixes for {blog_name}</h2>
-  <p style="color:#94a3b8;font-size:14px;">Remember your audit from a couple days ago? Here's a preview of what Enough found:</p>
-  <div style="background:#111827;padding:16px;border-radius:8px;border-left:4px solid #f97316;margin:20px 0;">
+  <h2 style="font-size:18px;margin:0 0 8px;color:#111827;">One of {rec_count} Fixes for {blog_name}</h2>
+  <p style="color:#64748b;font-size:14px;">Remember your audit from a couple days ago? Here's a preview of what Enough found:</p>
+  <div style="background:#f8fafc;padding:16px;border-radius:8px;border-left:4px solid #f97316;margin:20px 0;">
     <div style="color:#f97316;font-weight:600;font-size:14px;">{rec_title}</div>
-    <div style="color:#e2e8f0;font-size:13px;margin-top:8px;">{rec_summary}</div>
-    <div style="color:#94a3b8;font-size:12px;margin-top:8px;">Affects: {post_title}</div>
+    <div style="color:#374151;font-size:13px;margin-top:8px;">{rec_summary}</div>
+    <div style="color:#64748b;font-size:12px;margin-top:8px;">Affects: {post_title}</div>
   </div>
-  <p style="font-size:14px;">This is just <strong>1 of {rec_count} recommendations</strong> we generated. Each one includes specific actions, estimated effort, and expected impact.</p>
-  <p style="font-size:14px;color:#94a3b8;">Your blog scored <strong>{score}/100</strong>. Every point you gain means better rankings and more organic traffic.</p>"""
+  <p style="font-size:14px;color:#374151;">This is just <strong>1 of {rec_count} recommendations</strong> we generated. Each one includes specific actions, estimated effort, and expected impact.</p>
+  <p style="font-size:14px;color:#64748b;">Your blog scored <strong>{score}/100</strong>. Every point you gain means better rankings and more organic traffic.</p>"""
         return self._base_wrapper(inner)
 
     def _email_3_html(self, blog_name: str, domain: str, score: int, rec_count: int) -> str:
         inner = f"""
-  <h2 style="font-size:18px;margin:0 0 8px;">Your Blog Is Still Fighting Itself</h2>
-  <p style="color:#94a3b8;font-size:14px;">It's been 5 days since we audited <strong>{blog_name}</strong>, and nothing has changed.</p>
-  <div style="background:#111827;padding:16px;border-radius:8px;margin:20px 0;text-align:center;">
-    <div style="font-size:36px;font-weight:700;color:#ef4444;">{score}/100</div>
-    <div style="color:#94a3b8;font-size:13px;">Still your health score</div>
+  <h2 style="font-size:18px;margin:0 0 8px;color:#111827;">Your Blog Is Still Fighting Itself</h2>
+  <p style="color:#64748b;font-size:14px;">It's been 5 days since we audited <strong>{blog_name}</strong>, and nothing has changed.</p>
+  <div style="background:#fef2f2;padding:16px;border-radius:8px;margin:20px 0;text-align:center;">
+    <div style="font-size:36px;font-weight:700;color:#dc2626;">{score}/100</div>
+    <div style="color:#64748b;font-size:13px;">Still your health score</div>
   </div>
-  <p style="font-size:14px;">Every day you wait, your competing posts are splitting traffic, your orphan content is invisible to Google, and your thin posts are dragging down your domain authority.</p>
-  <p style="font-size:14px;">We have <strong>{rec_count} specific, actionable fixes</strong> ready for you. Each one tells you exactly what to do, which post to fix, and what impact to expect.</p>
-  <p style="font-size:14px;color:#22c55e;font-weight:600;">$99/month. 30-day money-back guarantee. Cancel anytime.</p>
-  <div style="margin-top:24px;padding-top:16px;border-top:1px solid #1f2937;">
-    <p style="font-size:12px;color:#64748b;">P.S. Know another content team or agency? Forward them this report &mdash; or have them request a free audit at <a href="https://enough.app" style="color:#22c55e;">enough.app</a>.</p>
+  <p style="font-size:14px;color:#374151;">Every day you wait, your competing posts are splitting traffic, your orphan content is invisible to Google, and your thin posts are dragging down your domain authority.</p>
+  <p style="font-size:14px;color:#374151;">We have <strong>{rec_count} specific, actionable fixes</strong> ready for you. Each one tells you exactly what to do, which post to fix, and what impact to expect.</p>
+  <p style="font-size:14px;color:#16a34a;font-weight:600;">$99/month. 30-day money-back guarantee. Cancel anytime.</p>
+  <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">
+    <p style="font-size:12px;color:#64748b;">P.S. Know another content team or agency? Forward them this report &mdash; or have them request a free audit at <a href="https://enough.app" style="color:#16a34a;">enough.app</a>.</p>
   </div>"""
         return self._base_wrapper(inner)

@@ -113,6 +113,9 @@ v1_router.include_router(og_image.router, prefix="/sites", tags=["OG"])
 v1_router.include_router(gamification.router, tags=["Gamification"])
 v1_router.include_router(competitors.router, prefix="/sites", tags=["Competitors"])
 
+from app.routers import unsubscribe
+v1_router.include_router(unsubscribe.router, tags=["Unsubscribe"])
+
 app.include_router(v1_router)
 
 

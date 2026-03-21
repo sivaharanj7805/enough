@@ -193,7 +193,7 @@ class WeeklyReportService:
         if quick_win:
             qw_label = quick_win["label"] or "Unnamed cluster"
             qw_count = quick_win["post_count"]
-            qw_html = f'<div style="background:#1a4731;padding:16px;border-radius:8px;margin:16px 0;"><strong style="color:#22c55e;">🎯 Quick Win of the Week</strong><br/><span style="color:#e2e8f0;">Consolidate <strong>{qw_label}</strong> — {qw_count} posts could become 1 strong pillar.</span></div>'
+            qw_html = f'<div style="background:#f0fdf4;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #bbf7d0;"><strong style="color:#16a34a;">🎯 Quick Win of the Week</strong><br/><span style="color:#374151;">Consolidate <strong>{qw_label}</strong> — {qw_count} posts could become 1 strong pillar.</span></div>'
             qw_text = f"\n🎯 Quick Win: Consolidate '{qw_label}' — {qw_count} posts could become 1 strong pillar.\n"
 
         # ROI section
@@ -223,11 +223,11 @@ class WeeklyReportService:
         roi_html = ""
         roi_text = ""
         if completed_recs_count > 0:
-            roi_html = f"""<div style="background:linear-gradient(135deg,#064e3b,#065f46);padding:16px;border-radius:8px;margin:16px 0;">
-<strong style="color:#34d399;">💰 Your ROI This Month</strong><br/>
-<span style="color:#e2e8f0;">You completed <strong>{completed_this_week}</strong> actions this week (<strong>{completed_recs_count}</strong> total).</span><br/>
-<span style="color:#e2e8f0;">Estimated traffic recovery: <strong>+{traffic_recovery:,}</strong> visits/month</span><br/>
-<span style="color:#a7f3d0;font-size:13px;">Estimated value: <strong>${traffic_value:,.0f}</strong>/month (at $1.00/organic visit)</span>
+            roi_html = f"""<div style="background:#f0fdf4;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #bbf7d0;">
+<strong style="color:#16a34a;">💰 Your ROI This Month</strong><br/>
+<span style="color:#374151;">You completed <strong>{completed_this_week}</strong> actions this week (<strong>{completed_recs_count}</strong> total).</span><br/>
+<span style="color:#374151;">Estimated traffic recovery: <strong>+{traffic_recovery:,}</strong> visits/month</span><br/>
+<span style="color:#16a34a;font-size:13px;">Estimated value: <strong>${traffic_value:,.0f}</strong>/month (at $1.00/organic visit)</span>
 </div>"""
             roi_text = f"\n💰 Your ROI: {completed_this_week} actions this week ({completed_recs_count} total). Estimated traffic recovery: +{traffic_recovery:,} visits/month (${traffic_value:,.0f}/month value)\n"
 
@@ -239,45 +239,45 @@ class WeeklyReportService:
             rec_summary = top_rec["summary"] or ""
             rec_priority = (top_rec["priority"] or "medium").capitalize()
             priority_color = "#ef4444" if top_rec["priority"] == "critical" else "#f97316" if top_rec["priority"] == "high" else "#eab308"
-            priority_html = f'<div style="background:#111827;padding:16px;border-radius:8px;border-left:4px solid {priority_color};margin:16px 0;"><strong style="color:{priority_color};">⚡ Your #1 Priority This Week</strong><br/><span style="color:#e2e8f0;font-weight:600;">{rec_title}</span><br/><span style="color:#94a3b8;font-size:13px;">{rec_summary[:200]}</span></div>'
+            priority_html = f'<div style="background:#f8fafc;padding:16px;border-radius:8px;border-left:4px solid {priority_color};margin:16px 0;"><strong style="color:{priority_color};">⚡ Your #1 Priority This Week</strong><br/><span style="color:#111827;font-weight:600;">{rec_title}</span><br/><span style="color:#64748b;font-size:13px;">{rec_summary[:200]}</span></div>'
             priority_text = f"\n⚡ Your #1 Priority: {rec_title}\n   {rec_summary[:200]}\n"
 
         html_body = f"""
-<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;padding:32px;border-radius:12px;border:1px solid #e5e7eb;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
-    <p style="color:#94a3b8;font-size:14px;margin:4px 0 0 0;">{site_domain}</p>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <p style="color:#64748b;font-size:14px;margin:4px 0 0 0;">{site_domain}</p>
   </div>
 
-  <h2 style="font-size:20px;margin:0 0 16px 0;color:#e2e8f0;">Your Ecosystem This Week</h2>
+  <h2 style="font-size:20px;margin:0 0 16px 0;color:#111827;">Your Ecosystem This Week</h2>
 
   <div style="display:flex;gap:16px;margin-bottom:24px;">
-    <div style="flex:1;background:#111827;padding:16px;border-radius:8px;border:1px solid #1f2937;">
-      <div style="color:#94a3b8;font-size:12px;text-transform:uppercase;">Content Health</div>
-      <div style="font-size:20px;font-weight:600;margin-top:4px;">{health_delta}</div>
+    <div style="flex:1;background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;">
+      <div style="color:#64748b;font-size:12px;text-transform:uppercase;">Content Health</div>
+      <div style="font-size:20px;font-weight:600;margin-top:4px;color:#111827;">{health_delta}</div>
     </div>
-    <div style="flex:1;background:#111827;padding:16px;border-radius:8px;border:1px solid #1f2937;">
-      <div style="color:#94a3b8;font-size:12px;text-transform:uppercase;">Efficiency</div>
-      <div style="font-size:20px;font-weight:600;margin-top:4px;">{efficiency_delta}</div>
+    <div style="flex:1;background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;">
+      <div style="color:#64748b;font-size:12px;text-transform:uppercase;">Efficiency</div>
+      <div style="font-size:20px;font-weight:600;margin-top:4px;color:#111827;">{efficiency_delta}</div>
     </div>
   </div>
 
-  <div style="background:#111827;padding:16px;border-radius:8px;border:1px solid #1f2937;margin-bottom:16px;">
-    <div style="color:#94a3b8;font-size:12px;text-transform:uppercase;margin-bottom:8px;">Posts Breakdown</div>
-    <div style="font-size:14px;">
+  <div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:16px;">
+    <div style="color:#64748b;font-size:12px;text-transform:uppercase;margin-bottom:8px;">Posts Breakdown</div>
+    <div style="font-size:14px;color:#374151;">
       Total: <strong>{current['total_posts']}</strong> •
-      Active: <strong style="color:#22c55e;">{current['active_posts']}</strong> •
+      Active: <strong style="color:#16a34a;">{current['active_posts']}</strong> •
       Dead: <strong style="color:#6b7280;">{current['dead_posts']}</strong> •
       Cannibalistic: <strong style="color:#f97316;">{current['cannibalistic_posts']}</strong>
     </div>
   </div>
 
-  {"<div style='background:#111827;padding:16px;border-radius:8px;border:1px solid #1f2937;margin-bottom:16px;'><div style='color:#94a3b8;font-size:12px;text-transform:uppercase;margin-bottom:8px;'>⚠️ New Threats</div><div style='font-size:14px;color:#f97316;'>" + str(new_threats) + " new cannibalization pairs detected this week</div></div>" if new_threats > 0 else ""}
+  {"<div style='background:#fff7ed;padding:16px;border-radius:8px;border:1px solid #fed7aa;margin-bottom:16px;'><div style='color:#64748b;font-size:12px;text-transform:uppercase;margin-bottom:8px;'>⚠️ New Threats</div><div style='font-size:14px;color:#ea580c;'>" + str(new_threats) + " new cannibalization pairs detected this week</div></div>" if new_threats > 0 else ""}
 
-  <div style="background:#111827;padding:16px;border-radius:8px;border:1px solid #1f2937;margin-bottom:16px;">
-    <div style="color:#94a3b8;font-size:12px;text-transform:uppercase;margin-bottom:8px;">Top Clusters</div>
+  <div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:16px;">
+    <div style="color:#64748b;font-size:12px;text-transform:uppercase;margin-bottom:8px;">Top Clusters</div>
     <table style="width:100%;font-size:14px;border-collapse:collapse;">
-      <tr style="color:#94a3b8;font-size:12px;"><th style="text-align:left;padding:6px 12px;">Cluster</th><th style="text-align:left;padding:6px 12px;">State</th><th style="text-align:left;padding:6px 12px;">Score</th></tr>
+      <tr style="color:#64748b;font-size:12px;"><th style="text-align:left;padding:6px 12px;">Cluster</th><th style="text-align:left;padding:6px 12px;">State</th><th style="text-align:left;padding:6px 12px;">Score</th></tr>
       {cluster_html}
     </table>
   </div>
@@ -289,7 +289,7 @@ class WeeklyReportService:
   {qw_html}
 
   <div style="text-align:center;margin-top:24px;">
-    <a href="#" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">See Your Full Landscape →</a>
+    <a href="#" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">See Your Full Landscape →</a>
   </div>
 
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
