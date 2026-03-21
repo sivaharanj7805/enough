@@ -21,8 +21,6 @@ import {
   X,
   Compass,
   ChevronLeft,
-  Gift,
-  Users,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -50,7 +48,6 @@ const NAV: NavEntry[] = [
       { href: '/landscape', label: 'Landscape', icon: Map },
       { href: '/clusters', label: 'Clusters', icon: Network },
       { href: '/posts', label: 'Posts', icon: FileText },
-      { href: '/wrapped', label: 'Wrapped', icon: Gift },
     ],
   },
   {
@@ -60,7 +57,6 @@ const NAV: NavEntry[] = [
       { href: '/issues', label: 'Issues', icon: AlertTriangle },
       { href: '/cannibalization', label: 'Cannibalization', icon: GitCompare },
       { href: '/consolidation', label: 'Consolidation', icon: Merge },
-      { href: '/competitors', label: 'Competitors', icon: Users },
     ],
   },
   { href: '/oracle', label: 'Oracle', icon: Sparkles },

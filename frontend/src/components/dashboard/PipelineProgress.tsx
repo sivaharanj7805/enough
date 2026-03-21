@@ -31,11 +31,27 @@ export function PipelineProgress({ siteId }: { siteId: string }) {
   }
 
   if (status.status === 'failed') {
+    // Map raw error text to user-friendly messages
+    const rawError = (status.error ?? '').toLowerCase();
+    let friendlyError = 'Something went wrong. Try re-running the analysis.';
+
+    if (rawError.includes('sitemap') || rawError.includes('404')) {
+      friendlyError = "We couldn't find a sitemap at your domain. Try entering your sitemap URL directly in Settings > Integrations.";
+    } else if (rawError.includes('robots.txt') || rawError.includes('blocked') || rawError.includes('403')) {
+      friendlyError = "Your site's robots.txt or server is blocking our crawler. Allow the Enough user-agent or whitelist our IP.";
+    } else if (rawError.includes('timeout') || rawError.includes('connection') || rawError.includes('ECONNREFUSED')) {
+      friendlyError = "We couldn't connect to your site. Check if it's online and accessible, then try again.";
+    } else if (rawError.includes('javascript') || rawError.includes('spa') || rawError.includes('no posts')) {
+      friendlyError = "No posts found. If your site uses JavaScript rendering, try providing a direct sitemap URL.";
+    } else if (rawError.includes('ssl') || rawError.includes('certificate')) {
+      friendlyError = "SSL certificate issue. Make sure your site's HTTPS certificate is valid.";
+    }
+
     return (
       <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3">
-        <p className="text-sm text-red-400 font-medium">Pipeline failed</p>
-        <p className="text-xs text-[#64748b] mt-1">
-          {status.error ?? 'Unknown error. Try re-running the analysis.'}
+        <p className="text-sm text-red-400 font-medium">Analysis failed</p>
+        <p className="text-xs text-[#94a3b8] mt-1">
+          {friendlyError}
         </p>
       </div>
     );

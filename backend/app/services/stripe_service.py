@@ -159,6 +159,8 @@ class StripeService:
                         user_id,
                     )
                     logger.info("Activated %s subscription for user %s", tier, user_id)
+                    email = await db.fetchval("SELECT email FROM profiles WHERE id = $1::uuid", user_id)
+                    await self._notify_slack(f"New customer: {email or user_id} subscribed to {tier} plan")
 
             elif event_type == "customer.subscription.updated":
                 subscription_id = data.get("id")
@@ -192,6 +194,8 @@ class StripeService:
                     subscription_id,
                 )
                 logger.info("Subscription %s cancelled, downgraded to free", subscription_id)
+                churn_email = profile["email"] if profile else "unknown"
+                await self._notify_slack(f"Churn: {churn_email} cancelled subscription {subscription_id}")
 
                 # Send cancellation confirmation email and schedule win-back sequence
                 if profile and profile["email"]:
@@ -229,6 +233,7 @@ class StripeService:
                         "Payment failed for subscription %s — 7-day grace period until %s",
                         subscription_id, grace_deadline.isoformat(),
                     )
+                    await self._notify_slack(f"Payment failed: subscription {subscription_id}, grace until {grace_deadline.date()}")
 
                     # Send payment failure notification
                     profile = await db.fetchrow(
@@ -239,6 +244,22 @@ class StripeService:
                         await self._send_payment_failed_email(
                             profile["email"], grace_deadline,
                         )
+
+    @staticmethod
+    async def _notify_slack(message: str) -> None:
+        """Send a Slack notification via webhook URL (non-blocking, best-effort)."""
+        settings = get_settings()
+        if not settings.slack_webhook_url:
+            return
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    settings.slack_webhook_url,
+                    json={"text": message},
+                )
+        except Exception as e:
+            logger.warning("Slack notification failed: %s", e)
 
     def _price_to_tier(self, price_id: str) -> str:
         """Map a Stripe price ID to a tier name."""

@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   TrendingDown,
   Trash2,
+  GitCompare,
 } from 'lucide-react';
 
 /* ─── Validation ─── */
@@ -94,6 +95,7 @@ function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ url?: string; email?: string; form?: string }>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submittedDomain, setSubmittedDomain] = useState('');
   const [annual, setAnnual] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
@@ -122,7 +124,20 @@ function LandingPage() {
         const data = await res.json().catch(() => null);
         throw new Error(data?.message || 'Something went wrong. Please try again.');
       }
-      setSubmitted(true);
+      // Extract domain for display
+      try {
+        setSubmittedDomain(new URL(url).hostname);
+      } catch {
+        setSubmittedDomain(url);
+      }
+      // Handle both 200 (PDF returned) and 202 (pipeline started)
+      if (res.status === 200) {
+        // PDF returned directly for existing sites — still show success
+        setSubmitted(true);
+      } else {
+        // 202 — new site, pipeline started
+        setSubmitted(true);
+      }
     } catch (err: unknown) {
       setErrors({ form: err instanceof Error ? err.message : 'Something went wrong. Please try again.' });
     } finally {
@@ -142,23 +157,49 @@ function LandingPage() {
       <section className="py-24 px-6">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-[48px] font-semibold tracking-tight leading-[1.1]">
-            Your blog is fighting itself.
-            <br />
-            <span className="text-[#3B82F6]">We&apos;ll show you where.</span>
+            See your content health score, every post cannibalizing another, and your top 3 fixes
+            <span className="text-[#3B82F6]"> &mdash; in your inbox in 25 minutes. Free.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-[14px] leading-relaxed text-[#9BA1AD]">
-            Content cannibalization silently kills your rankings. Posts compete against each other,
-            traffic decays, and dead weight drags your domain down. Enough finds every issue and
-            tells you exactly what to fix.
+            Enough finds the cannibalization, decay, and dead weight your SEO tool misses &mdash; and tells you exactly what to fix.
           </p>
+
+          {/* What You'll Get */}
+          <div className="mx-auto mt-10 grid max-w-3xl grid-cols-1 md:grid-cols-3 gap-4 text-left">
+            <div className="rounded-xl border border-[#23262F] bg-[#13151B] p-5">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[#3B82F6]/10">
+                <BarChart3 size={20} className="text-[#3B82F6]" />
+              </div>
+              <p className="text-[24px] font-bold text-[#E8EAED]">0-100</p>
+              <h3 className="text-[14px] font-semibold mt-1">Content Health Score</h3>
+              <p className="text-[13px] leading-relaxed text-[#9BA1AD] mt-1">Your overall content ecosystem health at a glance</p>
+            </div>
+            <div className="rounded-xl border border-[#23262F] bg-[#13151B] p-5">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[#3B82F6]/10">
+                <GitCompare size={20} className="text-[#3B82F6]" />
+              </div>
+              <h3 className="text-[14px] font-semibold">Cannibalization Detection</h3>
+              <p className="text-[13px] leading-relaxed text-[#9BA1AD] mt-1">Every pair of posts competing for the same keywords</p>
+            </div>
+            <div className="rounded-xl border border-[#23262F] bg-[#13151B] p-5">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[#3B82F6]/10">
+                <Zap size={20} className="text-[#3B82F6]" />
+              </div>
+              <h3 className="text-[14px] font-semibold">AI Citability Score</h3>
+              <p className="text-[13px] leading-relaxed text-[#9BA1AD] mt-1">How likely AI systems are to cite your content vs. industry average</p>
+            </div>
+          </div>
 
           {/* Audit Form */}
           {submitted ? (
             <div className="mt-10 rounded-xl border border-[#23262F] bg-[#13151B] p-6 text-center">
               <Check size={32} className="mx-auto mb-3 text-green-400" />
-              <p className="text-lg font-semibold">Audit requested!</p>
+              <p className="text-lg font-semibold">We&apos;re analyzing {submittedDomain}...</p>
               <p className="mt-2 text-[14px] text-[#9BA1AD]">
-                We&apos;ll crawl your blog and send the report to your inbox within 25 minutes.
+                Check your inbox in 20-25 minutes.
+              </p>
+              <p className="mt-2 text-[13px] text-[#9BA1AD]">
+                Add <span className="font-medium text-[#E8EAED]">hello@enough.app</span> to your contacts so the report doesn&apos;t go to spam.
               </p>
             </div>
           ) : (
@@ -351,8 +392,11 @@ function LandingPage() {
       <section className="py-24 px-6 border-t border-[#23262F]">
         <div className="mx-auto max-w-3xl">
           <h2 className="text-center text-[28px] font-semibold mb-4">Simple, transparent pricing</h2>
-          <p className="text-center text-[14px] text-[#9BA1AD] mb-8">
+          <p className="text-center text-[14px] text-[#9BA1AD] mb-4">
             30-day money-back guarantee on every plan.
+          </p>
+          <p className="text-center text-[14px] font-medium text-[#E8EAED] mb-8">
+            Built for SEO agencies and content teams managing 50+ posts.
           </p>
 
           {/* Annual toggle */}

@@ -8,7 +8,7 @@ import { LegendPanel } from './LegendPanel';
 import type { ClusterDetail } from '@/lib/types';
 import type { PostHealth } from '@/lib/types';
 import type { EcosystemState, PostRole, Trend } from '@/lib/constants';
-import type { CreatureType } from './VegetationRenderer';
+type CreatureType = string;
 
 export interface CannPair {
   post_a_id: string;

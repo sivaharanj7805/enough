@@ -15,7 +15,6 @@ import { EcosystemNarrative } from '@/components/landscape/EcosystemNarrative';
 import { EcosystemOverlay } from '@/components/landscape/EcosystemOverlay';
 import { OnboardingTour } from '@/components/landscape/OnboardingTour';
 import { CreatureLegend } from '@/components/landscape/CreatureLegend';
-import { SeasonsOverlay } from '@/components/landscape/SeasonsOverlay';
 import { ContentPlannerOverlay } from '@/components/landscape/ContentPlannerOverlay';
 import { Minimap } from '@/components/landscape/Minimap';
 import { useEcosystemSounds } from '@/lib/hooks/useEcosystemSounds';
@@ -23,7 +22,7 @@ import { useEasterEggs } from '@/lib/hooks/useEasterEggs';
 import { ROLE_COLORS, ROLE_LABELS, TREND_ICONS, TREND_COLORS } from '@/lib/constants';
 import type { PostHealth, ClusterDetail, CannibalizationPair, Recommendation } from '@/lib/types';
 import type { EcosystemState } from '@/lib/constants';
-import type { CreatureType } from '@/components/landscape/VegetationRenderer';
+type CreatureType = string;
 
 const CREATURE_LABELS: Record<NonNullable<CreatureType>, { emoji: string; label: string; color: string; recType: string[] }> = {
   bloomling: {
@@ -248,9 +247,6 @@ export default function LandscapePage() {
                 clusters={effectiveClusters}
               />
             )}
-
-            {/* Seasons overlay — visual seasonal effects */}
-            <SeasonsOverlay />
 
             {/* Content planner overlay */}
             <ContentPlannerOverlay

@@ -50,6 +50,10 @@ class Settings(BaseSettings):
 
     # Cron / internal endpoint auth
     cron_secret: str = ""
+    admin_secret: str = ""  # For /admin/* endpoints
+
+    # Slack notifications (webhook URL)
+    slack_webhook_url: str = ""
 
     # Security
     allowed_hosts: str = ""  # comma-separated, empty = allow all
