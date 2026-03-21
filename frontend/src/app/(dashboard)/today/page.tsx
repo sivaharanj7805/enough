@@ -9,6 +9,8 @@ import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PipelineProgress } from '@/components/dashboard/PipelineProgress';
 import { SetupChecklist } from '@/components/dashboard/SetupChecklist';
+import { StreakCard } from '@/components/gamification/StreakCard';
+import { WeatherForecast } from '@/components/gamification/WeatherForecast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { mutate } from 'swr';
@@ -28,6 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import { today as todayCopy, recType as REC_TYPE_LABEL } from '@/lib/copy';
+import { QuestsPanel } from '@/components/quests/QuestsPanel';
 import type { Recommendation, SiteHealth } from '@/lib/types';
 
 // ─── Score color helpers ────────────────────────────
@@ -698,6 +701,15 @@ export default function TodayPage() {
         health={health}
         hasRecommendations={hasEngagedRecs}
       />
+
+      {/* Weekly quests */}
+      <QuestsPanel />
+
+      {/* ── Streak + Weather ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <StreakCard />
+        <WeatherForecast />
+      </div>
 
       {/* ── Top Row: Health Score (left) + Trend (right) ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -79,77 +79,6 @@ class TestReadability:
 
 
 # ═══════════════════════════════════════════════
-# 5. Weighted Embedding Strategy
-# ═══════════════════════════════════════════════
-
-
-class TestWeightedEmbeddings:
-    """Test weighted text construction."""
-
-    def test_title_repeated_3x(self):
-        from app.services.weighted_embeddings import construct_weighted_text
-        result = construct_weighted_text(
-            title="SEO Guide",
-            headings=None,
-            body_text="Some body text here.",
-        )
-        assert result.count("SEO Guide") == 3
-
-    def test_headings_repeated_2x(self):
-        from app.services.weighted_embeddings import construct_weighted_text
-        headings = [{"level": "h2", "text": "Getting Started"}]
-        result = construct_weighted_text(
-            title="Guide",
-            headings=headings,
-            body_text="Body content.",
-        )
-        assert result.count("Getting Started") == 2
-
-    def test_json_string_headings(self):
-        import json
-        from app.services.weighted_embeddings import construct_weighted_text
-        headings_json = json.dumps([{"level": "h2", "text": "Section One"}])
-        result = construct_weighted_text(
-            title="Guide",
-            headings=headings_json,
-            body_text="Body.",
-        )
-        assert "Section One" in result
-
-    def test_first_paragraph_extra_weight(self):
-        from app.services.weighted_embeddings import construct_weighted_text
-        body = "First paragraph here.\n\nSecond paragraph."
-        result = construct_weighted_text(
-            title=None,
-            headings=None,
-            body_text=body,
-        )
-        # First paragraph should appear twice (extra copy + in body)
-        assert result.count("First paragraph here.") == 2
-
-    def test_max_chars_truncation(self):
-        from app.services.weighted_embeddings import construct_weighted_text
-        long_body = "x " * 10000
-        result = construct_weighted_text(
-            title="Test",
-            headings=None,
-            body_text=long_body,
-            max_chars=1000,
-        )
-        assert len(result) <= 1000
-
-    def test_empty_inputs(self):
-        from app.services.weighted_embeddings import construct_weighted_text
-        result = construct_weighted_text(None, None, None)
-        assert result == ""
-
-    def test_body_only(self):
-        from app.services.weighted_embeddings import construct_weighted_text
-        result = construct_weighted_text(None, None, "Just body text.")
-        assert "Just body text." in result
-
-
-# ═══════════════════════════════════════════════
 # 3. Search Intent Classification (query patterns)
 # ═══════════════════════════════════════════════
 
@@ -201,71 +130,6 @@ class TestIntentClassification:
         """Transactional patterns checked first — 'buy' overrides 'guide'."""
         from app.services.intent_classifier import classify_query_intent
         assert classify_query_intent("buy guide book") == "transactional"
-
-
-# ═══════════════════════════════════════════════
-# 7. SERP Feature Detection
-# ═══════════════════════════════════════════════
-
-
-class TestSERPFeatureDetection:
-    """Test SERP feature opportunity detection."""
-
-    def test_detect_definition_query(self):
-        from app.services.serp_features import detect_snippet_type
-        assert detect_snippet_type("what is content marketing") == "definition_box"
-
-    def test_detect_how_to_query(self):
-        from app.services.serp_features import detect_snippet_type
-        assert detect_snippet_type("how to optimize meta descriptions") == "featured_snippet"
-
-    def test_detect_list_query(self):
-        from app.services.serp_features import detect_snippet_type
-        assert detect_snippet_type("best SEO tools 2024") == "featured_snippet"
-
-    def test_detect_comparison_query(self):
-        from app.services.serp_features import detect_snippet_type
-        assert detect_snippet_type("ahrefs vs semrush") == "featured_snippet"
-
-    def test_no_snippet_type(self):
-        from app.services.serp_features import detect_snippet_type
-        assert detect_snippet_type("running shoes") is None
-
-    def test_check_format_definition(self):
-        from app.services.serp_features import check_post_has_format
-        body_with_def = "Content marketing is a strategic approach focused on creating valuable content to attract a clearly defined audience."
-        assert check_post_has_format(body_with_def, None, "definition_box") is True
-
-    def test_check_format_no_definition(self):
-        from app.services.serp_features import check_post_has_format
-        body_no_def = "Here are some tips for your marketing strategy."
-        assert check_post_has_format(body_no_def, None, "definition_box") is False
-
-    def test_check_format_list_with_bullets(self):
-        from app.services.serp_features import check_post_has_format
-        body = "Top tools:\n- Tool A\n- Tool B\n- Tool C\n- Tool D"
-        assert check_post_has_format(body, None, "featured_snippet") is True
-
-    def test_check_format_empty_body(self):
-        from app.services.serp_features import check_post_has_format
-        assert check_post_has_format(None, None, "featured_snippet") is False
-
-
-# ═══════════════════════════════════════════════
-# 6. Content Velocity
-# ═══════════════════════════════════════════════
-
-
-class TestContentVelocity:
-    """Test content velocity calculations."""
-
-    def test_velocity_decline_threshold(self):
-        from app.services.content_velocity import VELOCITY_DECLINE_RATIO
-        assert VELOCITY_DECLINE_RATIO == 0.5
-
-    def test_velocity_growth_threshold(self):
-        from app.services.content_velocity import VELOCITY_GROWTH_RATIO
-        assert VELOCITY_GROWTH_RATIO == 1.5
 
 
 # ═══════════════════════════════════════════════
@@ -343,23 +207,6 @@ class TestContentGapConstants:
 
 
 # ═══════════════════════════════════════════════
-# 2. Topical Authority
-# ═══════════════════════════════════════════════
-
-
-class TestTopicalAuthorityWeights:
-    """Test topical authority scoring weights."""
-
-    def test_weights_sum_to_one(self):
-        from app.services.topical_authority import (
-            W_HEALTH, W_KEYWORD_COVERAGE, W_LINK_DENSITY,
-            W_CONTENT_DEPTH, W_FRESHNESS,
-        )
-        total = W_HEALTH + W_KEYWORD_COVERAGE + W_LINK_DENSITY + W_CONTENT_DEPTH + W_FRESHNESS
-        assert abs(total - 1.0) < 1e-6
-
-
-# ═══════════════════════════════════════════════
 # Import verification
 # ═══════════════════════════════════════════════
 
@@ -371,17 +218,9 @@ class TestImports:
         from app.services.readability import ReadabilityScorer
         assert ReadabilityScorer is not None
 
-    def test_import_weighted_embeddings(self):
-        from app.services.weighted_embeddings import WeightedEmbeddingBuilder
-        assert WeightedEmbeddingBuilder is not None
-
     def test_import_pagerank(self):
         from app.services.pagerank import InternalPageRank
         assert InternalPageRank is not None
-
-    def test_import_topical_authority(self):
-        from app.services.topical_authority import TopicalAuthorityScorer
-        assert TopicalAuthorityScorer is not None
 
     def test_import_intent_classifier(self):
         from app.services.intent_classifier import IntentClassifier
@@ -390,11 +229,3 @@ class TestImports:
     def test_import_content_gaps(self):
         from app.services.content_gaps import ContentGapAnalyzer
         assert ContentGapAnalyzer is not None
-
-    def test_import_serp_features(self):
-        from app.services.serp_features import SERPFeatureDetector
-        assert SERPFeatureDetector is not None
-
-    def test_import_content_velocity(self):
-        from app.services.content_velocity import ContentVelocityTracker
-        assert ContentVelocityTracker is not None

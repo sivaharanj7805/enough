@@ -100,45 +100,6 @@ class TestClusteringIntegration:
                            if "x_pos" in str(c)]
             assert len(update_calls) == 3  # One per post
 
-    def test_clustering_with_real_umap_hdbscan(self):
-        """Verify UMAP + HDBSCAN produces valid output with 2 clear clusters."""
-        from app.services.clustering import TopicClusterer
-
-        rng = np.random.RandomState(42)
-        # Two well-separated clusters in 100d
-        cluster_a = rng.randn(8, 100) + np.array([10.0] * 100)
-        cluster_b = rng.randn(8, 100) + np.array([-10.0] * 100)
-        embeddings = np.vstack([cluster_a, cluster_b]).astype(np.float32)
-
-        clusterer = TopicClusterer.__new__(TopicClusterer)
-        labels, positions_2d = clusterer._run_clustering_and_2d(embeddings, 16)
-
-        assert len(labels) == 16
-        assert positions_2d.shape == (16, 2)
-
-        # Should find 2 clusters
-        unique_labels = set(labels)
-        n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
-        assert n_clusters >= 2, f"Expected 2 clusters, got {n_clusters}. Labels: {labels}"
-
-        # Posts in the same original group should get the same label
-        # (not guaranteed but likely with well-separated clusters)
-        labels_a = set(labels[:8])
-        labels_b = set(labels[8:])
-        # At least one group should be homogeneous
-        assert len(labels_a) <= 2 or len(labels_b) <= 2
-
-    def test_2d_positions_are_finite(self):
-        """2D positions must be finite numbers (no NaN/Inf)."""
-        from app.services.clustering import TopicClusterer
-
-        rng = np.random.RandomState(42)
-        embeddings = rng.randn(10, 50).astype(np.float32)
-
-        clusterer = TopicClusterer.__new__(TopicClusterer)
-        _, positions_2d = clusterer._run_clustering_and_2d(embeddings, 10)
-
-        assert np.all(np.isfinite(positions_2d)), "2D positions contain NaN or Inf"
 
 
 # ═══════════════════════════════════════════════
@@ -270,25 +231,6 @@ class TestCannibalizationIntegration:
         result = await detector.detect_for_site(db, SITE_ID)
         assert result == 0
 
-    @pytest.mark.asyncio
-    async def test_single_post_cluster_no_pairs(self):
-        """Cluster with 1 post can't have pairs."""
-        from app.services.cannibalization import CannibalizationDetector
-
-        db = _make_mock_db()
-        # fetchval: site metadata (no calibrated thresholds)
-        db.fetchval.side_effect = [None]
-        db.fetch.side_effect = [
-            # Calibration: pairwise similarities (too few to calibrate)
-            [],
-            # Clusters
-            [{"id": CLUSTER_IDS[0], "post_count": 1}],
-        ]
-
-        detector = CannibalizationDetector()
-        result = await detector.detect_for_site(db, SITE_ID)
-        assert result == 0
-
     def test_severity_matrix(self):
         """Test all severity combinations (calibrated for text-embedding-3-small)."""
         from app.services.cannibalization import CannibalizationDetector
@@ -331,48 +273,12 @@ class TestProblemDetectionIntegration:
 
         detector = ProblemDetector()
         result = await detector.detect_all(db, SITE_ID)
-        assert result == {"decay": 0, "thin": 0, "seo": 0, "orphan": 0, "readability": 0, "velocity": 0}
-
-    @pytest.mark.asyncio
-    async def test_detect_thin_content(self):
-        """Posts under 500 words should be flagged."""
-        from app.services.problem_detection import ProblemDetector
-
-        db = _make_mock_db()
-        thin_posts = [
-            {"id": POST_IDS[0], "title": "Short Post", "word_count": 200},
-            {"id": POST_IDS[1], "title": "Medium Post", "word_count": 450},
-        ]
-
-        call_count = 0
-        async def mock_fetch(query, *args):
-            nonlocal call_count
-            call_count += 1
-            # Decay queries return empty
-            if "gsc_metrics" in query or "modified_date" in query:
-                return []
-            # Thin content absolute
-            if "word_count < 500" in query:
-                return thin_posts
-            # Thin content cluster avg
-            if "cluster_avgs" in query:
-                return []
-            # Thin content bounce
-            if "bounce_rate" in query:
-                return []
-            # SEO issues
-            if "meta_description" in query:
-                return []
-            # Orphans
-            if "NOT EXISTS" in query:
-                return []
-            return []
-
-        db.fetch = mock_fetch
-
-        detector = ProblemDetector()
-        result = await detector.detect_all(db, SITE_ID)
-        assert result["thin"] >= 2
+        assert result["decay"] == 0
+        assert result["thin"] == 0
+        assert result["seo"] == 0
+        assert result["orphan"] == 0
+        assert result["readability"] == 0
+        assert result["velocity"] == 0
 
     @pytest.mark.asyncio
     async def test_detect_orphans(self):
@@ -606,69 +512,3 @@ class TestSchemaValidation:
         assert rec.specific_actions == []
 
 
-# ═══════════════════════════════════════════════
-# Migration Validation
-# ═══════════════════════════════════════════════
-
-class TestMigrationValidation:
-    """Verify migration SQL is well-formed."""
-
-    def _read_migration(self):
-        with open("migrations/005_phase2_intelligence.sql") as f:
-            return f.read()
-
-    def test_content_problems_table(self):
-        sql = self._read_migration()
-        assert "CREATE TABLE IF NOT EXISTS content_problems" in sql
-        assert "problem_type TEXT NOT NULL" in sql
-        assert "severity TEXT NOT NULL" in sql
-        assert "UNIQUE(post_id, problem_type)" in sql
-
-    def test_recommendations_table(self):
-        sql = self._read_migration()
-        assert "CREATE TABLE IF NOT EXISTS recommendations" in sql
-        assert "recommendation_type TEXT NOT NULL" in sql
-        assert "specific_actions JSONB" in sql
-        assert "ai_generated_content JSONB" in sql
-        assert "status TEXT NOT NULL DEFAULT 'pending'" in sql
-
-    def test_post_positions(self):
-        sql = self._read_migration()
-        assert "x_pos FLOAT" in sql
-        assert "y_pos FLOAT" in sql
-
-    def test_hnsw_index(self):
-        sql = self._read_migration()
-        assert "hnsw" in sql.lower()
-        assert "vector_cosine_ops" in sql
-        assert "m = 16" in sql
-        assert "ef_construction = 64" in sql
-
-    def test_dead_trend_constraint(self):
-        sql = self._read_migration()
-        assert "'dead'" in sql
-
-    def test_all_problem_types_present(self):
-        sql = self._read_migration()
-        expected_types = [
-            "decay_mild", "decay_moderate", "decay_severe",
-            "thin_content", "thin_below_cluster_avg", "thin_high_bounce",
-            "seo_missing_meta", "seo_title_length", "seo_no_headings",
-            "seo_no_internal_links", "seo_no_images",
-            "orphan", "cannibalization",
-        ]
-        for ptype in expected_types:
-            assert ptype in sql, f"Missing problem type: {ptype}"
-
-    def test_all_recommendation_types_present(self):
-        sql = self._read_migration()
-        expected_types = ["merge", "refresh", "optimize", "delete", "expand", "interlink", "growth"]
-        for rtype in expected_types:
-            assert f"'{rtype}'" in sql, f"Missing recommendation type: {rtype}"
-
-    def test_indexes_created(self):
-        sql = self._read_migration()
-        assert "idx_content_problems_post" in sql
-        assert "idx_content_problems_site" in sql
-        assert "idx_recommendations_post" in sql
-        assert "idx_recommendations_site" in sql

@@ -136,6 +136,98 @@ async def delete_site(
         raise HTTPException(status_code=404, detail="Site not found")
 
 
+class SiteSettingsUpdate(BaseModel):
+    url: str | None = None
+    cms_type: str | None = None
+    recrawl_schedule: str | None = None
+
+
+class NotificationSettingsUpdate(BaseModel):
+    digest_frequency: str | None = None
+
+
+@router.patch("/{site_id}/settings")
+async def update_site_settings(
+    site_id: UUID,
+    body: SiteSettingsUpdate,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Update site settings (URL, CMS type, recrawl schedule)."""
+    row = await db.fetchrow(
+        "SELECT id FROM sites WHERE id = $1 AND user_id = $2", site_id, user_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    if body.url:
+        _validate_url_not_internal(body.url, "url")
+
+    updates: list[str] = []
+    params: list = []
+    idx = 1
+
+    if body.url is not None:
+        updates.append(f"domain = ${idx}")
+        from urllib.parse import urlparse
+        parsed = urlparse(body.url if "://" in body.url else f"https://{body.url}")
+        domain = parsed.netloc or parsed.path
+        params.append(domain.replace("www.", "").strip("/"))
+        idx += 1
+
+    if body.cms_type is not None:
+        valid_cms = ("wordpress", "sitemap", "hubspot", "webflow", "ghost", "other")
+        if body.cms_type not in valid_cms:
+            raise HTTPException(status_code=422, detail=f"cms_type must be one of: {', '.join(valid_cms)}")
+        updates.append(f"cms_type = ${idx}")
+        params.append(body.cms_type)
+        idx += 1
+
+    if body.recrawl_schedule is not None:
+        valid_schedules = ("manual", "weekly", "monthly")
+        if body.recrawl_schedule not in valid_schedules:
+            raise HTTPException(status_code=422, detail=f"recrawl_schedule must be one of: {', '.join(valid_schedules)}")
+        updates.append(f"recrawl_schedule = ${idx}")
+        params.append(body.recrawl_schedule)
+        idx += 1
+
+    if not updates:
+        return {"message": "No changes"}
+
+    updates.append(f"updated_at = NOW()")
+    query = f"UPDATE sites SET {', '.join(updates)} WHERE id = ${idx} AND user_id = ${idx + 1}"
+    params.extend([site_id, user_id])
+    await db.execute(query, *params)
+
+    return {"message": "Site settings updated"}
+
+
+@router.patch("/{site_id}/notifications")
+async def update_notification_settings(
+    site_id: UUID,
+    body: NotificationSettingsUpdate,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Update notification preferences for a site."""
+    row = await db.fetchrow(
+        "SELECT id FROM sites WHERE id = $1 AND user_id = $2", site_id, user_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    if body.digest_frequency is not None:
+        valid_freqs = ("weekly", "biweekly", "monthly", "off")
+        if body.digest_frequency not in valid_freqs:
+            raise HTTPException(status_code=422, detail=f"digest_frequency must be one of: {', '.join(valid_freqs)}")
+        await db.execute(
+            "UPDATE sites SET digest_frequency = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+            body.digest_frequency, site_id, user_id,
+        )
+
+    return {"message": "Notification preferences updated"}
+
+
 class GoogleTokenUpdate(BaseModel):
     refresh_token: str
 

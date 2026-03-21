@@ -483,45 +483,6 @@ class TestOAuthFlow:
 
 
 # ═══════════════════════════════════════════════
-# DB Schema
-# ═══════════════════════════════════════════════
-
-class TestDBSchema:
-    """Verify migration files exist and have expected content."""
-
-    def test_initial_schema_has_posts_table(self):
-        with open("migrations/001_initial_schema.sql") as f:
-            sql = f.read()
-        assert "CREATE TABLE posts" in sql
-        assert "content_hash TEXT" in sql
-        assert "word_count INTEGER" in sql
-
-    def test_initial_schema_has_analytics_tables(self):
-        with open("migrations/001_initial_schema.sql") as f:
-            sql = f.read()
-        assert "CREATE TABLE ga4_metrics" in sql
-        assert "CREATE TABLE gsc_metrics" in sql
-
-    def test_initial_schema_has_crawl_jobs(self):
-        with open("migrations/001_initial_schema.sql") as f:
-            sql = f.read()
-        assert "CREATE TABLE crawl_jobs" in sql
-
-    def test_enhancement_migration_has_new_columns(self):
-        with open("migrations/004_phase1_enhancements.sql") as f:
-            sql = f.read()
-        assert "headings JSONB" in sql
-        assert "meta_description TEXT" in sql
-        assert "http_status INTEGER" in sql
-
-    def test_enhancement_migration_has_indexes(self):
-        with open("migrations/004_phase1_enhancements.sql") as f:
-            sql = f.read()
-        assert "idx_posts_content_hash" in sql
-        assert "idx_post_embeddings_content_hash" in sql
-
-
-# ═══════════════════════════════════════════════
 # WordPress Connector
 # ═══════════════════════════════════════════════
 

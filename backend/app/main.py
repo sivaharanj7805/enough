@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings, validate_production
 from app.database import get_pool, close_pool
-from app.routers import auth, sites, ingestion, analytics, intelligence, actions, retention, google_integration, audit_report, og_image
+from app.routers import auth, sites, ingestion, analytics, intelligence, actions, retention, google_integration, audit_report, og_image, gamification, competitors
 
 # Configure logging
 logging.basicConfig(
@@ -110,6 +110,8 @@ v1_router.include_router(retention.router, tags=["Retention"])
 v1_router.include_router(google_integration.router, tags=["Google"])
 v1_router.include_router(audit_report.router, prefix="/sites", tags=["Audit"])
 v1_router.include_router(og_image.router, prefix="/sites", tags=["OG"])
+v1_router.include_router(gamification.router, tags=["Gamification"])
+v1_router.include_router(competitors.router, prefix="/sites", tags=["Competitors"])
 
 app.include_router(v1_router)
 

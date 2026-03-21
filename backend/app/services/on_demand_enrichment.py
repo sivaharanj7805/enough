@@ -139,6 +139,16 @@ async def enrich_recommendation(
         f"{rec['summary'] or ''}"
     )
 
+    # Inject RAG context from the user's own blog data
+    try:
+        from app.services.rag_context import get_recommendation_context, format_recommendation_context
+        rag_ctx = await get_recommendation_context(db, site_id, rec["post_id"])
+        rag_text = format_recommendation_context(rag_ctx)
+        if rag_text and rag_text != "(No additional context available)":
+            context += f"\n\nBLOG CONTEXT (from this site's own data):\n{rag_text}"
+    except Exception as e:
+        logger.warning("RAG context retrieval failed for enrichment: %s", e)
+
     rec_type = rec["recommendation_type"]
 
     # For cann recs, fetch the overlapping post
