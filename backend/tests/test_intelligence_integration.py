@@ -309,7 +309,7 @@ async def test_list_consolidation_plans(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.intelligence.ConsolidationPlanner") as MockPlanner:
+    with patch("app.services.consolidation.ConsolidationPlanner") as MockPlanner:
         planner = MockPlanner.return_value
         planner.get_plans = AsyncMock(return_value=[
             {
@@ -351,8 +351,8 @@ async def test_oracle_check_success(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.dependencies.StripeService") as MockStripe, \
-         patch("app.routers.intelligence.PrePublishOracle") as MockOracle:
+    with patch("app.services.stripe_service.StripeService") as MockStripe, \
+         patch("app.services.oracle.PrePublishOracle") as MockOracle:
         svc = MockStripe.return_value
         svc.check_usage_limits = AsyncMock(return_value=True)
 
@@ -385,7 +385,7 @@ async def test_oracle_check_missing_input(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.dependencies.StripeService") as MockStripe:
+    with patch("app.services.stripe_service.StripeService") as MockStripe:
         svc = MockStripe.return_value
         svc.check_usage_limits = AsyncMock(return_value=True)
 
@@ -409,7 +409,7 @@ async def test_create_brief_success(app_with_mocks):
     app, conn = app_with_mocks
     conn._fetchrow_returns = [_site_exists()]
 
-    with patch("app.routers.intelligence.ContentBriefGenerator") as MockGen:
+    with patch("app.services.content_briefs.ContentBriefGenerator") as MockGen:
         gen = MockGen.return_value
         gen.generate_brief = AsyncMock(return_value={
             "id": str(BRIEF_ID),
