@@ -196,6 +196,41 @@ class WeeklyReportService:
             qw_html = f'<div style="background:#1a4731;padding:16px;border-radius:8px;margin:16px 0;"><strong style="color:#22c55e;">🎯 Quick Win of the Week</strong><br/><span style="color:#e2e8f0;">Consolidate <strong>{qw_label}</strong> — {qw_count} posts could become 1 strong pillar.</span></div>'
             qw_text = f"\n🎯 Quick Win: Consolidate '{qw_label}' — {qw_count} posts could become 1 strong pillar.\n"
 
+        # ROI section
+        completed_recs_count = await db.fetchval(
+            """SELECT COUNT(*) FROM recommendations
+               WHERE site_id = $1 AND status = 'completed'""",
+            site_id,
+        ) or 0
+
+        completed_this_week = await db.fetchval(
+            """SELECT COUNT(*) FROM recommendations
+               WHERE site_id = $1 AND status = 'completed'
+               AND updated_at > NOW() - INTERVAL '7 days'""",
+            site_id,
+        ) or 0
+
+        traffic_recovery = await db.fetchval(
+            """SELECT COALESCE(SUM(
+                GREATEST(0, COALESCE(latest_traffic, 0) - COALESCE(baseline_traffic, 0))
+            ), 0)
+            FROM impact_tracking WHERE site_id = $1""",
+            site_id,
+        ) or 0
+
+        traffic_value = float(traffic_recovery) * 1.0  # $1.00/visit benchmark
+
+        roi_html = ""
+        roi_text = ""
+        if completed_recs_count > 0:
+            roi_html = f"""<div style="background:linear-gradient(135deg,#064e3b,#065f46);padding:16px;border-radius:8px;margin:16px 0;">
+<strong style="color:#34d399;">💰 Your ROI This Month</strong><br/>
+<span style="color:#e2e8f0;">You completed <strong>{completed_this_week}</strong> actions this week (<strong>{completed_recs_count}</strong> total).</span><br/>
+<span style="color:#e2e8f0;">Estimated traffic recovery: <strong>+{traffic_recovery:,}</strong> visits/month</span><br/>
+<span style="color:#a7f3d0;font-size:13px;">Estimated value: <strong>${traffic_value:,.0f}</strong>/month (at $1.00/organic visit)</span>
+</div>"""
+            roi_text = f"\n💰 Your ROI: {completed_this_week} actions this week ({completed_recs_count} total). Estimated traffic recovery: +{traffic_recovery:,} visits/month (${traffic_value:,.0f}/month value)\n"
+
         # Top priority action section
         priority_html = ""
         priority_text = ""
@@ -249,6 +284,8 @@ class WeeklyReportService:
 
   {priority_html}
 
+  {roi_html}
+
   {qw_html}
 
   <div style="text-align:center;margin-top:24px;">
@@ -271,6 +308,7 @@ Posts: {current['total_posts']} total, {current['active_posts']} active, {curren
 Top Clusters:
 {cluster_text}
 {priority_text}
+{roi_text}
 {qw_text}
 Log in to see your full landscape.
 """

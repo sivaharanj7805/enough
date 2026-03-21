@@ -27,11 +27,34 @@ import {
   X,
   ArrowDownUp,
   Undo2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { mutate } from 'swr';
 import type { Recommendation } from '@/lib/types';
+
+function CopyBtn({ text, label }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* fallback */ }
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-brand-border/30 text-brand-text-muted hover:text-brand-text hover:bg-brand-border/50 transition-colors ml-2 flex-shrink-0"
+      title={`Copy ${label ?? ''}`}
+    >
+      {copied ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
 
 type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'dismissed';
 type SortOption = 'impact' | 'priority' | 'effort' | 'date';
@@ -230,19 +253,28 @@ function ActionCard({
               <div className="mt-3 rounded-lg bg-brand-bg p-3 border border-brand-border/50">
                 <p className="text-xs font-medium text-brand-text-muted mb-1">AI-Generated Content</p>
                 {ai.meta_description && (
-                  <p className="text-xs text-brand-text italic">
-                    Meta: &quot;{ai.meta_description}&quot;
-                  </p>
+                  <div className="flex items-start justify-between">
+                    <p className="text-xs text-brand-text italic">
+                      Meta: &quot;{ai.meta_description}&quot;
+                    </p>
+                    <CopyBtn text={ai.meta_description} label="meta description" />
+                  </div>
                 )}
                 {ai.suggested_title && (
-                  <p className="text-xs text-brand-text mt-1">
-                    Title: &quot;{ai.suggested_title}&quot;
-                  </p>
+                  <div className="flex items-start justify-between mt-1">
+                    <p className="text-xs text-brand-text">
+                      Title: &quot;{ai.suggested_title}&quot;
+                    </p>
+                    <CopyBtn text={ai.suggested_title} label="title" />
+                  </div>
                 )}
                 {ai.outline && (
-                  <pre className="text-xs text-brand-text mt-1 whitespace-pre-wrap font-sans">
-                    {ai.outline}
-                  </pre>
+                  <div className="flex items-start justify-between mt-1">
+                    <pre className="text-xs text-brand-text whitespace-pre-wrap font-sans flex-1">
+                      {ai.outline}
+                    </pre>
+                    <CopyBtn text={ai.outline} label="outline" />
+                  </div>
                 )}
               </div>
             );

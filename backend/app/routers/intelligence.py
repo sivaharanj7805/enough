@@ -42,6 +42,10 @@ from app.models.schemas import (
     RecommendationListResponse,
     RecommendationStatusUpdate,
     CannibalizationRecommendationRequest,
+    AlertsListResponse,
+    PositionAlertResponse,
+    SinceLastVisitResponse,
+    ROISummaryResponse,
 )
 
 from app.utils.task_retry import with_retry
@@ -1572,3 +1576,174 @@ async def delete_content_brief(
     )
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Brief not found")
+
+
+# ──────────────── Position Alerts (Continuous Monitoring) ────────────────
+
+
+@router.get(
+    "/{site_id}/intelligence/alerts",
+    response_model=AlertsListResponse,
+)
+async def list_alerts(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+    status: str | None = None,
+    limit: int = 50,
+):
+    """Get recent position monitoring alerts for a site."""
+    await _verify_site(site_id, user_id, db)
+
+    from app.services.position_monitor import PositionMonitor
+
+    monitor = PositionMonitor()
+    alerts = await monitor.get_alerts(db, site_id, status=status, limit=limit)
+
+    return AlertsListResponse(
+        alerts=[PositionAlertResponse(**a) for a in alerts],
+        total=len(alerts),
+    )
+
+
+# ──────────────── Since Last Visit ────────────────
+
+
+@router.get(
+    "/{site_id}/intelligence/since-last-visit",
+    response_model=SinceLastVisitResponse,
+)
+async def since_last_visit(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get changes since the user's last visit for the Today view."""
+    await _verify_site(site_id, user_id, db)
+
+    # Get last check-in timestamp from user_streaks
+    last_visit_row = await db.fetchrow(
+        "SELECT last_check_in FROM user_streaks WHERE user_id = $1",
+        user_id,
+    )
+    last_visit = last_visit_row["last_check_in"] if last_visit_row else None
+
+    if not last_visit:
+        return SinceLastVisitResponse(
+            new_problems_count=0,
+            new_alerts_count=0,
+            completed_recommendations_count=0,
+            new_alerts=[],
+            last_visit=None,
+        )
+
+    # New problems since last visit
+    new_problems = await db.fetchval(
+        """
+        SELECT COUNT(*) FROM content_problems
+        WHERE site_id = $1 AND detected_at > $2 AND resolved_at IS NULL
+        """,
+        site_id,
+        last_visit,
+    ) or 0
+
+    # New position alerts since last visit
+    from app.services.position_monitor import PositionMonitor
+    monitor = PositionMonitor()
+    new_alert_list = await monitor.get_alerts_since(db, site_id, last_visit)
+
+    # Recommendations completed since last visit
+    completed_recs = await db.fetchval(
+        """
+        SELECT COUNT(*) FROM recommendations
+        WHERE site_id = $1 AND status = 'completed' AND updated_at > $2
+        """,
+        site_id,
+        last_visit,
+    ) or 0
+
+    return SinceLastVisitResponse(
+        new_problems_count=new_problems,
+        new_alerts_count=len(new_alert_list),
+        completed_recommendations_count=completed_recs,
+        new_alerts=[PositionAlertResponse(**a) for a in new_alert_list[:5]],
+        last_visit=last_visit.isoformat() if last_visit else None,
+    )
+
+
+# ──────────────── ROI Summary ────────────────
+
+
+@router.get(
+    "/{site_id}/intelligence/roi-summary",
+    response_model=ROISummaryResponse,
+)
+async def get_roi_summary(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get ROI summary for the Today view — traffic recovery estimate and health change."""
+    await _verify_site(site_id, user_id, db)
+
+    # Completed recommendations count
+    completed_recs = await db.fetchval(
+        "SELECT COUNT(*) FROM recommendations WHERE site_id = $1 AND status = 'completed'",
+        site_id,
+    ) or 0
+
+    # Estimated traffic recovery from impact tracking
+    traffic_recovery = await db.fetchval(
+        """
+        SELECT COALESCE(SUM(
+            GREATEST(0, COALESCE(latest_traffic, 0) - COALESCE(baseline_traffic, 0))
+        ), 0)
+        FROM impact_tracking
+        WHERE site_id = $1
+        """,
+        site_id,
+    ) or 0
+
+    # Traffic value estimate ($1.00 per organic visit benchmark)
+    traffic_value = float(traffic_recovery) * 1.0
+
+    # Days since first completed recommendation
+    first_completed = await db.fetchval(
+        """
+        SELECT MIN(updated_at) FROM recommendations
+        WHERE site_id = $1 AND status = 'completed'
+        """,
+        site_id,
+    )
+    from datetime import datetime, timezone
+    days_active = 0
+    if first_completed:
+        days_active = (datetime.now(timezone.utc) - first_completed).days
+
+    # Health score change: earliest vs latest from health_score_history
+    health_history = await db.fetch(
+        """
+        SELECT score, analyzed_at FROM health_score_history
+        WHERE site_id = $1
+        ORDER BY analyzed_at ASC
+        """,
+        site_id,
+    )
+
+    initial_health = None
+    current_health = None
+    health_change = None
+    if health_history and len(health_history) >= 2:
+        initial_health = float(health_history[0]["score"])
+        current_health = float(health_history[-1]["score"])
+        health_change = current_health - initial_health
+
+    return ROISummaryResponse(
+        completed_recommendations=completed_recs,
+        estimated_traffic_recovery=int(traffic_recovery),
+        estimated_traffic_value=round(traffic_value, 2),
+        days_active=days_active,
+        health_score_change=round(health_change, 1) if health_change is not None else None,
+        initial_health_score=round(initial_health, 1) if initial_health is not None else None,
+        current_health_score=round(current_health, 1) if current_health is not None else None,
+    )

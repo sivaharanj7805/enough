@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSite } from '@/lib/hooks/useSite';
-import { useSiteHealth, useRecommendations, useAIScores, useClusters, useProblems } from '@/lib/hooks/useApi';
+import { useSiteHealth, useRecommendations, useAIScores, useClusters, useProblems, useSinceLastVisit, useROISummary } from '@/lib/hooks/useApi';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -28,10 +28,16 @@ import {
   PartyPopper,
   RefreshCw,
   X,
+  Copy,
+  Check,
+  DollarSign,
+  Trophy,
+  Bell,
+  Activity,
 } from 'lucide-react';
 import { today as todayCopy, recType as REC_TYPE_LABEL } from '@/lib/copy';
 import { QuestsPanel } from '@/components/quests/QuestsPanel';
-import type { Recommendation, SiteHealth } from '@/lib/types';
+import type { Recommendation, SiteHealth, ROISummary, SinceLastVisitResponse } from '@/lib/types';
 
 // ─── Score color helpers ────────────────────────────
 function getScoreColor(score: number): string {
@@ -96,6 +102,149 @@ function useAnimatedCounter(target: number, duration = 600): number {
   }, [target, duration]);
 
   return value;
+}
+
+// ─── Copy Button ────────────────────────────────────
+function CopyButton({ text, label }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#1e293b] text-[#94a3b8] hover:text-[#e2e8f0] hover:bg-[#334155] transition-colors"
+      title={`Copy ${label ?? 'to clipboard'}`}
+    >
+      {copied ? <Check size={10} className="text-[#22c55e]" /> : <Copy size={10} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+// ─── ROI Card ───────────────────────────────────────
+function ROICard({ roi }: { roi: ROISummary }) {
+  if (roi.completed_recommendations < 1) return null;
+
+  return (
+    <Card className="!p-5 border-[#065f46] bg-gradient-to-br from-[#064e3b]/30 to-[#111827]">
+      <div className="flex items-center gap-2 mb-3">
+        <DollarSign size={16} className="text-[#34d399]" />
+        <p className="text-xs font-semibold uppercase tracking-widest text-[#34d399]">
+          Your ROI
+        </p>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-[#94a3b8]">Actions completed</span>
+          <span className="text-sm font-bold text-[#e2e8f0]">{roi.completed_recommendations}</span>
+        </div>
+        {roi.estimated_traffic_recovery > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-[#94a3b8]">Estimated traffic recovery</span>
+            <span className="text-sm font-bold text-[#22c55e]">
+              +{roi.estimated_traffic_recovery.toLocaleString()} visits/mo
+            </span>
+          </div>
+        )}
+        {roi.estimated_traffic_value > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-[#94a3b8]">Estimated value</span>
+            <span className="text-sm font-bold text-[#22c55e]">
+              ${roi.estimated_traffic_value.toLocaleString()}/mo
+            </span>
+          </div>
+        )}
+        {roi.health_score_change !== null && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-[#94a3b8]">Health score change</span>
+            <span className={`text-sm font-bold ${roi.health_score_change >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>
+              {roi.health_score_change >= 0 ? '+' : ''}{roi.health_score_change} pts
+            </span>
+          </div>
+        )}
+        {roi.days_active > 0 && (
+          <p className="text-xs text-[#64748b] pt-1">
+            Active for {roi.days_active} days
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Progress Celebration Card ──────────────────────
+function ProgressCard({
+  completedRecs,
+  healthChange,
+}: {
+  completedRecs: number;
+  healthChange: number | null;
+}) {
+  if (completedRecs < 3) return null;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#22c55e]/5 border border-[#22c55e]/20">
+      <Trophy size={16} className="text-[#22c55e] flex-shrink-0" />
+      <p className="text-sm text-[#e2e8f0]">
+        You&apos;ve completed <span className="font-semibold text-[#22c55e]">{completedRecs}</span> recommendations
+        {healthChange !== null && healthChange > 0 && (
+          <> &mdash; your health score improved <span className="font-semibold text-[#22c55e]">+{healthChange} points</span></>
+        )}
+        . Keep it up!
+      </p>
+    </div>
+  );
+}
+
+// ─── Since Last Visit Card ──────────────────────────
+function SinceLastVisitCard({ data }: { data: SinceLastVisitResponse }) {
+  const total = data.new_problems_count + data.new_alerts_count;
+  if (total === 0 && data.completed_recommendations_count === 0) return null;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#3b82f6]/5 border border-[#3b82f6]/20">
+      <Bell size={16} className="text-[#3b82f6] flex-shrink-0" />
+      <div className="text-sm text-[#e2e8f0]">
+        <span className="font-medium text-[#3b82f6]">Since your last visit: </span>
+        {data.new_problems_count > 0 && (
+          <span>{data.new_problems_count} new issue{data.new_problems_count !== 1 ? 's' : ''} </span>
+        )}
+        {data.new_alerts_count > 0 && (
+          <span>&middot; {data.new_alerts_count} ranking change{data.new_alerts_count !== 1 ? 's' : ''} </span>
+        )}
+        {data.completed_recommendations_count > 0 && (
+          <span>&middot; {data.completed_recommendations_count} completed </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Decay Warning Banner ───────────────────────────
+function DecayWarningBanner({ decayCount }: { decayCount: number }) {
+  if (decayCount === 0) return null;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f97316]/5 border border-[#f97316]/20">
+      <Activity size={16} className="text-[#f97316] flex-shrink-0" />
+      <p className="text-sm text-[#e2e8f0]">
+        <span className="font-semibold text-[#f97316]">{decayCount} post{decayCount !== 1 ? 's' : ''}</span>{' '}
+        showing signs of traffic decline.{' '}
+        <Link href="/explore?tab=recommendations&type=refresh" className="text-[#f97316] font-medium hover:underline">
+          Address them now &rarr;
+        </Link>
+      </p>
+    </div>
+  );
 }
 
 // ─── Health Score Card ──────────────────────────────
@@ -326,24 +475,36 @@ function PriorityActionCard({
                 AI-Generated Plan
               </p>
               {ai.meta_description && (
-                <p className="text-xs text-[#94a3b8]">
-                  <span className="text-[#64748b]">Meta description:</span> &quot;{ai.meta_description}&quot;
-                </p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs text-[#94a3b8]">
+                    <span className="text-[#64748b]">Meta description:</span> &quot;{ai.meta_description}&quot;
+                  </p>
+                  <CopyButton text={ai.meta_description} label="meta description" />
+                </div>
               )}
               {ai.suggested_title && (
-                <p className="text-xs text-[#94a3b8] mt-1">
-                  <span className="text-[#64748b]">Suggested title:</span> &quot;{ai.suggested_title}&quot;
-                </p>
+                <div className="flex items-start justify-between gap-2 mt-1">
+                  <p className="text-xs text-[#94a3b8]">
+                    <span className="text-[#64748b]">Suggested title:</span> &quot;{ai.suggested_title}&quot;
+                  </p>
+                  <CopyButton text={ai.suggested_title} label="title" />
+                </div>
               )}
               {ai.redirect_map && (
-                <p className="text-xs text-[#94a3b8] mt-1">
-                  <span className="text-[#64748b]">Redirect map:</span> {ai.redirect_map}
-                </p>
+                <div className="flex items-start justify-between gap-2 mt-1">
+                  <p className="text-xs text-[#94a3b8]">
+                    <span className="text-[#64748b]">Redirect map:</span> {ai.redirect_map}
+                  </p>
+                  <CopyButton text={ai.redirect_map} label="redirect map" />
+                </div>
               )}
               {ai.merge_plan && (
-                <p className="text-xs text-[#94a3b8] mt-1">
-                  <span className="text-[#64748b]">Merge plan:</span> {ai.merge_plan}
-                </p>
+                <div className="flex items-start justify-between gap-2 mt-1">
+                  <p className="text-xs text-[#94a3b8]">
+                    <span className="text-[#64748b]">Merge plan:</span> {ai.merge_plan}
+                  </p>
+                  <CopyButton text={ai.merge_plan} label="merge plan" />
+                </div>
               )}
             </div>
           )}
@@ -551,6 +712,8 @@ export default function TodayPage() {
   const { data: aiScores } = useAIScores(currentSite?.id ?? null);
   const { data: clusters } = useClusters(currentSite?.id ?? null);
   const { data: problems } = useProblems(currentSite?.id ?? null);
+  const { data: sinceLastVisit } = useSinceLastVisit(currentSite?.id ?? null);
+  const { data: roiSummary } = useROISummary(currentSite?.id ?? null);
   const { session } = useAuth();
   const token =
     session?.access_token ??
@@ -702,6 +865,23 @@ export default function TodayPage() {
         hasRecommendations={hasEngagedRecs}
       />
 
+      {/* ── Since Last Visit ── */}
+      {sinceLastVisit && <SinceLastVisitCard data={sinceLastVisit} />}
+
+      {/* ── Decay Warning ── */}
+      {(() => {
+        const decayCount = Array.isArray(problems)
+          ? problems.filter((p) => p.problem_type.startsWith('decay_')).length
+          : 0;
+        return <DecayWarningBanner decayCount={decayCount} />;
+      })()}
+
+      {/* ── Progress Celebration ── */}
+      <ProgressCard
+        completedRecs={completedTotal}
+        healthChange={roiSummary?.health_score_change ?? null}
+      />
+
       {/* Weekly quests */}
       <QuestsPanel />
 
@@ -796,6 +976,9 @@ export default function TodayPage() {
           problemCount={problemCount}
         />
       </div>
+
+      {/* ── ROI Card ── */}
+      {roiSummary && <ROICard roi={roiSummary} />}
 
       {/* ── Alert tray ── */}
       {(() => {
