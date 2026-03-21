@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 TIER_LIMITS = {
     "free": {"sites": 0, "posts": 0, "consolidations_per_month": 0, "oracle": False},
     "growth": {"sites": 1, "posts": 500, "consolidations_per_month": 5, "oracle": True},
-    "scale": {"sites": 10, "posts": 5000, "consolidations_per_month": -1, "oracle": True},
+    "scale": {"sites": 3, "posts": 2000, "consolidations_per_month": -1, "oracle": True},
 }
 
 
@@ -333,13 +333,13 @@ class StripeService:
                     "to": [email],
                     "subject": "Your Enough subscription has been cancelled",
                     "html": """
-<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
   </div>
   <h2 style="font-size:18px;">We're sorry to see you go</h2>
   <p>Your Enough subscription has been cancelled. Your data will remain available for 30 days.</p>
-  <p>If this was a mistake, you can resubscribe anytime at <a href="https://enough.app/pricing" style="color:#22c55e;">enough.app/pricing</a>.</p>
+  <p>If this was a mistake, you can resubscribe anytime at <a href="https://enough.app" style="color:#16a34a;">enough.app/pricing</a>.</p>
   <p style="color:#94a3b8;font-size:13px;">Your content ecosystem won't monitor itself — we'll be here when you're ready to come back.</p>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
     Enough — Publish Less. Grow More.
@@ -369,15 +369,15 @@ class StripeService:
                     "to": [email],
                     "subject": "Action needed: payment failed for your Enough subscription",
                     "html": f"""
-<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
   </div>
   <h2 style="font-size:18px;color:#f97316;">Payment Failed</h2>
   <p>We were unable to process your latest payment. Your account remains active until <strong>{deadline_str}</strong> (7-day grace period).</p>
   <p>Please update your payment method to avoid losing access:</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app/settings/billing" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Update Payment Method &rarr;</a>
+    <a href="https://enough.app/settings/billing" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Update Payment Method &rarr;</a>
   </div>
   <p style="color:#94a3b8;font-size:13px;">If your payment isn't updated by {deadline_str}, your account will be downgraded.</p>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
@@ -495,15 +495,15 @@ class StripeService:
                     "to": [email],
                     "subject": "Your content health has gone unchecked for a week",
                     "html": """
-<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
   </div>
   <h2 style="font-size:18px;">It's been a week.</h2>
   <p>Since you cancelled, your blog's content ecosystem has been running unmonitored. New cannibalization pairs could be forming. Orphan posts are accumulating. Your competitors aren't waiting.</p>
   <p>Your health score, recommendations, and ecosystem map are still available — just pick up where you left off.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app/pricing" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+    <a href="https://enough.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
     <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
@@ -530,9 +530,9 @@ class StripeService:
                     "to": [email],
                     "subject": "Here's what changed on your blog since you left",
                     "html": """
-<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
   </div>
   <h2 style="font-size:18px;">A lot can change in a month.</h2>
   <p>Google's algorithms have updated. Your competitors have published new content. Rankings have shifted. Content decay doesn't pause when you stop monitoring.</p>
@@ -545,7 +545,7 @@ class StripeService:
   </ul>
   <p>Come back and see what's changed.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app/pricing" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+    <a href="https://enough.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
     <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
@@ -572,19 +572,19 @@ class StripeService:
                     "to": [email],
                     "subject": "Final offer: 30% off Enough for 3 months",
                     "html": """
-<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;padding:32px;border-radius:12px;">
+<div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#22c55e;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
   </div>
   <h2 style="font-size:18px;">We'd like you back.</h2>
   <p>It's been 2 months since you left Enough. We've been improving the platform — better recommendations, faster analysis, and new AI readiness scoring.</p>
-  <div style="background:#111827;padding:20px;border-radius:8px;text-align:center;margin:20px 0;border:1px solid #22c55e;">
-    <div style="color:#22c55e;font-size:24px;font-weight:700;">30% off for 3 months</div>
+  <div style="background:#f0fdf4;padding:20px;border-radius:8px;text-align:center;margin:20px 0;border:1px solid #16a34a;">
+    <div style="color:#16a34a;font-size:24px;font-weight:700;">30% off for 3 months</div>
     <div style="color:#94a3b8;font-size:14px;margin-top:8px;">$69/month instead of $99 — just use code COMEBACK30</div>
   </div>
   <p>This is our last email. If you'd like to come back, the offer is valid for 14 days.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app/pricing?coupon=COMEBACK30" style="display:inline-block;background:#22c55e;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Claim 30% Off &rarr;</a>
+    <a href="https://enough.app?coupon=COMEBACK30" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Claim 30% Off &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
     <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>

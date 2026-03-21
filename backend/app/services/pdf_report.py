@@ -424,7 +424,7 @@ def generate_audit_pdf(
         styles["cta"],
     ))
     story.append(Paragraph("$99/month. 30-day money-back guarantee.", styles["cta_detail"]))
-    story.append(Paragraph("https://enough.app/pricing", styles["cta_detail"]))
+    story.append(Paragraph("https://enough.app", styles["cta_detail"]))
 
     # ── Footer ──
     story.append(Spacer(1, 30))

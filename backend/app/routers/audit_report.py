@@ -507,15 +507,14 @@ async def _schedule_drip_sequence(
 async def _run_audit_pipeline_and_email(
     site_id: UUID, email: str, domain: str,
 ) -> None:
-    """Run full pipeline for an anonymous audit site, then email the PDF."""
-    from app.services.sitemap import SitemapCrawler
-    from app.services.normalizer import save_normalized_posts
-    from app.services.embeddings import EmbeddingPipeline
-    from app.services.clustering import TopicClusterer
-    from app.services.cannibalization import CannibalizationDetector
-    from app.services.health_scoring import HealthScorer
-    from app.services.problem_detection import ProblemDetector
-    from app.services.fast_recommendations import generate_fast_recommendations
+    """Run full ingestion pipeline for an anonymous audit site, then email the PDF.
+
+    Uses the 10-step _run_full_pipeline from ingestion.py (includes crawl,
+    embeddings, readability, pagerank, intent, clustering, health, cannibalization,
+    problems, recommendations, and AI citability) — NOT the 5-step intelligence
+    version which skips crawl/embeddings/readability/pagerank/intent.
+    """
+    from app.routers.ingestion import _run_full_pipeline
 
     pool = await get_pool()
 
@@ -527,48 +526,23 @@ async def _run_audit_pipeline_and_email(
                 site_id,
             )
 
-        # Step 1: Crawl
+        # Build site dict needed by _run_full_pipeline
         async with pool.acquire() as db:
-            sitemap_url = f"https://{domain}/sitemap.xml"
-            crawler = SitemapCrawler(sitemap_url=sitemap_url, domain=domain, concurrency=10)
-            posts = await crawler.crawl()
-            if not posts:
-                raise ValueError(f"No posts found for {domain}")
-            # Cap at 500 posts for audit
-            await save_normalized_posts(db, site_id, posts[:500])
-            await db.execute("UPDATE sites SET last_crawl_at = $1 WHERE id = $2",
-                           datetime.now(timezone.utc), site_id)
+            site = await db.fetchrow("SELECT * FROM sites WHERE id = $1", site_id)
 
-        # Step 2: Embeddings
+        # Run the full 10-step pipeline (crawl → embed → readability → pagerank →
+        # intent → cluster → health → cannibalization → problems → recs → AI citability)
+        await _run_full_pipeline(site_id, dict(site))
+
+        # Verify pipeline succeeded
         async with pool.acquire() as db:
-            embedder = EmbeddingPipeline()
-            await embedder.generate_for_site(db, site_id)
+            crawl = await db.fetchrow(
+                "SELECT status FROM crawl_jobs WHERE site_id = $1", site_id,
+            )
+            if crawl and crawl["status"] == "failed":
+                raise ValueError(f"Pipeline failed for {domain}")
 
-        # Step 3: Clustering
-        async with pool.acquire() as db:
-            clusterer = TopicClusterer()
-            await clusterer.cluster_site(db, site_id)
-
-        # Step 4: Health scoring
-        async with pool.acquire() as db:
-            scorer = HealthScorer()
-            await scorer.score_site(db, site_id)
-
-        # Step 5: Cannibalization
-        async with pool.acquire() as db:
-            detector = CannibalizationDetector()
-            await detector.detect_for_site(db, site_id)
-
-        # Step 6: Problems
-        async with pool.acquire() as db:
-            pd = ProblemDetector()
-            await pd.detect_all(db, site_id)
-
-        # Step 7: Recommendations
-        async with pool.acquire() as db:
-            await generate_fast_recommendations(db, site_id)
-
-        # Step 8: Generate PDF and email it
+        # Generate PDF and email it
         async with pool.acquire() as db:
             site = await db.fetchrow("SELECT * FROM sites WHERE id = $1", site_id)
             audit_data = await _build_audit_data_for_site(db, site_id, dict(site))
@@ -576,7 +550,7 @@ async def _run_audit_pipeline_and_email(
             from app.services.pdf_report import generate_audit_pdf
             pdf_bytes = generate_audit_pdf(audit_data)
 
-            # Schedule full drip sequence
+            # Schedule full drip sequence (checks email_optouts internally)
             await _schedule_drip_sequence(email, domain, site_id, audit_data, pdf_bytes)
 
             # Mark pipeline complete

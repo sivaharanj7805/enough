@@ -306,6 +306,41 @@ function DecayWarningBanner({ decayCount }: { decayCount: number }) {
   );
 }
 
+// ─── Re-analyze Header (always visible) ─────────────
+function ReanalyzeHeader({ siteId, token }: { siteId: string; token: string | null }) {
+  const [reanalyzing, setReanalyzing] = useState(false);
+
+  const handleReanalyze = async () => {
+    if (!siteId || !token) return;
+    setReanalyzing(true);
+    try {
+      await apiFetch(`/sites/${siteId}/intelligence/pipeline`, {
+        method: 'POST',
+        token,
+      });
+    } catch {
+      // background task
+    }
+    setReanalyzing(false);
+  };
+
+  if (!siteId) return null;
+
+  return (
+    <div className="flex items-center justify-between">
+      <h1 className="text-lg font-semibold text-[#e2e8f0]">Today</h1>
+      <button
+        onClick={() => void handleReanalyze()}
+        disabled={reanalyzing}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#e2e8f0] bg-[#1e293b] border border-[#334155] hover:bg-[#334155] transition-colors disabled:opacity-50"
+      >
+        <RefreshCw size={12} className={reanalyzing ? 'animate-spin' : ''} />
+        {reanalyzing ? 'Re-analyzing...' : 'Re-analyze'}
+      </button>
+    </div>
+  );
+}
+
 // ─── Health Score Card ──────────────────────────────
 function HealthScoreCard({ score }: { score: number }) {
   const animatedScore = useAnimatedCounter(score, 600);
@@ -912,11 +947,103 @@ export default function TodayPage() {
   const hasEngagedRecs = allRecs.some(
     (r) => r.status === 'completed' || r.status === 'in_progress'
   );
+  const isNewUser = completedTotal === 0 && !hasEngagedRecs;
+
+  // ── Simplified view for first-time users ──
+  if (isNewUser && visibleRecs.length > 0) {
+    const criticalRecs = visibleRecs
+      .filter((r) => r.priority === 'critical' || r.priority === 'high')
+      .slice(0, 3);
+    const topIssues = criticalRecs.length > 0 ? criticalRecs : visibleRecs.slice(0, 3);
+
+    return (
+      <div className="max-w-3xl mx-auto space-y-6 py-2">
+        {currentSite?.id && <PipelineProgress siteId={currentSite.id} />}
+
+        {/* Large health score */}
+        <div className="text-center py-8">
+          <div
+            className="text-7xl font-bold"
+            style={{ color: getScoreColor(healthScore) }}
+          >
+            {healthScore}
+          </div>
+          <div className="text-sm text-[#94a3b8] mt-2">
+            Content Health Score &mdash; {getScoreLabel(healthScore)}
+          </div>
+        </div>
+
+        {/* Top 3 critical issues */}
+        <div>
+          <h2 className="text-sm font-semibold text-[#94a3b8] uppercase tracking-wider mb-3">
+            Start here &mdash; your top {topIssues.length} fixes
+          </h2>
+          <div className="space-y-3">
+            {topIssues.map((rec, i) => (
+              <Card key={rec.id} className="!p-4 flex items-center justify-between gap-4">
+                <div className="flex items-start gap-3 min-w-0">
+                  <span
+                    className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                    style={{
+                      background:
+                        rec.priority === 'critical'
+                          ? '#EF4444'
+                          : rec.priority === 'high'
+                          ? '#F59E0B'
+                          : '#3B82F6',
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[#e2e8f0] truncate">
+                      {rec.title}
+                    </p>
+                    {rec.summary && (
+                      <p className="text-xs text-[#64748b] mt-1 line-clamp-2">
+                        {rec.summary}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => void handleMarkDone(rec.id)}
+                  className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-[#16a34a] text-white text-xs font-semibold hover:bg-[#15803d] transition-colors"
+                >
+                  Fix it
+                </button>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {totalRecs > 3 && (
+          <div className="text-center">
+            <Link
+              href="/explore?tab=recommendations"
+              className="text-sm text-[#3b82f6] hover:text-[#2563eb] font-medium"
+            >
+              See all {totalRecs} recommendations &rarr;
+            </Link>
+          </div>
+        )}
+
+        <UndoToast
+          visible={showUndoToast}
+          onUndo={() => void handleUndo()}
+          onDismiss={handleDismissToast}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 py-2">
       {/* Pipeline progress (only visible while running) */}
       {currentSite?.id && <PipelineProgress siteId={currentSite.id} />}
+
+      {/* ── Header with Re-analyze button ── */}
+      <ReanalyzeHeader siteId={currentSite?.id ?? ''} token={token} />
 
       {/* Setup checklist */}
       <SetupChecklist
