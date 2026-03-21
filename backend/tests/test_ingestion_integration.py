@@ -385,6 +385,12 @@ async def test_cron_daily_refresh_no_secret_dev(app_with_mocks):
     """In dev mode with no cron_secret set, endpoint should still work."""
     app, conn = app_with_mocks
 
+    # Override the verify_cron_secret dependency to allow passthrough
+    from app.dependencies import verify_cron_secret
+    async def _noop_cron():
+        pass
+    app.dependency_overrides[verify_cron_secret] = _noop_cron
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.post("/v1/sites/cron/daily-refresh")
@@ -397,6 +403,11 @@ async def test_cron_daily_refresh_no_secret_dev(app_with_mocks):
 async def test_cron_weekly_recrawl(app_with_mocks):
     app, conn = app_with_mocks
 
+    from app.dependencies import verify_cron_secret
+    async def _noop_cron():
+        pass
+    app.dependency_overrides[verify_cron_secret] = _noop_cron
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.post("/v1/sites/cron/weekly-recrawl")
@@ -408,6 +419,11 @@ async def test_cron_weekly_recrawl(app_with_mocks):
 @pytest.mark.asyncio
 async def test_cron_monthly_reembed(app_with_mocks):
     app, conn = app_with_mocks
+
+    from app.dependencies import verify_cron_secret
+    async def _noop_cron():
+        pass
+    app.dependency_overrides[verify_cron_secret] = _noop_cron
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -422,7 +438,11 @@ async def test_cron_with_valid_secret(app_with_mocks):
     """When cron_secret is set, X-Cron-Secret header must match."""
     app, conn = app_with_mocks
 
-    with patch("app.dependencies.get_settings") as mock_settings:
+    # Remove any override so the real dependency runs
+    from app.dependencies import verify_cron_secret
+    app.dependency_overrides.pop(verify_cron_secret, None)
+
+    with patch("app.config.get_settings") as mock_settings:
         settings = MagicMock()
         settings.cron_secret = "my-secret-123"
         settings.environment = "production"
@@ -442,7 +462,10 @@ async def test_cron_with_valid_secret(app_with_mocks):
 async def test_cron_with_invalid_secret(app_with_mocks):
     app, conn = app_with_mocks
 
-    with patch("app.dependencies.get_settings") as mock_settings:
+    from app.dependencies import verify_cron_secret
+    app.dependency_overrides.pop(verify_cron_secret, None)
+
+    with patch("app.config.get_settings") as mock_settings:
         settings = MagicMock()
         settings.cron_secret = "correct-secret"
         settings.environment = "production"
@@ -462,7 +485,10 @@ async def test_cron_with_invalid_secret(app_with_mocks):
 async def test_cron_missing_secret_in_production(app_with_mocks):
     app, conn = app_with_mocks
 
-    with patch("app.dependencies.get_settings") as mock_settings:
+    from app.dependencies import verify_cron_secret
+    app.dependency_overrides.pop(verify_cron_secret, None)
+
+    with patch("app.config.get_settings") as mock_settings:
         settings = MagicMock()
         settings.cron_secret = "my-cron-secret"
         settings.environment = "production"
