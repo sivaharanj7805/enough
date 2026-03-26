@@ -6,7 +6,6 @@ with change detection via content_hash and batch processing.
 Uses pgvector's bracket format [x,y,z] for reliable vector serialization.
 """
 
-import json
 import logging
 from uuid import UUID
 
@@ -48,7 +47,7 @@ class EmbeddingPipeline:
         # Fetch posts that need embedding (new or changed content)
         rows = await db.fetch(
             """
-            SELECT p.id, p.body_text, p.content_hash
+            SELECT p.id, p.title, p.body_text, p.content_hash
             FROM posts p
             LEFT JOIN post_embeddings pe ON pe.post_id = p.id
             WHERE p.site_id = $1
@@ -69,7 +68,7 @@ class EmbeddingPipeline:
         # Process in batches
         for i in range(0, len(rows), BATCH_SIZE):
             batch = rows[i : i + BATCH_SIZE]
-            texts = [self._prepare_text(row["body_text"]) for row in batch]
+            texts = [self._prepare_text(row["title"], row["body_text"]) for row in batch]
 
             await self.rate_limiter.wait()
 
@@ -82,7 +81,7 @@ class EmbeddingPipeline:
             except Exception as e:
                 logger.error("OpenAI embedding API error: %s", e)
                 # Try individual texts in case one is problematic
-                for j, row in enumerate(batch):
+                for _j, row in enumerate(batch):
                     await self._generate_single(db, row)
                     total_generated += 1
                 continue
@@ -123,7 +122,7 @@ class EmbeddingPipeline:
 
     async def _generate_single(self, db: asyncpg.Connection, row: asyncpg.Record) -> None:
         """Generate embedding for a single post (fallback for batch failures)."""
-        text = self._prepare_text(row["body_text"])
+        text = self._prepare_text(row.get("title"), row["body_text"])
 
         try:
             await self.rate_limiter.wait()
@@ -151,8 +150,13 @@ class EmbeddingPipeline:
         except Exception as e:
             logger.error("Failed to generate single embedding for post %s: %s", row["id"], e)
 
-    def _prepare_text(self, text: str) -> str:
-        """Truncate text to fit within token limits."""
+    def _prepare_text(self, title: str | None, body: str) -> str:
+        """Prepend title to body and truncate to fit within token limits.
+
+        Title prepending improves semantic retrieval quality by ensuring
+        the dense keyword signal in the title is captured in the embedding.
+        """
+        text = f"{title}\n\n{body}" if title else body
         if len(text) > TRUNCATE_CHARS:
             text = text[:TRUNCATE_CHARS]
         return text.strip()

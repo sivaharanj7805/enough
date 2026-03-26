@@ -1,9 +1,9 @@
 """On-demand AI enrichment for individual recommendations — returns in ~3 seconds."""
-from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import os
+import re
 from uuid import UUID
 
 import anthropic
@@ -13,12 +13,17 @@ logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 _client: anthropic.AsyncAnthropic | None = None
+_client_lock = asyncio.Lock()
 
 
-def _get_client() -> anthropic.AsyncAnthropic:
+async def _get_client() -> anthropic.AsyncAnthropic:
     global _client
     if _client is None:
-        _client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        async with _client_lock:
+            if _client is None:  # double-check
+                from app.config import get_settings
+                settings = get_settings()
+                _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     return _client
 
 
@@ -126,6 +131,7 @@ async def enrich_recommendation(
         try:
             existing = json.loads(existing)
         except Exception:
+            logger.warning("Failed to parse specific_actions JSON, defaulting to empty dict")
             existing = {}
     if isinstance(existing, dict) and existing.get("ai_enriched"):
         return {"already_enriched": True, "guidance": existing.get("ai_guidance", {})}
@@ -141,7 +147,7 @@ async def enrich_recommendation(
 
     # Inject RAG context from the user's own blog data
     try:
-        from app.services.rag_context import get_recommendation_context, format_recommendation_context
+        from app.services.rag_context import format_recommendation_context, get_recommendation_context
         rag_ctx = await get_recommendation_context(db, site_id, rec["post_id"])
         rag_text = format_recommendation_context(rag_ctx)
         if rag_text and rag_text != "(No additional context available)":
@@ -176,7 +182,7 @@ async def enrich_recommendation(
     prompt = _build_prompt(rec_type, context)
 
     try:
-        client = _get_client()
+        client = await _get_client()
         message = await client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=800,
@@ -187,9 +193,10 @@ async def enrich_recommendation(
 
         # Parse JSON
         if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
+            # Strip opening ``` with optional language tag
+            response_text = re.sub(r'^```\w*\n?', '', response_text)
+            # Strip closing ```
+            response_text = re.sub(r'\n?```\s*$', '', response_text)
         try:
             enrichment = json.loads(response_text)
         except json.JSONDecodeError:
@@ -205,6 +212,7 @@ async def enrich_recommendation(
         try:
             original_actions = json.loads(original_actions)
         except Exception:
+            logger.warning("Failed to parse specific_actions JSON, using raw value")
             original_actions = [original_actions] if original_actions else []
     elif original_actions is None:
         original_actions = []

@@ -10,12 +10,12 @@ in asyncio.to_thread() to avoid blocking the event loop.
 import asyncio
 import logging
 from datetime import date, timedelta
-from uuid import UUID
 from urllib.parse import urlparse
+from uuid import UUID
 
 import asyncpg
-from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 from app.config import get_settings
 from app.utils.rate_limiter import RateLimiter

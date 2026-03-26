@@ -2,12 +2,11 @@
 
 import hmac
 import logging
-import secrets
-from uuid import UUID
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException
 
 from app.database import get_db
 
@@ -28,6 +27,7 @@ async def get_current_user_id(authorization: Annotated[str, Header()]) -> str:
     # Try Supabase JWT validation
     try:
         import jwt
+
         from app.config import get_settings
 
         settings = get_settings()
@@ -51,12 +51,19 @@ async def get_current_user_id(authorization: Annotated[str, Header()]) -> str:
     except ImportError:
         pass
 
-    # Dev fallback: treat token as raw user_id (UUID format check)
-    try:
-        UUID(token)  # Validate it's at least a valid UUID
-        return token
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization token")
+    # Dev-only fallback: treat token as raw user_id (UUID format check)
+    # NEVER allow this in production — require proper JWT validation
+    from app.config import get_settings
+    _settings = get_settings()
+    if _settings.environment != "production":
+        try:
+            UUID(token)  # Validate it's at least a valid UUID
+            logger.warning("Using dev UUID fallback for auth — NOT safe for production")
+            return token
+        except ValueError:
+            pass
+
+    raise HTTPException(status_code=401, detail="Invalid authorization token")
 
 
 async def verify_cron_secret(
@@ -68,7 +75,7 @@ async def verify_cron_secret(
     - CRON_SECRET is configured and header is missing or wrong
     - Uses constant-time comparison to prevent timing attacks
     """
-    from app.config import get_settings, Settings
+    from app.config import get_settings
     settings = get_settings()
 
     if not settings.cron_secret:

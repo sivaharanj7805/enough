@@ -1,7 +1,7 @@
 """Consolidation impact tracking with 30/60/90 day milestones."""
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 from uuid import UUID
 
 import asyncpg
@@ -176,7 +176,7 @@ class ImpactTracker:
             "current_avg_position": float(current_position) if current_position else None,
             "position_change": (
                 round(float(t["baseline_avg_position"]) - float(current_position), 1)
-                if t["baseline_avg_position"] and current_position
+                if t.get("baseline_avg_position") is not None and current_position is not None
                 else None
             ),
             "consolidated_urls_count": len(t["consolidated_urls"]),
@@ -227,7 +227,6 @@ class ImpactTracker:
             t["consolidated_urls"],
         ) or 0
 
-        direction = "up" if change >= 0 else "down"
         headline = f"{'📈' if change >= 0 else '📉'} Consolidation Impact: {abs(change_pct):.0f}% {'increase' if change >= 0 else 'decrease'}"
 
         summary = (

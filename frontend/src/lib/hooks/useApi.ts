@@ -22,6 +22,8 @@ import type {
   SinceLastVisitResponse,
   ROISummary,
   TopContentGap,
+  AIScores,
+  Subscription,
 } from '@/lib/types';
 import type { EcosystemVisualsResponse } from '@/lib/types/phase6';
 
@@ -144,16 +146,6 @@ export function useEcosystemVisuals(siteId: string | null) {
 
 // ─── 2026 AI Readiness ───────────────────────────
 
-export interface AIScores {
-  total_scored: number;
-  avg_citability: number | null;
-  avg_eeat: number | null;
-  avg_schema: number | null;
-  avg_extraction: number | null;
-  pct_has_schema: number | null;
-  pct_ai_ready: number | null;
-}
-
 export function useAIScores(siteId: string | null) {
   return useSWRFetch<AIScores>(
     siteId ? `/sites/${siteId}/intelligence/ai-scores` : null
@@ -161,13 +153,6 @@ export function useAIScores(siteId: string | null) {
 }
 
 // ─── Subscription ────────────────────────────────
-
-interface Subscription {
-  tier: string;
-  status: string;
-  stripe_subscription_id: string | null;
-  current_period_end: string | null;
-}
 
 export function useSubscription() {
   return useSWRFetch<Subscription>('/billing/subscription');

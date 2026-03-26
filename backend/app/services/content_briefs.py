@@ -20,9 +20,8 @@ from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
 from app.config import get_settings
-from app.services.rag_context import get_brief_context, format_brief_context
+from app.services.rag_context import format_brief_context, get_brief_context
 from app.utils.rate_limiter import RateLimiter
-from app.utils.token_guard import truncate_for_api
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +98,10 @@ class ContentBriefGenerator:
         content_angle = brief_data.get("content_angle", "")
         difficulty_level = brief_data.get("difficulty_level", "intermediate")
 
-        internal_link_target_ids = [UUID(c["id"]) for c in link_candidates[:5]]
+        try:
+            internal_link_target_ids = [UUID(c["id"]) for c in link_candidates[:5]]
+        except (ValueError, KeyError):
+            internal_link_target_ids = []
 
         brief_id = await db.fetchval(
             """
@@ -171,7 +173,7 @@ class ContentBriefGenerator:
             ORDER BY total_imp DESC
             LIMIT 15
             """,
-            site_id, keyword.split()[0],
+            site_id, keyword,
         )
         return [r["query"] for r in rows if r["query"].lower() != keyword.lower()]
 
@@ -217,7 +219,15 @@ class ContentBriefGenerator:
                     "based on what works in their cluster. Name specific existing posts to "
                     "link to/from. Be specific — don't say 'discuss benefits', say exactly "
                     "what benefits to cover. Specify what to AVOID to prevent cannibalization "
-                    "with existing content."
+                    "with existing content.\n\n"
+                    "CRITICAL — GEO Structure Requirements (2026 AI Readiness):\n"
+                    "Every brief MUST include these for AI citability:\n"
+                    "- First 200 words: directly answer the primary query (TL;DR first)\n"
+                    "- H2 headers: phrase at least 30% as questions matching AI prompts\n"
+                    "- Data density: include at least 1 specific statistic per 200 words\n"
+                    "- FAQ section: add 3-5 Q&A pairs covering related searches\n"
+                    "- Schema: specify Article + FAQPage JSON-LD in the brief\n"
+                    "- Sources: cite at least 2 credible external sources"
                 ),
                 messages=[{
                     "role": "user",
@@ -250,6 +260,13 @@ Respond in this exact JSON format:
   "difficulty_level": "beginner|intermediate|advanced",
   "opening_hook": "Suggested first paragraph approach",
   "cta_suggestion": "What call-to-action to use",
+  "faq_questions": ["3-5 questions phrased as users would prompt AI, using GSC queries"],
+  "geo_requirements": {{
+    "answer_first_paragraph": "Suggested TL;DR opening (direct answer in first 200 words)",
+    "data_density_target": "1 data point per 200 words minimum",
+    "schema_types": ["Article", "FAQPage"],
+    "question_headers_target": "30%+ of H2s should be question-format"
+  }},
   "internal_links_suggested": [
     {{"post_title": "Existing Post Title", "anchor_text": "suggested anchor", "direction": "to|from"}}
   ],

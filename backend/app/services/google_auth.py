@@ -27,9 +27,13 @@ SCOPES = [
 def _get_fernet() -> Fernet:
     key = os.environ.get("FERNET_KEY", "")
     if not key:
-        # Generate a stable key from secret_key
-        import base64, hashlib
-        secret = os.environ.get("SECRET_KEY", "change-me-in-production")
+        # Generate a stable key from secret_key via Settings (single source of truth)
+        import base64
+        import hashlib
+
+        from app.config import get_settings
+        settings = get_settings()
+        secret = settings.secret_key
         digest = hashlib.sha256(secret.encode()).digest()
         key = base64.urlsafe_b64encode(digest).decode()
     return Fernet(key.encode() if isinstance(key, str) else key)

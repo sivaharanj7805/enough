@@ -7,7 +7,8 @@ requests per second with automatic backoff on rate limit errors.
 import asyncio
 import logging
 import time
-from typing import Callable, TypeVar, ParamSpec
+from collections.abc import Callable
+from typing import ParamSpec, TypeVar
 
 logger = logging.getLogger(__name__)
 

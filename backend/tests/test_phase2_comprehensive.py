@@ -164,13 +164,15 @@ class TestFreshnessScoreEdgeCases:
         now = datetime.now(timezone.utc)
         exactly_1m = now - timedelta(days=31)
         score = _freshness_score(exactly_1m, now)
-        assert score == 90.0
+        # ~1.02 months old → continuous decay ≈ 95.0
+        assert abs(score - 95.0) < 2.0
 
     def test_exact_boundary_3_months(self):
         now = datetime.now(timezone.utc)
         exactly_3m = now - timedelta(days=92)
         score = _freshness_score(exactly_3m, now)
-        assert score == 75.0
+        # ~3.02 months old → continuous decay ≈ 86.0
+        assert abs(score - 86.0) < 2.0
 
     def test_very_old_post(self):
         now = datetime.now(timezone.utc)
@@ -182,8 +184,9 @@ class TestFreshnessScoreEdgeCases:
 class TestContentDepthEdgeCases:
 
     def test_zero_word_count(self):
+        # 0 words: absolute=0, relative=15 (ratio 0), base=7.5
         score = _content_depth_score(0, 1000)
-        assert score == 10.0
+        assert abs(score - 7.5) < 2.0
 
     def test_zero_cluster_avg(self):
         score = _content_depth_score(500, 0)
@@ -196,16 +199,19 @@ class TestContentDepthEdgeCases:
         assert 0 <= score <= 100
 
     def test_exactly_500_words(self):
+        # 500 words: absolute=20, relative=35 (ratio 0.5), base=27.5
         score = _content_depth_score(500, 1000)
-        assert score > 30
+        assert score > 25
 
     def test_word_count_equals_cluster_avg(self):
+        # 1000 words: absolute=40, relative=60, base=50
         score = _content_depth_score(1000, 1000)
-        assert 55 <= score <= 65
+        assert 45 <= score <= 55
 
     def test_double_cluster_avg(self):
+        # 2000 words: absolute=80, relative=100, base=90
         score = _content_depth_score(2000, 1000)
-        assert score > 85
+        assert score >= 85
 
     def test_never_exceeds_100(self):
         score = _content_depth_score(100000, 100)
@@ -360,19 +366,19 @@ class TestCannibalizationSeverityExhaustive:
         assert sev == "low"
 
     def test_cosine_exactly_at_threshold(self):
-        sev = CannibalizationDetector._compute_severity(0.40, 0)
+        sev = CannibalizationDetector._compute_severity(0.45, 0)
         assert sev == "medium"
 
     def test_cosine_between_high_and_critical(self):
-        sev = CannibalizationDetector._compute_severity(0.55, 0)
-        assert sev == "high"
-
-    def test_cosine_exactly_0_60_no_queries(self):
         sev = CannibalizationDetector._compute_severity(0.60, 0)
         assert sev == "high"
 
-    def test_cosine_0_60_with_queries(self):
-        sev = CannibalizationDetector._compute_severity(0.60, 1)
+    def test_cosine_exactly_0_65_no_queries(self):
+        sev = CannibalizationDetector._compute_severity(0.65, 0)
+        assert sev == "high"  # Critical requires shared queries
+
+    def test_cosine_0_65_with_queries(self):
+        sev = CannibalizationDetector._compute_severity(0.65, 1)
         assert sev == "critical"
 
     def test_only_1_shared_query(self):

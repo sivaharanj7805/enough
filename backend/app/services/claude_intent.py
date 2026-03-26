@@ -87,7 +87,7 @@ async def classify_ambiguous_posts(
         prompt = f"""Classify the search intent of each blog post. Choose ONE: informational, commercial, transactional, or navigational.
 
 Definitions:
-- informational: teaches something, answers a question (how-to, guide, what-is)  
+- informational: teaches something, answers a question (how-to, guide, what-is)
 - commercial: helps compare/evaluate options (reviews, alternatives, pricing research)
 - transactional: drives immediate action (download, sign up, free trial, template)
 - navigational: helps find a specific page (contact, login, about)

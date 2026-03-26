@@ -1,0 +1,63 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Grep",
+      "Glob",
+      "Bash(make lint*)",
+      "Bash(make test*)",
+      "Bash(make format*)",
+      "Bash(make build*)",
+      "Bash(make dev*)",
+      "Bash(make migrate*)",
+      "Bash(git *)",
+      "Bash(cd backend && pytest*)",
+      "Bash(cd frontend && npm*)",
+      "Bash(cd frontend && npx*)",
+      "Bash(python migrate.py*)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(grep *)",
+      "Bash(ruff *)",
+      "Bash(pip install*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf .git)"
+    ]
+  },
+  "env": {
+    "ENABLE_LSP_TOOL": "1"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_PROJECT_DIR/$(echo $TOOL_INPUT | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"path\",\"\"))' 2>/dev/null)\"; if [[ \"$FILE\" == *components/landscape/* ]]; then echo '⚠️  WARNING: You just modified a protected landscape file. Verify this was intentional.' >&2; fi; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(echo $TOOL_INPUT | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"command\",\"\"))' 2>/dev/null); if echo \"$CMD\" | grep -qE 'rm.*components/landscape'; then echo 'BLOCKED: Cannot delete landscape renderer files without human approval.' >&2; exit 2; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

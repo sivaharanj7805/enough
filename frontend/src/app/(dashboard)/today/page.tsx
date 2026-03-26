@@ -314,7 +314,7 @@ function ReanalyzeHeader({ siteId, token }: { siteId: string; token: string | nu
     if (!siteId || !token) return;
     setReanalyzing(true);
     try {
-      await apiFetch(`/sites/${siteId}/intelligence/pipeline`, {
+      await apiFetch(`/sites/${siteId}/pipeline/refresh`, {
         method: 'POST',
         token,
       });
@@ -397,7 +397,7 @@ function TrendCard({
   const lastAnalyzed = health.ai_enriched_count != null ? health.ai_enriched_count : null;
 
   // Compute days since last analysis from updated info
-  const daysSinceAnalysis = (() => {
+  const daysSinceAnalysis: number = (() => {
     // We don't have an explicit last_analyzed_at, but we use a heuristic
     // If the site has trends data, assume recent
     if (trends['7d'] != null) return 3;
@@ -411,7 +411,7 @@ function TrendCard({
     if (!siteId || !token) return;
     setReanalyzing(true);
     try {
-      await apiFetch(`/sites/${siteId}/intelligence/pipeline`, {
+      await apiFetch(`/sites/${siteId}/pipeline/refresh`, {
         method: 'POST',
         token,
       });
@@ -1006,12 +1006,21 @@ export default function TodayPage() {
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => void handleMarkDone(rec.id)}
-                  className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-[#16a34a] text-white text-xs font-semibold hover:bg-[#15803d] transition-colors"
-                >
-                  Fix it
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Link
+                    href={`/actions?rec=${rec.id}`}
+                    className="px-3 py-1.5 rounded-lg bg-[#16a34a] text-white text-xs font-semibold hover:bg-[#15803d] transition-colors"
+                  >
+                    Fix it
+                  </Link>
+                  <button
+                    onClick={() => void handleMarkDone(rec.id)}
+                    className="px-2 py-1.5 rounded-lg bg-[#1e293b] text-[#94a3b8] text-xs hover:bg-[#334155] hover:text-[#e2e8f0] transition-colors"
+                    title="Mark as done"
+                  >
+                    <CheckCircle2 size={14} />
+                  </button>
+                </div>
               </Card>
             ))}
           </div>

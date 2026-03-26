@@ -10,9 +10,8 @@ This is proactive growth intelligence — not just fixing problems
 but telling users exactly what to write next.
 """
 
-import json
 import logging
-from datetime import timedelta, timezone, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import asyncpg
@@ -49,7 +48,7 @@ class ContentGapAnalyzer:
         """
         logger.info("Analyzing content gaps for site %s", site_id)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ninety_days_ago = now - timedelta(days=90)
 
         # Clear old gaps (idempotent)
@@ -90,26 +89,34 @@ class ContentGapAnalyzer:
         for gq in gap_queries:
             query = gq["query"]
 
-            # Find closest cluster by checking which cluster's posts
-            # have the most similar content to this query
+            # Find closest cluster by comparing the query's best-matching post
+            # against each cluster's centroid (average embedding).
+            # Uses AVG(embedding) per cluster to get centroids, then finds
+            # the cluster whose centroid is nearest to the query's closest post.
             closest = await db.fetchrow(
                 """
-                SELECT c.id AS cluster_id, c.label,
-                       MIN(pe.embedding <=> (
-                           SELECT embedding FROM post_embeddings
-                           WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
-                           LIMIT 1
-                       )) AS min_distance
-                FROM clusters c
-                JOIN post_clusters pc ON pc.cluster_id = c.id
-                JOIN post_embeddings pe ON pe.post_id = pc.post_id
-                WHERE c.site_id = $1
-                GROUP BY c.id, c.label
-                ORDER BY MIN(pe.embedding <=> (
-                    SELECT embedding FROM post_embeddings
-                    WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+                WITH cluster_centroids AS (
+                    SELECT c.id AS cluster_id, c.label,
+                           AVG(pe.embedding) AS centroid
+                    FROM clusters c
+                    JOIN post_clusters pc ON pc.cluster_id = c.id
+                    JOIN post_embeddings pe ON pe.post_id = pc.post_id
+                    WHERE c.site_id = $1
+                    GROUP BY c.id, c.label
+                )
+                SELECT cluster_id, label,
+                       MIN(pe.embedding <=> cc.centroid) AS min_distance
+                FROM cluster_centroids cc
+                CROSS JOIN LATERAL (
+                    SELECT pe.embedding
+                    FROM post_embeddings pe
+                    JOIN posts p ON p.id = pe.post_id
+                    WHERE p.site_id = $1
+                    ORDER BY pe.embedding <=> cc.centroid
                     LIMIT 1
-                ))
+                ) pe
+                GROUP BY cluster_id, label
+                ORDER BY min_distance
                 LIMIT 1
                 """,
                 site_id,

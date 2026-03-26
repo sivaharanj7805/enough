@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Globe, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
@@ -70,6 +70,69 @@ export default function OnboardingPage() {
   const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
   const [pipelineStage, setPipelineStage] = useState<string>('crawling');
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current = true;
+    };
+  }, []);
+
+  // Check for existing sites with active pipelines — resume if found
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const sites = await apiFetch<{ id: string; name: string; domain: string }[]>(
+          '/sites',
+          { token },
+        );
+        if (cancelled || !sites || sites.length === 0) return;
+
+        // Check each site for a running pipeline
+        for (const site of sites) {
+          try {
+            const status = await apiFetch<CrawlStatus>(
+              `/sites/${site.id}/crawl/status`,
+              { token },
+            );
+            if (cancelled) return;
+
+            if (status.status === 'completed') {
+              // Site already analyzed — redirect to dashboard
+              router.replace('/today');
+              return;
+            }
+
+            if (
+              status.status === 'crawling' ||
+              status.status === 'embedding' ||
+              status.status === 'analyzing' ||
+              status.status === 'clustering'
+            ) {
+              // Active pipeline found — resume polling
+              setSiteId(site.id);
+              setUrl(site.domain);
+              setCrawlStatus(status);
+              setPipelineStage(status.status);
+              setStep('crawling');
+              void pollStatus(site.id);
+              return;
+            }
+          } catch {
+            // Status check failed for this site — try next
+          }
+        }
+      } catch {
+        // Sites fetch failed — show normal URL form
+      }
+    })();
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const extractDomain = (input: string): string => {
     try {
@@ -86,7 +149,7 @@ export default function OnboardingPage() {
     const BASE_DELAY_MS = 5000;
     const MAX_DELAY_MS = 30000;
 
-    while (attempts < maxAttempts) {
+    while (attempts < maxAttempts && !abortRef.current) {
       // Exponential backoff: 5s → 7.5s → 11.25s → ... capped at 30s
       const delay = Math.min(BASE_DELAY_MS * Math.pow(1.5, attempts), MAX_DELAY_MS);
       await new Promise((r) => setTimeout(r, delay));
@@ -181,7 +244,7 @@ export default function OnboardingPage() {
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-[#e2e8f0]">Connect your blog</h2>
-                <p className="text-sm text-[#64748b]">We'll analyze every post and find what to fix</p>
+                <p className="text-sm text-[#64748b]">We&apos;ll analyze every post and find what to fix</p>
               </div>
             </div>
 
@@ -267,7 +330,7 @@ export default function OnboardingPage() {
             </div>
 
             <p className="mt-4 text-xs text-center text-[#475569]">
-              Takes 10–40 min depending on blog size. We'll analyze every post.
+              Takes 10–40 min depending on blog size. We&apos;ll analyze every post.
             </p>
             <p className="mt-2 text-xs text-center text-[#334155]">
               🔒 Read-only — Enough never modifies your content or blog.
@@ -362,7 +425,7 @@ export default function OnboardingPage() {
             </div>
 
             <p className="mt-6 text-xs text-center text-[#475569]">
-              You can close this tab — we'll finish in the background. Come back in ~20 min.
+              You can close this tab — we&apos;ll finish in the background. Come back in ~20 min.
             </p>
           </div>
         )}

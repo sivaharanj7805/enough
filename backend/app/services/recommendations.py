@@ -14,6 +14,7 @@ Uses Claude API with structured prompting. Rate-limited to 3 req/s.
 
 import json
 import logging
+import re as _re
 from uuid import UUID
 
 import asyncpg
@@ -22,7 +23,6 @@ from anthropic import AsyncAnthropic
 from app.config import get_settings
 from app.utils.rate_limiter import RateLimiter
 from app.utils.token_guard import truncate_for_api
-import re as _re
 
 
 def smart_truncate(body_text: str, headings: list | str | None = None, max_chars: int = 4000) -> str:
@@ -83,7 +83,7 @@ class RecommendationEngine:
     def __init__(self) -> None:
         settings = get_settings()
         self.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.rate_limiter = RateLimiter(requests_per_second=3)
+        self.rate_limiter = RateLimiter(requests_per_second=10)
 
     async def generate_for_site(
         self, db: asyncpg.Connection, site_id: UUID,
@@ -255,7 +255,7 @@ class RecommendationEngine:
         ptype = problem["problem_type"]
 
         # Fetch RAG context for this post (pgvector similarity, cluster stats, etc.)
-        from app.services.rag_context import get_recommendation_context, format_recommendation_context
+        from app.services.rag_context import format_recommendation_context, get_recommendation_context
         try:
             rag_ctx = await get_recommendation_context(db, site_id, problem["post_id"])
             rag_text = format_recommendation_context(rag_ctx)
@@ -407,7 +407,7 @@ Respond in this exact JSON format:
         self, db: asyncpg.Connection, site_id: UUID, problem: asyncpg.Record,
     ) -> bool:
         """Lightweight cannibalization recommendation (batch mode)."""
-        details = json.loads(problem["details"]) if problem["details"] else {}
+        json.loads(problem["details"]) if problem["details"] else {}
         await db.execute(
             """
             INSERT INTO recommendations
@@ -853,7 +853,7 @@ Respond in JSON:
             most_impactful = result.get("most_impactful", "")
             summary = f"Add visuals: {most_impactful[:150]}" if most_impactful else "Add relevant images to improve engagement."
         except Exception:
-            # Fallback to basic recommendation if Claude fails
+            logger.warning("Claude image recommendation call failed, using fallback")
             suggestions = ["Add a relevant visual that illustrates the main concept"]
             summary = "This post has no images. Adding relevant visuals improves engagement."
             result = {}
@@ -925,11 +925,11 @@ Respond in JSON:
 
             # Determine which post to keep (longer = primary)
             if (pair["a_wc"] or 0) >= (pair["b_wc"] or 0):
-                primary_id, primary_title = pair["a_id"], pair["a_title"]
+                _primary_id, primary_title = pair["a_id"], pair["a_title"]
                 secondary_title, secondary_url = pair["b_title"], pair["b_url"]
                 merge_into_id = pair["b_id"]
             else:
-                primary_id, primary_title = pair["b_id"], pair["b_title"]
+                _primary_id, primary_title = pair["b_id"], pair["b_title"]
                 secondary_title, secondary_url = pair["a_title"], pair["a_url"]
                 merge_into_id = pair["a_id"]
 
@@ -982,9 +982,9 @@ Respond in JSON:
             site_id,
         )
 
-        generated = 0
+        # Phase 1: DB reads — gather prompts for qualifying pillars (sequential, fast)
+        tasks: list[tuple[dict, str]] = []  # (pillar, prompt)
         for pillar in pillars:
-            # Check if growth recommendation already exists
             existing = await db.fetchval(
                 """
                 SELECT COUNT(*) FROM recommendations
@@ -1028,10 +1028,26 @@ Respond in JSON:
   "estimated_impact": "high" or "medium" or "low",
   "confidence": 0.0-1.0
 }}"""
+            tasks.append((pillar, prompt))
 
-            result = await self._call_claude(prompt)
+        if not tasks:
+            return 0
+
+        # Phase 2: Claude calls — run in parallel
+        import asyncio
+        results = await asyncio.gather(
+            *[self._call_claude(prompt) for _, prompt in tasks],
+            return_exceptions=True,
+        )
+
+        # Phase 3: DB writes — insert results (sequential, DB connection not concurrent-safe)
+        generated = 0
+        for (pillar, _prompt), result in zip(tasks, results, strict=True):
+            if isinstance(result, Exception):
+                logger.error("Growth rec failed for %s: %s", pillar["id"], result)
+                continue
+
             posts = result.get("supporting_posts", [])
-
             actions = []
             for sp in posts:
                 actions.append(

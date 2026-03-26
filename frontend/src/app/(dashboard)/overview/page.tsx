@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Area, AreaChart, RadarChart,
-  PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell,
 } from 'recharts';
 import {
   BarChart3, TrendingUp, Link2, FileText, ArrowUpRight,
@@ -88,20 +88,18 @@ const TOOLTIP_STYLE = {
 function ConnectedAnalytics({ site, posts, health, clusters }: {
   site: Site; posts: Post[]; health: SiteHealth | undefined; clusters: Cluster[] | undefined;
 }) {
-  // Simulate 90-day traffic trend from post data
+  // Traffic trend — placeholder until GA4 data is connected
   const trafficTrend = useMemo(() => {
     const days: { date: string; pageviews: number }[] = [];
     const now = Date.now();
     for (let i = 89; i >= 0; i--) {
       const d = new Date(now - i * 86400000);
       const label = `${d.getMonth() + 1}/${d.getDate()}`;
-      // Use a synthetic curve based on post count to show the trend shape
-      const base = posts.length * 10;
-      const noise = Math.sin(i * 0.3) * base * 0.15 + Math.random() * base * 0.1;
-      days.push({ date: label, pageviews: Math.max(0, Math.round(base + noise - i * 0.5)) });
+      // Show a flat baseline — real data requires GA4 connection
+      days.push({ date: label, pageviews: 0 });
     }
     return days;
-  }, [posts.length]);
+  }, []);
 
   // Top posts by word count as proxy for "pageviews" sort
   const topPosts = useMemo(() => {
@@ -110,34 +108,25 @@ function ConnectedAnalytics({ site, posts, health, clusters }: {
       .slice(0, 10);
   }, [posts]);
 
-  // Ranking distribution
-  const rankingDist = useMemo(() => {
-    const buckets = { 'Top 3': 0, 'Top 10': 0, 'Top 20': 0, '20+': 0 };
-    const total = posts.length;
-    // Distribute based on health data ratios
-    if (health) {
-      buckets['Top 3'] = health.active_posts;
-      buckets['Top 10'] = Math.round(total * 0.2);
-      buckets['Top 20'] = health.passive_posts;
-      buckets['20+'] = health.dead_posts;
-    } else {
-      buckets['Top 3'] = Math.round(total * 0.1);
-      buckets['Top 10'] = Math.round(total * 0.25);
-      buckets['Top 20'] = Math.round(total * 0.3);
-      buckets['20+'] = Math.round(total * 0.35);
-    }
-    return Object.entries(buckets).map(([range, count]) => ({ range, count }));
-  }, [posts.length, health]);
+  // Post health distribution — based on actual health score bands
+  const healthDist = useMemo(() => {
+    if (!health) return [];
+    return [
+      { band: 'Active (60+)', count: health.active_posts },
+      { band: 'Passive (30-59)', count: health.passive_posts },
+      { band: 'Cannibalistic', count: health.cannibalistic_posts },
+      { band: 'Dead (<30)', count: health.dead_posts },
+    ];
+  }, [health]);
 
-  // CTR trend (synthetic)
+  // CTR trend — placeholder until GSC data is connected
   const ctrTrend = useMemo(() => {
     const days: { date: string; ctr: number }[] = [];
     const now = Date.now();
     for (let i = 89; i >= 0; i--) {
       const d = new Date(now - i * 86400000);
       const label = `${d.getMonth() + 1}/${d.getDate()}`;
-      const base = 3.2 + Math.sin(i * 0.15) * 0.8 + (90 - i) * 0.01;
-      days.push({ date: label, ctr: parseFloat(base.toFixed(2)) });
+      days.push({ date: label, ctr: 0 });
     }
     return days;
   }, []);
@@ -184,6 +173,11 @@ function ConnectedAnalytics({ site, posts, health, clusters }: {
 
       {/* Traffic trend */}
       <ChartCard title="Total Traffic Trend (90 days)">
+        {trafficTrend.every(d => d.pageviews === 0) ? (
+          <div className="h-64 flex items-center justify-center text-[#64748b] text-sm">
+            Connect Google Analytics to see real traffic data
+          </div>
+        ) : (
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={trafficTrend}>
@@ -212,6 +206,7 @@ function ConnectedAnalytics({ site, posts, health, clusters }: {
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        )}
       </ChartCard>
 
       {/* Two-column row */}
@@ -238,20 +233,27 @@ function ConnectedAnalytics({ site, posts, health, clusters }: {
           </div>
         </ChartCard>
 
-        {/* Ranking distribution */}
-        <ChartCard title="Ranking Distribution">
+        {/* Post health distribution */}
+        {healthDist.length > 0 && (
+        <ChartCard title="Post Health Distribution">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rankingDist}>
+              <BarChart data={healthDist}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="range" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
+                <XAxis dataKey="band" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
                 <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {healthDist.map((entry, index) => {
+                    const colors = [CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.red, CHART_COLORS.purple];
+                    return <Cell key={index} fill={colors[index]} />;
+                  })}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </ChartCard>
+        )}
 
         {/* CTR trend */}
         <ChartCard title="CTR Trend">
@@ -364,7 +366,7 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
     };
   }, [posts]);
 
-  // Readability distribution (using word count buckets)
+  // Word count distribution (content depth)
   const readabilityDist = useMemo(() => {
     const buckets: Record<string, number> = {
       '< 500': 0, '500-1000': 0, '1000-2000': 0,
@@ -381,6 +383,17 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
     return Object.entries(buckets).map(([range, count]) => ({ range, count }));
   }, [posts]);
 
+  // Health score distribution — shows how posts are spread across quality bands
+  const healthScoreDist = useMemo(() => {
+    if (!health) return [];
+    return [
+      { band: 'Active (60+)', count: health.active_posts, fill: CHART_COLORS.green },
+      { band: 'Passive (30-59)', count: health.passive_posts, fill: CHART_COLORS.amber },
+      { band: 'Cannibalistic', count: health.cannibalistic_posts, fill: CHART_COLORS.red },
+      { band: 'Dead (<30)', count: health.dead_posts, fill: CHART_COLORS.purple },
+    ];
+  }, [health]);
+
   // Cluster size distribution
   const clusterSizes = useMemo(() => {
     if (!clusters) return [];
@@ -391,6 +404,20 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
       .map(c => ({
         label: (c.label ?? 'Unnamed').slice(0, 18),
         posts: c.post_count,
+        score: c.health_score ?? 0,
+      }));
+  }, [clusters]);
+
+  // Cluster health comparison (score by cluster)
+  const clusterHealth = useMemo(() => {
+    if (!clusters) return [];
+    return clusters
+      .filter(c => c.label && c.health_score != null)
+      .sort((a, b) => (b.health_score ?? 0) - (a.health_score ?? 0))
+      .slice(0, 10)
+      .map(c => ({
+        label: (c.label ?? 'Unnamed').slice(0, 18),
+        score: Math.round(c.health_score ?? 0),
       }));
   }, [clusters]);
 
@@ -408,6 +435,19 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-12)
       .map(([month, count]) => ({ month, count }));
+  }, [posts]);
+
+  // Content depth stats
+  const depthStats = useMemo(() => {
+    if (posts.length === 0) return { avg: 0, median: 0, total: 0 };
+    const wordCounts = posts.map(p => p.word_count ?? 0).sort((a, b) => a - b);
+    const total = wordCounts.reduce((s, w) => s + w, 0);
+    const mid = Math.floor(wordCounts.length / 2);
+    return {
+      avg: Math.round(total / wordCounts.length),
+      median: wordCounts.length % 2 === 0 ? Math.round((wordCounts[mid - 1] + wordCounts[mid]) / 2) : wordCounts[mid],
+      total,
+    };
   }, [posts]);
 
   return (
@@ -431,7 +471,15 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
         <StatCard label="Total Posts" value={posts.length} icon={FileText} />
         <StatCard label="Health Score" value={health ? `${Math.round(health.content_health_score)}%` : '--'} icon={TrendingUp} />
         <StatCard label="Clusters" value={clusters?.length ?? '--'} icon={Layers} />
+        <StatCard label="Avg Word Count" value={depthStats.avg.toLocaleString()} icon={FileText} />
+      </div>
+
+      {/* Additional stat row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <StatCard label="Active Posts" value={health?.active_posts ?? '--'} icon={TrendingUp} />
+        <StatCard label="Dead Weight" value={health?.dead_posts ?? '--'} icon={AlertCircle} />
         <StatCard label="Tagged Posts" value={linkStats.withTags} icon={Link2} />
+        <StatCard label="Total Words" value={depthStats.total.toLocaleString()} icon={Calendar} />
       </div>
 
       {/* Health score radar */}
@@ -457,6 +505,27 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        {/* Health score distribution — post quality bands */}
+        {healthScoreDist.length > 0 && (
+          <ChartCard title="Post Health Distribution">
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={healthScoreDist}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="band" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {healthScoreDist.map((entry, index) => (
+                      <Cell key={index} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+        )}
+
         {/* Content age distribution */}
         <ChartCard title="Content Age Distribution">
           <div className="h-56">
@@ -472,26 +541,8 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
           </div>
         </ChartCard>
 
-        {/* Internal link stats cards */}
-        <ChartCard title="Internal Link Graph Stats">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
-              <span className="text-xs text-[#94a3b8]">Total Posts</span>
-              <span className="text-lg font-bold text-[#e2e8f0]">{linkStats.totalPosts}</span>
-            </div>
-            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
-              <span className="text-xs text-[#94a3b8]">Posts with Tags/Categories</span>
-              <span className="text-lg font-bold text-[#e2e8f0]">{linkStats.withTags}</span>
-            </div>
-            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
-              <span className="text-xs text-[#94a3b8]">Avg Categories per Post</span>
-              <span className="text-lg font-bold text-[#e2e8f0]">{linkStats.avgCategories}</span>
-            </div>
-          </div>
-        </ChartCard>
-
-        {/* Readability distribution */}
-        <ChartCard title="Word Count Distribution">
+        {/* Word count distribution */}
+        <ChartCard title="Content Depth Distribution">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={readabilityDist}>
@@ -504,6 +555,55 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
             </ResponsiveContainer>
           </div>
         </ChartCard>
+
+        {/* Internal link stats cards */}
+        <ChartCard title="Content Structure Stats">
+          <div className="grid grid-cols-1 gap-3">
+            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
+              <span className="text-xs text-[#94a3b8]">Avg Word Count</span>
+              <span className="text-lg font-bold text-[#e2e8f0]">{depthStats.avg.toLocaleString()}</span>
+            </div>
+            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
+              <span className="text-xs text-[#94a3b8]">Median Word Count</span>
+              <span className="text-lg font-bold text-[#e2e8f0]">{depthStats.median.toLocaleString()}</span>
+            </div>
+            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
+              <span className="text-xs text-[#94a3b8]">Posts with Tags/Categories</span>
+              <span className="text-lg font-bold text-[#e2e8f0]">{linkStats.withTags}</span>
+            </div>
+            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
+              <span className="text-xs text-[#94a3b8]">Avg Categories per Post</span>
+              <span className="text-lg font-bold text-[#e2e8f0]">{linkStats.avgCategories}</span>
+            </div>
+          </div>
+        </ChartCard>
+
+        {/* Cluster health comparison */}
+        {clusterHealth.length > 0 && (
+          <ChartCard title="Cluster Health Scores">
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={clusterHealth} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} domain={[0, 100]} />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    tick={{ fontSize: 10, fill: '#64748b' }}
+                    tickLine={false}
+                    width={120}
+                  />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Bar dataKey="score" radius={[0, 4, 4, 0]} name="Health Score">
+                    {clusterHealth.map((entry, index) => (
+                      <Cell key={index} fill={entry.score >= 60 ? CHART_COLORS.green : entry.score >= 40 ? CHART_COLORS.amber : CHART_COLORS.red} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+        )}
 
         {/* Cluster size distribution */}
         {clusterSizes.length > 0 && (

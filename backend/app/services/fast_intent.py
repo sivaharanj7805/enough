@@ -47,7 +47,7 @@ _NAVIGATIONAL_SLUGS = re.compile(r"(login|signin|support|contact|docs|help|about
 
 def classify_intent(title: str, url: str, word_count: int = 0) -> str:
     """Classify a single post's intent from title and URL.
-    
+
     Returns one of: 'transactional', 'commercial', 'navigational', 'informational'
     """
     slug = url.rsplit("/", 1)[-1].lower() if url else ""
@@ -78,7 +78,7 @@ def classify_intent(title: str, url: str, word_count: int = 0) -> str:
 
 async def classify_site_fast(db: asyncpg.Connection, site_id: UUID) -> int:
     """Classify intent for all posts in a site using pattern matching.
-    
+
     Returns number of posts classified.
     """
     posts = await db.fetch(

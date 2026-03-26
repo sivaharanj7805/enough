@@ -6,15 +6,14 @@ as a public shareable page or exported to PDF.
 Includes a public PDF audit endpoint (no auth) that accepts URL + email,
 enforces a 50-post limit and rate limits (3 per email per day).
 """
-from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
-from uuid import UUID
+from datetime import UTC, datetime
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, EmailStr
 from slowapi import Limiter
@@ -160,8 +159,15 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
         "SELECT AVG(composite_score) FROM post_health_scores phs JOIN posts p ON p.id = phs.post_id WHERE p.site_id = $1",
         site_id,
     ) or 0
+    # Count leaf clusters (clusters that have no children) — these are what's displayed
     cluster_count = await db.fetchval(
-        "SELECT COUNT(*) FROM clusters WHERE site_id = $1 AND parent_cluster_id IS NULL", site_id
+        """SELECT COUNT(*) FROM clusters WHERE site_id = $1
+           AND id NOT IN (
+               SELECT parent_cluster_id FROM clusters
+               WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+           )
+           AND post_count > 0""",
+        site_id,
     ) or 0
     problem_count = await db.fetchval(
         "SELECT COUNT(*) FROM content_problems cp JOIN posts p ON p.id = cp.post_id WHERE p.site_id = $1",
@@ -188,11 +194,28 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
         site_id,
     ) or 0
 
-    # Top clusters (by health score)
+    # Count distinct posts involved in cannibalization (not pairs)
+    cann_post_count = await db.fetchval(
+        """SELECT COUNT(DISTINCT post_id) FROM (
+            SELECT cp.post_a_id AS post_id FROM cannibalization_pairs cp
+            JOIN clusters cl ON cl.id = cp.cluster_id WHERE cl.site_id = $1
+            UNION
+            SELECT cp.post_b_id AS post_id FROM cannibalization_pairs cp
+            JOIN clusters cl ON cl.id = cp.cluster_id WHERE cl.site_id = $1
+        ) sub""",
+        site_id,
+    ) or 0
+
+    # Top clusters — show leaf clusters (no children) sorted by size
     cluster_rows = await db.fetch(
         """SELECT label, description, post_count, health_score, ecosystem_state
            FROM clusters WHERE site_id = $1
-           ORDER BY health_score DESC NULLS LAST LIMIT 6""",
+             AND id NOT IN (
+                 SELECT parent_cluster_id FROM clusters
+                 WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+             )
+             AND post_count > 0
+           ORDER BY post_count DESC LIMIT 8""",
         site_id,
     )
     top_clusters = [
@@ -202,29 +225,28 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
         for r in cluster_rows
     ]
 
-    # Top cann pairs
+    # Top cann pairs (DISTINCT ON avoids duplicates from recommendation JOIN)
     cann_rows = await db.fetch(
-        """SELECT pa.title AS a_title, pa.url AS a_url,
+        """SELECT DISTINCT ON (cp.id)
+                  pa.title AS a_title, pa.url AS a_url,
                   pb.title AS b_title, pb.url AS b_url,
-                  cp.cosine_similarity, cp.severity,
-                  r.title AS rec_title
+                  cp.cosine_similarity, cp.severity
            FROM cannibalization_pairs cp
            JOIN clusters cl ON cl.id = cp.cluster_id
            JOIN posts pa ON pa.id = cp.post_a_id
            JOIN posts pb ON pb.id = cp.post_b_id
-           LEFT JOIN recommendations r ON r.post_id = cp.post_a_id AND r.site_id = cl.site_id
-               AND r.recommendation_type IN ('merge', 'differentiate', 'redirect')
            WHERE cl.site_id = $1
-           ORDER BY cp.cosine_similarity DESC
-           LIMIT 8""",
+           ORDER BY cp.id, cp.cosine_similarity DESC""",
         site_id,
     )
+    # Re-sort by similarity after dedup and take top 8
+    cann_sorted = sorted(cann_rows, key=lambda r: r["cosine_similarity"] or 0, reverse=True)[:8]
     top_cann_pairs = [
         {"post_a_title": r["a_title"] or "", "post_a_url": r["a_url"] or "",
          "post_b_title": r["b_title"] or "", "post_b_url": r["b_url"] or "",
          "overlap_score": round(r["cosine_similarity"] or 0, 3),
-         "severity": r["severity"] or "medium", "recommendation": r["rec_title"]}
-        for r in cann_rows
+         "severity": r["severity"] or "medium", "recommendation": None}
+        for r in cann_sorted
     ]
 
     # Top recommendations
@@ -246,22 +268,28 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
         for r in rec_rows
     ]
 
-    # Worst posts
+    # Worst posts — deduplicated by post, aggregated issues, prefer posts with actual problems
     worst_rows = await db.fetch(
-        """SELECT p.title, p.url, phs.composite_score, phs.role, cp.problem_type
+        """SELECT DISTINCT ON (p.id)
+                  p.title, p.url, phs.composite_score, phs.role,
+                  (SELECT string_agg(DISTINCT cp2.problem_type, ', ')
+                   FROM content_problems cp2 WHERE cp2.post_id = p.id) AS issues
            FROM posts p
            JOIN post_health_scores phs ON phs.post_id = p.id
-           LEFT JOIN content_problems cp ON cp.post_id = p.id
-           WHERE p.site_id = $1
-           ORDER BY phs.composite_score ASC NULLS LAST
-           LIMIT 5""",
+           WHERE p.site_id = $1 AND p.word_count >= 200
+           ORDER BY p.id, phs.composite_score ASC NULLS LAST""",
         site_id,
+    )
+    # Sort: posts with problems first, then by score ascending
+    worst_sorted = sorted(
+        worst_rows,
+        key=lambda r: (0 if r["issues"] else 1, r["composite_score"] or 999),
     )
     worst_posts = [
         {"title": r["title"] or "", "url": r["url"] or "",
          "health_score": round(r["composite_score"] or 0),
-         "role": r["role"] or "dead_weight", "issue": r["problem_type"]}
-        for r in worst_rows
+         "role": r["role"] or "dead_weight", "issue": r["issues"] or "low health score"}
+        for r in worst_sorted[:5]
     ]
 
     # Best posts (highest health, pillar only)
@@ -309,7 +337,10 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
     # Key findings
     key_findings: list[str] = []
     if cann_pair_count > 0:
-        key_findings.append(f"{cann_pair_count} posts are cannibalizing each other for the same keywords")
+        key_findings.append(
+            f"{cann_post_count} of your {total_posts} posts have significant content overlap "
+            f"({cann_pair_count} cannibalization pairs detected)"
+        )
     if exact_dup_count > 0:
         key_findings.append(f"{exact_dup_count} near-exact duplicate URL pairs detected")
     if orphan_count > 0:
@@ -330,7 +361,7 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
 
     # Headline
     if cann_pair_count >= 50:
-        headline = f"Found {cann_pair_count} cannibalizing post pairs across {cluster_count} topic clusters"
+        headline = f"{cann_post_count} of {total_posts} posts have significant content overlap across {cluster_count} topic clusters"
     elif rec_count >= 100:
         headline = f"Generated {rec_count} specific recommendations across {total_posts} posts"
     else:
@@ -340,12 +371,13 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
         "site_name": site.get("name") or site.get("domain", ""),
         "site_domain": site.get("domain", ""),
         "total_posts": int(total_posts),
-        "analyzed_at": str(site.get("last_crawl_at")) if site.get("last_crawl_at") else None,
+        "analyzed_at": site["last_crawl_at"].isoformat() if site.get("last_crawl_at") else None,
         "overall_health": round(overall_health),
         "cluster_count": int(cluster_count),
         "problem_count": int(problem_count),
         "rec_count": int(rec_count),
         "cann_pair_count": int(cann_pair_count),
+        "cann_post_count": int(cann_post_count),
         "orphan_count": int(orphan_count),
         "thin_content_count": int(thin_count),
         "exact_duplicate_count": int(exact_dup_count),
@@ -355,6 +387,7 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
         "ai_extraction_score": ai_extract,
         "ai_pct_ready": ai_pct_ready,
         "ai_pct_schema": ai_pct_schema,
+        "score_confidence": "crawl_only",  # TODO: detect from GA4/GSC presence
         "top_clusters": top_clusters,
         "top_cann_pairs": top_cann_pairs,
         "top_recs": top_recs,
@@ -366,7 +399,7 @@ async def _build_audit_data_for_site(db: asyncpg.Connection, site_id: UUID, site
 
 
 @router.post("/audit-report/pdf")
-@limiter.limit("6/minute")
+@limiter.limit("6/minute")  # slowapi requires request: Request as first param
 async def generate_audit_pdf_endpoint(
     request: Request,
     body: AuditPDFRequest,
@@ -381,7 +414,7 @@ async def generate_audit_pdf_endpoint(
     - 3 audits per email per day rate limit
     """
     # Rate limit: 3 per email per day
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     audit_count = await db.fetchval(
         """SELECT COUNT(*) FROM audit_requests
            WHERE email = $1 AND created_at::date = $2""",
@@ -403,8 +436,8 @@ async def generate_audit_pdf_endpoint(
         raise HTTPException(400, "Invalid URL")
 
     site = await db.fetchrow(
-        "SELECT id, name, domain, last_crawl_at FROM sites WHERE domain ILIKE $1 LIMIT 1",
-        f"%{domain}%",
+        "SELECT id, name, domain, last_crawl_at FROM sites WHERE lower(domain) = lower($1) LIMIT 1",
+        domain,
     )
     if not site:
         # Check if there's already a pending pipeline for this email
@@ -436,7 +469,7 @@ async def generate_audit_pdf_endpoint(
         # Record audit request
         await db.execute(
             "INSERT INTO audit_requests (email, domain, site_id, created_at) VALUES ($1, $2, $3, $4)",
-            body.email, domain, site_id, datetime.now(timezone.utc),
+            body.email, domain, site_id, datetime.now(UTC),
         )
 
         # Run pipeline in background, email PDF on completion
@@ -467,7 +500,7 @@ async def generate_audit_pdf_endpoint(
     await db.execute(
         """INSERT INTO audit_requests (email, domain, site_id, created_at)
            VALUES ($1, $2, $3, $4)""",
-        body.email, domain, site_id, datetime.now(timezone.utc),
+        body.email, domain, site_id, datetime.now(UTC),
     )
 
     # Build audit data and generate PDF
@@ -570,7 +603,7 @@ async def _run_audit_pipeline_and_email(
                     str(e)[:500], site_id,
                 )
         except Exception:
-            pass
+            logger.exception("Failed to update pipeline status for site %s", site_id)
 
 
 @router.post("/admin/generate-audit")
@@ -587,10 +620,12 @@ async def admin_generate_audit(
     from app.config import get_settings
     settings = get_settings()
 
-    admin_secret = getattr(settings, 'admin_secret', None) or settings.cron_secret
-    provided = request.headers.get("X-Admin-Secret", "")
+    admin_secret = settings.admin_secret
+    if not admin_secret:
+        raise HTTPException(503, "Admin endpoint not configured — set ADMIN_SECRET")
 
-    if not admin_secret or not provided:
+    provided = request.headers.get("X-Admin-Secret", "")
+    if not provided:
         raise HTTPException(401, "Missing admin secret")
 
     import hmac
@@ -608,8 +643,8 @@ async def admin_generate_audit(
 
     # Check if site already exists
     site = await db.fetchrow(
-        "SELECT id, name, domain, last_crawl_at FROM sites WHERE domain ILIKE $1 LIMIT 1",
-        f"%{domain}%",
+        "SELECT id, name, domain, last_crawl_at FROM sites WHERE lower(domain) = lower($1) LIMIT 1",
+        domain,
     )
 
     if site:

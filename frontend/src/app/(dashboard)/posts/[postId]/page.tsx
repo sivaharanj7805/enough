@@ -244,25 +244,25 @@ export default function PostDetailPage() {
   const internalLinks = post.internal_links || [];
 
   // Health score
-  const healthScore = (post as Record<string, unknown>).composite_score as number | undefined ?? (post as Record<string, unknown>).health_score as number | undefined ?? null;
+  const healthScore = (post as unknown as Record<string, unknown>).composite_score as number | undefined ?? (post as unknown as Record<string, unknown>).health_score as number | undefined ?? null;
   const healthLabel = healthScore !== null ? getHealthLabel(healthScore) : null;
   const scoreColor = healthScore !== null
     ? healthScore >= 80 ? '#22c55e' : healthScore >= 60 ? '#3b82f6' : healthScore >= 40 ? '#f59e0b' : healthScore >= 20 ? '#ef4444' : '#991b1b'
     : '#5f6571';
 
   // Factor scores (from API or approximate)
-  const factors = (post as Record<string, unknown>).factor_scores as Record<string, number> | undefined;
-  const metaTitle = (post as Record<string, unknown>).meta_title as string | undefined ?? '';
-  const metaDesc = (post as Record<string, unknown>).meta_description as string | undefined ?? '';
-  const readability = (post as Record<string, unknown>).readability_score as number | undefined ?? null;
-  const h1Count = (post as Record<string, unknown>).h1_count as number | undefined ?? null;
-  const h2Count = (post as Record<string, unknown>).h2_count as number | undefined ?? null;
-  const h3Count = (post as Record<string, unknown>).h3_count as number | undefined ?? null;
-  const imageCount = (post as Record<string, unknown>).image_count as number | undefined ?? null;
-  const pagerank = (post as Record<string, unknown>).pagerank_score as number | undefined ?? null;
-  const role = (post as Record<string, unknown>).role as string | undefined ?? null;
-  const clusterId = (post as Record<string, unknown>).cluster_id as string | undefined ?? null;
-  const clusterName = (post as Record<string, unknown>).cluster_name as string | undefined ?? null;
+  const factors = (post as unknown as Record<string, unknown>).factor_scores as Record<string, number> | undefined;
+  const metaTitle = (post as unknown as Record<string, unknown>).meta_title as string | undefined ?? '';
+  const metaDesc = (post as unknown as Record<string, unknown>).meta_description as string | undefined ?? '';
+  const readability = (post as unknown as Record<string, unknown>).readability_score as number | undefined ?? null;
+  const h1Count = (post as unknown as Record<string, unknown>).h1_count as number | undefined ?? null;
+  const h2Count = (post as unknown as Record<string, unknown>).h2_count as number | undefined ?? null;
+  const h3Count = (post as unknown as Record<string, unknown>).h3_count as number | undefined ?? null;
+  const imageCount = (post as unknown as Record<string, unknown>).image_count as number | undefined ?? null;
+  const pagerank = (post as unknown as Record<string, unknown>).pagerank_score as number | undefined ?? null;
+  const role = (post as unknown as Record<string, unknown>).role as string | undefined ?? null;
+  const clusterId = (post as unknown as Record<string, unknown>).cluster_id as string | undefined ?? null;
+  const clusterName = (post as unknown as Record<string, unknown>).cluster_name as string | undefined ?? null;
 
   const roleBadgeColor = role === 'pillar' ? '#3b82f6' : role === 'dead_weight' ? '#ef4444' : '#6b7280';
   const roleLabel = role === 'pillar' ? 'Pillar' : role === 'dead_weight' ? 'Dead Weight' : role === 'supporting' ? 'Supporting' : role;
@@ -296,9 +296,9 @@ export default function PostDetailPage() {
                   <Calendar size={12} /> Published {new Date(post.publish_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
               )}
-              {(post as Record<string, unknown>).modified_date && (
+              {!!(post as unknown as Record<string, unknown>).modified_date && (
                 <span className="flex items-center gap-1">
-                  <RefreshCw size={12} /> Updated {new Date((post as Record<string, unknown>).modified_date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <RefreshCw size={12} /> Updated {new Date((post as unknown as Record<string, unknown>).modified_date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
               )}
               {clusterId && (

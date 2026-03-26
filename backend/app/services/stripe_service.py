@@ -6,7 +6,7 @@ in asyncio.to_thread() to avoid blocking the event loop.
 
 import asyncio
 import logging
-from uuid import UUID
+from datetime import UTC
 
 import asyncpg
 import stripe
@@ -27,9 +27,44 @@ TIER_LIMITS = {
 class StripeService:
     """Handle Stripe checkout, webhooks, and subscription management."""
 
+    COMEBACK30_COUPON_ID = "COMEBACK30"
+
     def __init__(self) -> None:
         settings = get_settings()
         stripe.api_key = settings.stripe_secret_key
+
+    async def ensure_comeback30_coupon(self) -> None:
+        """Create the COMEBACK30 coupon in Stripe if it doesn't already exist.
+
+        30% off for 3 months, one redemption per customer.
+        Called at app startup — best-effort, never blocks boot.
+        """
+        try:
+            await asyncio.to_thread(stripe.Coupon.retrieve, self.COMEBACK30_COUPON_ID)
+            logger.info("COMEBACK30 coupon already exists in Stripe")
+        except stripe.InvalidRequestError:
+            # Coupon doesn't exist — create it
+            try:
+                await asyncio.to_thread(
+                    stripe.Coupon.create,
+                    id=self.COMEBACK30_COUPON_ID,
+                    percent_off=30,
+                    duration="repeating",
+                    duration_in_months=3,
+                    name="Comeback 30% Off (3 months)",
+                )
+                # Create a promo code so customers can enter "COMEBACK30" at checkout
+                await asyncio.to_thread(
+                    stripe.PromotionCode.create,
+                    coupon=self.COMEBACK30_COUPON_ID,
+                    code=self.COMEBACK30_COUPON_ID,
+                    max_redemptions_per_customer=1,
+                )
+                logger.info("Created COMEBACK30 coupon and promo code in Stripe")
+            except Exception as e:
+                logger.warning("Failed to create COMEBACK30 coupon: %s", e)
+        except Exception as e:
+            logger.warning("Could not verify COMEBACK30 coupon (Stripe unavailable): %s", e)
 
     def _resolve_price_id(self, price_id: str) -> str:
         """Resolve a tier name ('growth', 'scale') to a real Stripe price ID.
@@ -48,6 +83,18 @@ class StripeService:
             raise ValueError(f"Unknown price tier: {price_id}. Use 'growth' or 'scale'.")
         return resolved
 
+    @staticmethod
+    def _validate_redirect_url(url: str) -> None:
+        """Ensure redirect URLs point to our own frontend to prevent open redirects."""
+        from urllib.parse import urlparse
+
+        settings = get_settings()
+        frontend_url = settings.frontend_url or "http://localhost:3000"
+        parsed = urlparse(url)
+        expected = urlparse(frontend_url)
+        if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
+            raise ValueError(f"Redirect URL must match {frontend_url} origin")
+
     async def create_checkout_session(
         self,
         db: asyncpg.Connection,
@@ -57,6 +104,10 @@ class StripeService:
         cancel_url: str,
     ) -> str:
         """Create a Stripe checkout session and return the URL."""
+        # Validate redirect URLs to prevent open redirects (SEC-3)
+        self._validate_redirect_url(success_url)
+        self._validate_redirect_url(cancel_url)
+
         # Resolve tier name to actual Stripe price ID
         stripe_price_id = self._resolve_price_id(price_id)
 
@@ -120,22 +171,17 @@ class StripeService:
 
         logger.info("Stripe webhook: %s (event_id=%s)", event_type, event_id)
 
-        # Idempotency: skip if we already processed this event
-        already = await db.fetchval(
-            "SELECT 1 FROM webhook_events WHERE event_id = $1", event_id
+        # Idempotency: atomic INSERT ON CONFLICT — no race between check and insert
+        inserted = await db.fetchval(
+            "INSERT INTO webhook_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT (event_id) DO NOTHING RETURNING event_id",
+            event_id, event_type,
         )
-        if already:
+        if not inserted:
             logger.info("Skipping duplicate webhook event %s", event_id)
             return
 
         # Process the event inside a transaction so either all writes succeed or none
         async with db.transaction():
-            # Record the event for idempotency
-            await db.execute(
-                "INSERT INTO webhook_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT (event_id) DO NOTHING",
-                event_id,
-                event_type,
-            )
 
             if event_type == "checkout.session.completed":
                 user_id = data.get("metadata", {}).get("user_id")
@@ -145,7 +191,11 @@ class StripeService:
                     sub = await asyncio.to_thread(
                         stripe.Subscription.retrieve, subscription_id
                     )
-                    price_id = sub["items"]["data"][0]["price"]["id"]
+                    items = sub.get("items", {}).get("data", [])
+                    if not items:
+                        logger.error("Subscription %s has no items", subscription_id)
+                        return
+                    price_id = items[0]["price"]["id"]
                     tier = self._price_to_tier(price_id)
                     await db.execute(
                         """UPDATE profiles
@@ -164,7 +214,11 @@ class StripeService:
 
             elif event_type == "customer.subscription.updated":
                 subscription_id = data.get("id")
-                price_id = data["items"]["data"][0]["price"]["id"]
+                items = data.get("items", {}).get("data", [])
+                if not items:
+                    logger.error("Subscription %s has no items", subscription_id)
+                    return
+                price_id = items[0]["price"]["id"]
                 tier = self._price_to_tier(price_id)
                 current_period_end = data.get("current_period_end")
 
@@ -219,8 +273,8 @@ class StripeService:
                 if subscription_id:
                     # Implement 7-day grace period: set past_due with grace deadline
                     # Don't immediately lock out — give 7 days to fix payment
-                    from datetime import datetime, timezone, timedelta
-                    grace_deadline = datetime.now(timezone.utc) + timedelta(days=7)
+                    from datetime import datetime, timedelta
+                    grace_deadline = datetime.now(UTC) + timedelta(days=7)
                     await db.execute(
                         """UPDATE profiles
                            SET subscription_status = 'past_due',
@@ -393,8 +447,8 @@ class StripeService:
         self, db: asyncpg.Connection, user_id: str, email: str,
     ) -> None:
         """Schedule win-back email sequence after cancellation."""
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
+        from datetime import datetime
+        now = datetime.now(UTC)
         try:
             await db.execute(
                 """INSERT INTO winback_emails (user_id, email, cancelled_at)
@@ -418,12 +472,12 @@ class StripeService:
         - Day 30: "Here's what changed on your blog since you left"
         - Day 60: Final attempt with discount offer
         """
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
         settings = get_settings()
         if not settings.resend_api_key:
             return 0
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         sent = 0
 
         # Day 7 win-backs
@@ -580,7 +634,7 @@ class StripeService:
   <p>It's been 2 months since you left Enough. We've been improving the platform — better recommendations, faster analysis, and new AI readiness scoring.</p>
   <div style="background:#f0fdf4;padding:20px;border-radius:8px;text-align:center;margin:20px 0;border:1px solid #16a34a;">
     <div style="color:#16a34a;font-size:24px;font-weight:700;">30% off for 3 months</div>
-    <div style="color:#94a3b8;font-size:14px;margin-top:8px;">$69/month instead of $99 — just use code COMEBACK30</div>
+    <div style="color:#94a3b8;font-size:14px;margin-top:8px;">$104.30/month instead of $149 — just use code COMEBACK30</div>
   </div>
   <p>This is our last email. If you'd like to come back, the offer is valid for 14 days.</p>
   <div style="text-align:center;margin:20px 0;">
@@ -606,13 +660,13 @@ class StripeService:
         tier = sub["tier"]
         if tier == "past_due":
             # Check grace period: allow access during 7-day grace window
-            from datetime import datetime, timezone
+            from datetime import datetime
             grace_row = await db.fetchrow(
                 "SELECT grace_period_ends_at FROM profiles WHERE id = $1::uuid",
                 user_id,
             )
             grace_ends = grace_row["grace_period_ends_at"] if grace_row else None
-            if grace_ends and grace_ends > datetime.now(timezone.utc):
+            if grace_ends and grace_ends > datetime.now(UTC):
                 tier = "growth"  # Still in grace period — keep access
             else:
                 tier = "free"  # Grace period expired — lock out

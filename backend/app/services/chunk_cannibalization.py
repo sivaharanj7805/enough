@@ -13,7 +13,6 @@ import logging
 import os
 import re
 import time
-from typing import Any
 from uuid import UUID
 
 import asyncpg

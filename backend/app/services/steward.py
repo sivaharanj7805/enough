@@ -4,7 +4,6 @@ Optimized: uses batched queries with ANY($1::uuid[]) instead of per-site loops.
 """
 
 import logging
-from uuid import UUID
 
 import asyncpg
 
@@ -85,8 +84,8 @@ class StewardService:
 
         # ── Batch 4: Total posts consolidated ──
         total_posts_consolidated = await db.fetchval(
-            """SELECT COALESCE(SUM(array_length(consolidated_urls, 1)), 0)
-               FROM impact_tracking WHERE site_id = ANY($1::uuid[])""",
+            """SELECT COUNT(*) FROM redirect_log
+               WHERE site_id = ANY($1::uuid[]) AND status = 'verified'""",
             site_ids,
         ) or 0
 
@@ -105,7 +104,7 @@ class StewardService:
 
         # ── Batch 7: Efficiency and health improvement ──
         improvement_rows = await db.fetch(
-            """SELECT site_id,
+            """SELECT s.id AS site_id,
                       (SELECT health_score FROM report_snapshots WHERE site_id = s.id ORDER BY snapshot_date ASC LIMIT 1) AS first_health,
                       (SELECT health_score FROM report_snapshots WHERE site_id = s.id ORDER BY snapshot_date DESC LIMIT 1) AS latest_health,
                       (SELECT efficiency_ratio FROM report_snapshots WHERE site_id = s.id ORDER BY snapshot_date ASC LIMIT 1) AS first_eff,

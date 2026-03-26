@@ -105,16 +105,16 @@ class InternalPageRank:
     async def _store_pageranks(
         db: asyncpg.Connection, pageranks: dict,
     ) -> None:
-        """Store PageRank scores on post_health_scores."""
-        for post_id, rank in pageranks.items():
-            await db.execute(
-                """
-                UPDATE post_health_scores
-                SET internal_pagerank = $1
-                WHERE post_id = $2
-                """,
-                float(rank), post_id,
-            )
+        """Store PageRank scores on post_health_scores (batch update)."""
+        batch_data = [(float(rank), post_id) for post_id, rank in pageranks.items()]
+        await db.executemany(
+            """
+            UPDATE post_health_scores
+            SET internal_pagerank = $1
+            WHERE post_id = $2
+            """,
+            batch_data,
+        )
 
     @staticmethod
     async def detect_broken_links(

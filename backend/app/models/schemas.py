@@ -1,11 +1,9 @@
 """Pydantic models for request/response schemas."""
 
-from datetime import datetime, date
+from datetime import date, datetime
 from uuid import UUID
-from typing import Optional
 
-from pydantic import BaseModel, Field, HttpUrl
-
+from pydantic import BaseModel, Field
 
 # ──────────────────────────── Auth ────────────────────────────
 
@@ -273,10 +271,28 @@ class ConsolidationDetailResponse(ConsolidationPlanResponse):
     redirect_map: list[RedirectEntry] = []
 
 
+class WordCountSummary(BaseModel):
+    """Word count breakdown for consolidation drafts."""
+    pillar_words: int
+    merge_source_words: dict[str, int]
+    total_input_words: int
+    recommended_output_words: int
+    source_posts: list[str]
+
+
+class SEOMetadata(BaseModel):
+    """Extracted SEO metadata from consolidation draft."""
+    title_tag: str = ""
+    meta_description: str = ""
+
+
 class ConsolidationDraftResponse(BaseModel):
-    """AI-generated consolidated draft."""
+    """AI-generated consolidated draft with SEO metadata and HTML export."""
     draft_markdown: str
+    draft_html: str = ""
     redirect_map: list[RedirectEntry]
+    word_count_summary: WordCountSummary | None = None
+    seo_metadata: SEOMetadata | None = None
 
 
 class SimilarPostInfo(BaseModel):
@@ -296,6 +312,12 @@ class OracleRequest(BaseModel):
     """Pre-publish oracle request body."""
     draft_text: str | None = None
     target_keyword: str | None = None
+
+    @classmethod
+    def validate_draft_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 500_000:
+            raise ValueError("Draft text exceeds maximum length of 500,000 characters")
+        return v
 
 
 class OracleVerdictResponse(BaseModel):
@@ -455,6 +477,15 @@ class CheckoutRequest(BaseModel):
     success_url: str
     cancel_url: str
 
+    @classmethod
+    def validate_redirect_url(cls, url: str) -> str:
+        """Ensure redirect URLs point to our own frontend."""
+        import os
+        frontend = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+        if not url.startswith(frontend):
+            raise ValueError(f"Redirect URL must start with {frontend}")
+        return url
+
 
 class CheckoutResponse(BaseModel):
     """Stripe checkout session URL."""
@@ -585,8 +616,19 @@ class TerrainFeature(BaseModel):
     meaning: str
 
 
+class ClusterPosition(BaseModel):
+    """Cluster position and metadata for landscape rendering."""
+    id: str
+    label: str
+    x: float
+    y: float
+    post_count: int
+    ecosystem_state: str
+
+
 class EcosystemVisualsResponse(BaseModel):
     """Full ecosystem visual metadata payload."""
+    clusters: list[ClusterPosition] = []
     rivers: list[RiverData]
     grass: dict[str, GrassData]
     weather: dict[str, WeatherData]

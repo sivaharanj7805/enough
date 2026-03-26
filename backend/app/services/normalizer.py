@@ -37,9 +37,10 @@ def _strip_site_name_from_title(title: str) -> str:
     parts = _TITLE_SEPARATORS.split(title)
     if len(parts) >= 2:
         last = parts[-1].strip()
-        # If last segment is short (≤4 words), it's likely a site name
+        # If last segment is short (<=4 words), it's likely a site name
+        # Take everything except the last part (which is usually the site name)
         if len(last.split()) <= 4:
-            return _TITLE_SEPARATORS.split(title, maxsplit=len(parts) - 2)[0].strip()
+            title = _TITLE_SEPARATORS.split(title, maxsplit=1)[0].strip()
     return title
 
 
@@ -198,6 +199,7 @@ class NormalizedPost:
     meta_description: str | None = None
     http_status: int | None = None
     language: str | None = None
+    page_type: str = "blog"
 
     def __post_init__(self):
         if not self.word_count and self.body_text:
@@ -269,8 +271,8 @@ async def save_normalized_posts(
                     site_id, url, slug, title, body_text, body_html,
                     publish_date, modified_date, content_hash,
                     cms_categories, cms_tags, word_count,
-                    headings, meta_description, http_status, language
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    headings, meta_description, http_status, language, page_type
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                 ON CONFLICT (site_id, url) DO UPDATE SET
                     title = EXCLUDED.title,
                     body_text = EXCLUDED.body_text,
@@ -284,6 +286,7 @@ async def save_normalized_posts(
                     meta_description = EXCLUDED.meta_description,
                     http_status = EXCLUDED.http_status,
                     language = EXCLUDED.language,
+                    page_type = EXCLUDED.page_type,
                     updated_at = NOW()
                 RETURNING id
                 """,
@@ -294,7 +297,7 @@ async def save_normalized_posts(
                 post.cms_categories, post.cms_tags,
                 post.word_count,
                 headings_json, post.meta_description, post.http_status,
-                post.language,
+                post.language, post.page_type,
             )
 
             post_id = row["id"]
@@ -332,7 +335,13 @@ async def save_normalized_posts(
 
 
 async def _resolve_link_targets(db: asyncpg.Connection, site_id: UUID) -> None:
-    """Match internal_links.target_url to posts.url and set target_post_id."""
+    """Match internal_links.target_url to posts.url and set target_post_id.
+
+    Uses exact match first, then falls back to normalized match
+    (strip trailing slashes, www prefix, query params) to avoid
+    false orphan detection from minor URL differences.
+    """
+    # Pass 1: exact match
     await db.execute(
         """
         UPDATE internal_links il
@@ -342,6 +351,22 @@ async def _resolve_link_targets(db: asyncpg.Connection, site_id: UUID) -> None:
           AND p.site_id = $1
           AND il.target_url = p.url
           AND il.target_post_id IS NULL
+        """,
+        site_id,
+    )
+    # Pass 2: normalized match — strip trailing slash, www, query string, fragment
+    await db.execute(
+        """
+        UPDATE internal_links il
+        SET target_post_id = p.id
+        FROM posts p
+        WHERE il.site_id = $1
+          AND p.site_id = $1
+          AND il.target_post_id IS NULL
+          AND RTRIM(REPLACE(REPLACE(SPLIT_PART(SPLIT_PART(il.target_url, '?', 1), '#', 1),
+                  'https://www.', 'https://'), 'http://www.', 'http://'), '/')
+            = RTRIM(REPLACE(REPLACE(SPLIT_PART(SPLIT_PART(p.url, '?', 1), '#', 1),
+                  'https://www.', 'https://'), 'http://www.', 'http://'), '/')
         """,
         site_id,
     )

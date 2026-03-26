@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 def safe_async(default_return=None):
     """Decorator that wraps async functions with try/except.
-    
+
     On exception, logs the error and returns default_return.
     Use for non-critical services where a failure shouldn't crash the pipeline.
     """

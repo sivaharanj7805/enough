@@ -2,15 +2,44 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * Protect /dashboard/* routes from unauthenticated access.
- * Reads the Supabase session token from localStorage is not possible in middleware
- * (no DOM access), so we check for the access_token cookie set by Supabase Auth.
+ * Protect authenticated routes from unauthenticated access at the edge.
+ *
+ * The (dashboard) route group is a Next.js grouping mechanism — its routes
+ * resolve to /today, /landscape, /clusters, etc., NOT /dashboard/*.
+ * This matcher must cover all actual route paths.
  */
+
+const PROTECTED_PREFIXES = [
+  '/today',
+  '/landscape',
+  '/dashboard',
+  '/clusters',
+  '/posts',
+  '/actions',
+  '/issues',
+  '/cannibalization',
+  '/consolidation',
+  '/oracle',
+  '/overview',
+  '/billing',
+  '/impact',
+  '/explore',
+  '/briefs',
+  '/calendar',
+  '/competitors',
+  '/settings',
+  '/profile',
+  '/wrapped',
+];
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Only protect dashboard routes
-  if (!pathname.startsWith('/dashboard') && !pathname.startsWith('/(dashboard)')) {
+  const isProtected = PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+  if (!isProtected) {
     return NextResponse.next();
   }
 
@@ -34,10 +63,25 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths starting with /dashboard
-     * Excludes: _next/static, _next/image, favicon.ico, api routes
-     */
+    '/today/:path*',
+    '/landscape/:path*',
     '/dashboard/:path*',
+    '/clusters/:path*',
+    '/posts/:path*',
+    '/actions/:path*',
+    '/issues/:path*',
+    '/cannibalization/:path*',
+    '/consolidation/:path*',
+    '/oracle/:path*',
+    '/overview/:path*',
+    '/billing/:path*',
+    '/impact/:path*',
+    '/explore/:path*',
+    '/briefs/:path*',
+    '/calendar/:path*',
+    '/competitors/:path*',
+    '/settings/:path*',
+    '/profile/:path*',
+    '/wrapped/:path*',
   ],
 };

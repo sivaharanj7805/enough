@@ -20,7 +20,7 @@ Problem types:
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import asyncpg
@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 class ProblemDetector:
     """Detect content problems across a site."""
 
-    _first_detected_map: dict[tuple, datetime] = {}
+    def __init__(self) -> None:
+        self._first_detected_map: dict[tuple, datetime] = {}
 
     def _get_first_detected(self, post_id, problem_type: str):
         """Look up preserved first_detected_at for a continuing problem."""
@@ -164,6 +165,7 @@ class ProblemDetector:
 
         from app.services.ai_citability import generate_ai_problems
         count = 0
+        problems_batch: list[tuple[UUID, UUID, str, str, dict]] = []
         for row in rows:
             signals = row["ai_signals"] or {}
             if isinstance(signals, str):
@@ -180,13 +182,14 @@ class ProblemDetector:
                 signals=signals,
             )
             for p in problems:
-                await self._insert_problem(
-                    db, p["post_id"], site_id,
+                problems_batch.append((
+                    p["post_id"], site_id,
                     p["problem_type"], p["severity"],
                     p.get("metadata", {}),
-                )
+                ))
                 count += 1
 
+        await self._insert_problems_batch(db, problems_batch)
         logger.info("AI readiness problems: %d issues detected for site %s", count, site_id)
         return count
 
@@ -205,7 +208,7 @@ class ProblemDetector:
         """, site_id)
 
         from itertools import groupby
-        for post_id, post_probs in groupby(problems, key=lambda x: x["post_id"]):
+        for _post_id, post_probs in groupby(problems, key=lambda x: x["post_id"]):
             post_probs = list(post_probs)
             prob_types = {p["problem_type"] for p in post_probs}
             for group in RELATED_GROUPS:
@@ -240,7 +243,7 @@ class ProblemDetector:
         - moderate: >30% drop OR (was top 5, now 10+)
         - mild: 12+ months old on page 2+
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ninety_days_ago = now - timedelta(days=90)
         one_eighty_days_ago = now - timedelta(days=180)
         twelve_months_ago = now - timedelta(days=365)
@@ -322,7 +325,7 @@ class ProblemDetector:
 
         for r in stale_rows:
             last_update = r["modified_date"] or r["publish_date"]
-            months_old = (now - last_update.replace(tzinfo=timezone.utc)).days / 30.44
+            months_old = (now - last_update.replace(tzinfo=UTC)).days / 30.44
 
             await db.execute(
                 """
@@ -406,7 +409,7 @@ class ProblemDetector:
         3. Time-sensitive content (has year in title) older than 12 months
         """
         import re
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         eighteen_months_ago = now - timedelta(days=548)
         found = 0
 
@@ -417,10 +420,11 @@ class ProblemDetector:
             WHERE p.site_id = $1
             AND COALESCE(p.modified_date, p.publish_date) < $2
             AND p.id NOT IN (
-                SELECT post_id FROM content_problems WHERE problem_type = 'content_decay' AND site_id = $1
+                SELECT post_id FROM content_problems WHERE problem_type LIKE 'decay_%' AND site_id = $1
             )
         """, site_id, eighteen_months_ago)
 
+        problems_batch: list[tuple[UUID, UUID, str, str, dict]] = []
         for post in stale_posts:
             title = post["title"] or ""
             # Check for outdated year references
@@ -428,21 +432,22 @@ class ProblemDetector:
             if year_match:
                 ref_year = int("20" + year_match.group(1))
                 if ref_year < now.year - 1:
-                    await self._insert_problem(
-                        db, post["id"], site_id, "content_decay", "high",
+                    problems_batch.append((
+                        post["id"], site_id, "decay_severe", "high",
                         {"issue": f"Outdated year reference ({ref_year}) in title", "proxy": True},
-                    )
+                    ))
                     found += 1
                     continue
 
             # Very old posts (18+ months) that are time-sensitive
             if any(kw in title.lower() for kw in ["best ", "top ", "review", "pricing", "compare", "vs "]):
-                await self._insert_problem(
-                    db, post["id"], site_id, "content_decay", "medium",
+                problems_batch.append((
+                    post["id"], site_id, "decay_moderate", "medium",
                     {"issue": "Time-sensitive content not updated in 18+ months", "proxy": True},
-                )
+                ))
                 found += 1
 
+        await self._insert_problems_batch(db, problems_batch)
         return found
 
     async def _detect_thin_content(
@@ -456,7 +461,7 @@ class ProblemDetector:
         3. High bounce rate (>80%) + low time on page (<30s) (needs GA4)
         """
         found = 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ninety_days_ago = now - timedelta(days=90)
 
         # ── 1. Absolute thin content (content-type-aware thresholds) ──
@@ -500,6 +505,7 @@ class ProblemDetector:
                 try:
                     headings_list = _json.loads(headings_json)
                 except Exception:
+                    logger.warning("Failed to parse headings JSON for post")
                     headings_list = []
             else:
                 headings_list = headings_json or []
@@ -632,13 +638,14 @@ class ProblemDetector:
             site_id,
         )
 
+        problems_batch: list[tuple[UUID, UUID, str, str, dict]] = []
         for r in posts:
             # 1. Missing meta description
             if not r["meta_description"] or len(r["meta_description"].strip()) < 10:
-                await self._insert_problem(
-                    db, r["id"], site_id, "seo_missing_meta", "medium",
+                problems_batch.append((
+                    r["id"], site_id, "seo_missing_meta", "medium",
                     {"issue": "No meta description or too short"},
-                )
+                ))
                 found += 1
 
             # 2. Title length
@@ -650,13 +657,13 @@ class ProblemDetector:
                 # >70 chars: will be cut off in SERPs (Google shows ~55-60)
                 # 60-70 range is intentional for descriptive SaaS titles
                 severity = "medium" if title_len < 20 else "low"
-                await self._insert_problem(
-                    db, r["id"], site_id, "seo_title_length", severity,
+                problems_batch.append((
+                    r["id"], site_id, "seo_title_length", severity,
                     {
                         "issue": f"Title is {title_len} chars (ideal: 30-70)",
                         "title_length": title_len,
                     },
-                )
+                ))
                 found += 1
 
             # 3. No H2+ headings
@@ -676,18 +683,18 @@ class ProblemDetector:
                 )
 
             if not has_h2_plus:
-                await self._insert_problem(
-                    db, r["id"], site_id, "seo_no_headings", "medium",
+                problems_batch.append((
+                    r["id"], site_id, "seo_no_headings", "medium",
                     {"issue": "No H2 or H3 headings found"},
-                )
+                ))
                 found += 1
 
             # 4. No internal links
             if r["link_count"] == 0:
-                await self._insert_problem(
-                    db, r["id"], site_id, "seo_no_internal_links", "high",
+                problems_batch.append((
+                    r["id"], site_id, "seo_no_internal_links", "high",
                     {"issue": "No internal links to or from this post"},
-                )
+                ))
                 found += 1
 
             # 5. No images — check multiple image patterns (JS-rendered, lazy-loaded, etc.)
@@ -701,12 +708,13 @@ class ProblemDetector:
                 'loading="lazy"', "loading='lazy'",
             ])
             if not has_images:
-                await self._insert_problem(
-                    db, r["id"], site_id, "seo_no_images", "low",
+                problems_batch.append((
+                    r["id"], site_id, "seo_no_images", "low",
                     {"issue": "No images found in content"},
-                )
+                ))
                 found += 1
 
+        await self._insert_problems_batch(db, problems_batch)
         return found
 
     # ═══════════════════════════════════════════════
@@ -733,11 +741,12 @@ class ProblemDetector:
             site_id,
         )
 
-        for r in orphans:
-            await self._insert_problem(
-                db, r["id"], site_id, "orphan", "high",
-                {"issue": "No inbound internal links — this post is an orphan"},
-            )
+        problems_batch = [
+            (r["id"], site_id, "orphan", "high",
+             {"issue": "No inbound internal links — this post is an orphan"})
+            for r in orphans
+        ]
+        await self._insert_problems_batch(db, problems_batch)
 
         return len(orphans)
 
@@ -785,21 +794,22 @@ class ProblemDetector:
             site_id, threshold,
         )
 
-        for r in hard_to_read:
-            severity = "high" if r["readability_score"] < 30 else "medium"
-            await self._insert_problem(
-                db, r["id"], site_id, "readability_too_complex", severity,
-                {
-                    "readability_score": round(r["readability_score"], 1),
-                    "grade_level": round(r["grade_level"], 1),
-                    "issue": (
-                        f"Flesch Reading Ease score is {round(r['readability_score'], 1)} "
-                        f"(grade level {round(r['grade_level'], 1)}). "
-                        f"63% of top-ranking content scores 60-80. "
-                        f"Simplify sentences and break up paragraphs."
-                    ),
-                },
-            )
+        problems_batch = [
+            (r["id"], site_id, "readability_too_complex",
+             "high" if r["readability_score"] < 30 else "medium",
+             {
+                 "readability_score": round(r["readability_score"], 1),
+                 "grade_level": round(r["grade_level"], 1),
+                 "issue": (
+                     f"Flesch Reading Ease score is {round(r['readability_score'], 1)} "
+                     f"(grade level {round(r['grade_level'], 1)}). "
+                     f"63% of top-ranking content scores 60-80. "
+                     f"Simplify sentences and break up paragraphs."
+                 ),
+             })
+            for r in hard_to_read
+        ]
+        await self._insert_problems_batch(db, problems_batch)
 
         return len(hard_to_read)
 
@@ -897,4 +907,35 @@ class ProblemDetector:
             """,
             post_id, site_id, problem_type, severity, json.dumps(details),
             self._get_first_detected(post_id, problem_type),
+        )
+
+    async def _insert_problems_batch(
+        self,
+        db: asyncpg.Connection,
+        problems: list[tuple[UUID, UUID, str, str, dict]],
+    ) -> None:
+        """Batch insert/update content problems.
+
+        Each tuple in problems is (post_id, site_id, problem_type, severity, details).
+        Automatically adds severity_score to each details dict.
+        """
+        if not problems:
+            return
+        batch_data = []
+        for post_id, site_id, problem_type, severity, details in problems:
+            type_weight = ProblemDetector._PROBLEM_WEIGHTS.get(problem_type, 0.5)
+            details["severity_score"] = round(type_weight * 100)
+            batch_data.append((
+                post_id, site_id, problem_type, severity, json.dumps(details),
+                self._get_first_detected(post_id, problem_type),
+            ))
+        await db.executemany(
+            """
+            INSERT INTO content_problems (post_id, site_id, problem_type, severity, details, first_detected_at)
+            VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
+            ON CONFLICT (post_id, problem_type) DO UPDATE SET
+                severity = $4, details = $5, detected_at = NOW(),
+                first_detected_at = COALESCE(content_problems.first_detected_at, EXCLUDED.first_detected_at)
+            """,
+            batch_data,
         )

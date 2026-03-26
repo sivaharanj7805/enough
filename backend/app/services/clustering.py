@@ -42,7 +42,7 @@ class TopicClusterer:
     def __init__(self) -> None:
         settings = get_settings()
         self.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.rate_limiter = RateLimiter(requests_per_second=3)
+        self.rate_limiter = RateLimiter(requests_per_second=10)
 
     async def cluster_site(self, db: asyncpg.Connection, site_id: UUID, skip_labeling: bool = False) -> int:
         """Run full clustering pipeline for a site.
@@ -94,6 +94,7 @@ class TopicClusterer:
             logger.info("< 5 posts — creating single cluster for site %s", site_id)
             labels = np.zeros(n_posts, dtype=int)
             positions_2d = self._simple_2d_layout(n_posts)
+            self._cluster_silhouettes = {}
         else:
             # Offload CPU-bound ML to thread
             labels, positions_2d = await asyncio.to_thread(
@@ -103,14 +104,15 @@ class TopicClusterer:
         # 3. Clear old data (idempotent)
         await self._clear_old_clusters(db, site_id)
 
-        # 4. Store 2D positions on posts
-        for idx, post_id in enumerate(post_ids):
-            await db.execute(
-                "UPDATE posts SET x_pos = $1, y_pos = $2 WHERE id = $3",
-                float(positions_2d[idx, 0]),
-                float(positions_2d[idx, 1]),
-                post_id,
-            )
+        # 4. Store 2D positions on posts (batch update)
+        batch_data = [
+            (float(positions_2d[idx, 0]), float(positions_2d[idx, 1]), post_id)
+            for idx, post_id in enumerate(post_ids)
+        ]
+        await db.executemany(
+            "UPDATE posts SET x_pos = $1, y_pos = $2 WHERE id = $3",
+            batch_data,
+        )
 
         # 5. Prepare cluster groups
         cluster_groups: dict[int, list[int]] = {}
@@ -138,21 +140,23 @@ class TopicClusterer:
                     member_titles, member_urls,
                 )
 
+            # Look up per-cluster silhouette score (default None for single-cluster results)
+            cluster_sil = self._cluster_silhouettes.get(cluster_label_id)
+
             cluster_id = await db.fetchval(
                 """
-                INSERT INTO clusters (site_id, label, description, post_count)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO clusters (site_id, label, description, post_count, silhouette_score)
+                VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
                 """,
-                site_id, label, description, len(member_post_ids),
+                site_id, label, description, len(member_post_ids), cluster_sil,
             )
 
-            # Assign posts
-            for pid in member_post_ids:
-                await db.execute(
-                    "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2)",
-                    pid, cluster_id,
-                )
+            # Assign posts (batch insert)
+            await db.executemany(
+                "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2) ON CONFLICT (post_id, cluster_id) DO NOTHING",
+                [(pid, cluster_id) for pid in member_post_ids],
+            )
 
             cluster_count += 1
 
@@ -170,16 +174,15 @@ class TopicClusterer:
                 "Posts that don't fit neatly into any topic group. May be unique topics or need more related content.",
                 len(unclustered_post_ids),
             )
-            for pid in unclustered_post_ids:
-                await db.execute(
-                    "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2)",
-                    pid, cluster_id,
-                )
+            await db.executemany(
+                "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2) ON CONFLICT (post_id, cluster_id) DO NOTHING",
+                [(pid, cluster_id) for pid in unclustered_post_ids],
+            )
             cluster_count += 1
 
         # 8. Recursive sub-clustering for mega-clusters
-        MAX_CLUSTER_SIZE = 50
-        for cluster_label_id, member_indices in cluster_groups.items():
+        MAX_CLUSTER_SIZE = 25
+        for _cluster_label_id, member_indices in cluster_groups.items():
             if len(member_indices) > MAX_CLUSTER_SIZE:
                 member_post_ids = [post_ids[i] for i in member_indices]
                 member_embeddings = embeddings[member_indices]
@@ -219,11 +222,11 @@ class TopicClusterer:
 
         Returns (cluster_labels, positions_2d).
         """
-        import umap
         import hdbscan
+        import umap
 
         # ── Step 1: UMAP reduction for clustering (1536 → 15 dims) ──
-        n_components = min(UMAP_N_COMPONENTS_CLUSTER, n_posts - 2)
+        n_components = max(2, min(UMAP_N_COMPONENTS_CLUSTER, n_posts - 2))
         n_neighbors = min(15, n_posts - 1)
 
         # Adaptive min_dist: compute mean pairwise cosine similarity on sample
@@ -262,7 +265,7 @@ class TopicClusterer:
         )
         reduced = reducer_cluster.fit_transform(embeddings)
 
-        # ── Step 2: HDBSCAN clustering ──
+        # ── Step 2: HDBSCAN clustering with quality-gate retry ──
         # Adaptive min_cluster_size — capped to avoid over-merging on large sites.
         # Rule: start at n_posts//20 but hard-cap at 20 so HDBSCAN can still find
         # meaningful sub-clusters on 1000+ post corpora.
@@ -284,41 +287,56 @@ class TopicClusterer:
             min_cluster_size = 20
             min_samples = 5
 
-        logger.info(
-            "HDBSCAN: min_cluster_size=%d, min_samples=%d",
-            min_cluster_size, min_samples,
-        )
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=min_cluster_size,
-            min_samples=min_samples,
-            metric="euclidean",
-            cluster_selection_method="eom",
-        )
-        labels = clusterer.fit_predict(reduced)
+        # Retry loop: if silhouette < 0.1, bump min_cluster_size and retry
+        retry_count = 0
+        while True:
+            logger.info(
+                "HDBSCAN: min_cluster_size=%d, min_samples=%d (attempt %d)",
+                min_cluster_size, min_samples, retry_count + 1,
+            )
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                metric="euclidean",
+                cluster_selection_method="eom",
+            )
+            labels = clusterer.fit_predict(reduced)
 
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        n_noise = int(np.sum(labels == -1))
-        logger.info("HDBSCAN found %d clusters, %d noise points", n_clusters, n_noise)
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            n_noise = int(np.sum(labels == -1))
+            logger.info("HDBSCAN found %d clusters, %d noise points", n_clusters, n_noise)
 
-        # Compute silhouette scores for quality assessment
-        if n_clusters >= 2:
-            from sklearn.metrics import silhouette_score, silhouette_samples
-            # Only score non-noise points
-            mask = labels != -1
-            if mask.sum() >= 2:
-                avg_silhouette = float(silhouette_score(reduced[mask], labels[mask]))
-                per_sample = silhouette_samples(reduced[mask], labels[mask])
-                logger.info("Cluster quality — avg silhouette: %.3f", avg_silhouette)
-                # Store per-cluster quality as attribute for later use
-                self._cluster_silhouettes = {}
-                for cl in set(labels[mask]):
-                    cl_scores = per_sample[labels[mask] == cl]
-                    self._cluster_silhouettes[int(cl)] = float(np.mean(cl_scores))
-                    logger.info("  Cluster %d: silhouette %.3f", cl, self._cluster_silhouettes[int(cl)])
+            # Compute silhouette scores for quality assessment
+            avg_silhouette = 0.0
+            if n_clusters >= 2:
+                from sklearn.metrics import silhouette_samples, silhouette_score
+                # Only score non-noise points
+                mask = labels != -1
+                if mask.sum() >= 2:
+                    avg_silhouette = float(silhouette_score(reduced[mask], labels[mask]))
+                    per_sample = silhouette_samples(reduced[mask], labels[mask])
+                    logger.info("Cluster quality — avg silhouette: %.3f", avg_silhouette)
+                    # Store per-cluster quality as attribute for later use
+                    self._cluster_silhouettes = {}
+                    for cl in set(labels[mask]):
+                        cl_scores = per_sample[labels[mask] == cl]
+                        self._cluster_silhouettes[int(cl)] = float(np.mean(cl_scores))
+                        logger.info("  Cluster %d: silhouette %.3f", cl, self._cluster_silhouettes[int(cl)])
+                else:
+                    self._cluster_silhouettes = {}
             else:
                 self._cluster_silhouettes = {}
-        else:
-            self._cluster_silhouettes = {}
+
+            # Quality gate: retry with larger min_cluster_size if silhouette is poor
+            if avg_silhouette < 0.1 and retry_count < 2:
+                retry_count += 1
+                min_cluster_size += 1
+                logger.warning(
+                    "Silhouette %.3f below 0.1 threshold — retrying with min_cluster_size=%d (attempt %d)",
+                    avg_silhouette, min_cluster_size, retry_count + 1,
+                )
+                continue
+            break
 
         # ── Step 2b: Assign noise posts to nearest cluster ──
         if n_noise > 0 and n_clusters > 0:
@@ -365,12 +383,12 @@ class TopicClusterer:
         urls: list[str],
         depth: int = 0,
         max_depth: int = 3,
-        max_cluster_size: int = 50,
+        max_cluster_size: int = 25,
         skip_labeling: bool = False,
     ) -> int:
         """Recursively sub-cluster a mega-cluster until all children < max_cluster_size."""
-        import umap
         import hdbscan
+        import umap
 
         if len(post_ids) <= max_cluster_size or depth >= max_depth:
             return 0
@@ -435,12 +453,11 @@ class TopicClusterer:
                 site_id, label, description, len(sub_post_ids), parent_cluster_id,
             )
 
-            # Assign posts to sub-cluster (keep them in parent too)
-            for pid in sub_post_ids:
-                await db.execute(
-                    "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                    pid, child_id,
-                )
+            # Assign posts to sub-cluster
+            await db.executemany(
+                "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2) ON CONFLICT (post_id, cluster_id) DO NOTHING",
+                [(pid, child_id) for pid in sub_post_ids],
+            )
 
             sub_count += 1
 
@@ -453,6 +470,60 @@ class TopicClusterer:
                     skip_labeling=skip_labeling,
                 )
                 sub_count += deeper
+
+        # Assign noise posts (label == -1) to nearest child cluster by centroid distance
+        noise_indices = [i for i, l in enumerate(labels) if l == -1]
+        if noise_indices and unique_labels:
+            # Compute centroids for each child cluster
+            child_centroids = {}
+            child_ids_by_label = {}
+            for sub_label in unique_labels:
+                indices = [i for i, l in enumerate(labels) if l == sub_label]
+                child_centroids[sub_label] = embeddings[indices].mean(axis=0)
+                # Find the child cluster ID (was just created above)
+                child_post_id = post_ids[indices[0]]
+                cid = await db.fetchval(
+                    """SELECT cluster_id FROM post_clusters
+                       WHERE post_id = $1 AND cluster_id != $2
+                       ORDER BY cluster_id DESC LIMIT 1""",
+                    child_post_id, parent_cluster_id,
+                )
+                if cid:
+                    child_ids_by_label[sub_label] = cid
+
+            for idx in noise_indices:
+                # Find nearest child centroid
+                post_emb = embeddings[idx]
+                best_label = min(
+                    unique_labels,
+                    key=lambda sl: float(np.linalg.norm(post_emb - child_centroids[sl])),
+                )
+                cid = child_ids_by_label.get(best_label)
+                if cid:
+                    await db.execute(
+                        "INSERT INTO post_clusters (post_id, cluster_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                        post_ids[idx], cid,
+                    )
+                    await db.execute(
+                        "UPDATE clusters SET post_count = post_count + 1 WHERE id = $1", cid,
+                    )
+
+            logger.info("Assigned %d noise posts to nearest child clusters", len(noise_indices))
+
+        # Remove ALL posts from parent — they now belong to leaf clusters only
+        await db.execute(
+            "DELETE FROM post_clusters WHERE cluster_id = $1",
+            parent_cluster_id,
+        )
+        # Update parent post_count to 0 so downstream queries don't double-count
+        await db.execute(
+            "UPDATE clusters SET post_count = 0 WHERE id = $1",
+            parent_cluster_id,
+        )
+        await db.execute(
+            "UPDATE clusters SET post_count = 0 WHERE id = $1",
+            parent_cluster_id,
+        )
 
         return sub_count
 

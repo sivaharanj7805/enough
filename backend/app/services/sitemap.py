@@ -8,15 +8,16 @@ Supports XML sitemaps, sitemap index, and RSS/Atom fallback.
 import asyncio
 import logging
 import re
-from typing import Callable
-from urllib.parse import urlparse, urljoin
+from collections.abc import Callable
+from datetime import UTC
+from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree
 
 import httpx
 import trafilatura
 from bs4 import BeautifulSoup
 
-from app.services.normalizer import NormalizedPost, InternalLink, compute_content_hash
+from app.services.normalizer import InternalLink, NormalizedPost, compute_content_hash
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -225,7 +226,6 @@ class SitemapCrawler:
                 if resp.status_code != 200:
                     continue
 
-                content = resp.text
                 try:
                     root = ElementTree.fromstring(resp.content)
                 except ElementTree.ParseError:
@@ -311,6 +311,18 @@ class SitemapCrawler:
 
         # Use trafilatura for main content extraction
         body_text = trafilatura.extract(html) or ""
+
+        # SPA fallback: if trafilatura got empty but page has JS framework markers, try Playwright
+        if (not body_text or len(body_text.strip()) < 50) and html:
+            js_markers = ['id="root"', 'id="app"', 'id="__next"', 'data-reactroot', '_nuxt', 'id="__nuxt"']
+            if any(marker in html for marker in js_markers):
+                rendered = await self._render_with_playwright(url)
+                if rendered:
+                    body_text = trafilatura.extract(rendered) or ""
+                    if body_text and len(body_text.strip()) >= 50:
+                        html = rendered
+                        logger.info("Playwright fallback succeeded for %s (%d chars)", url, len(body_text))
+
         if not body_text or len(body_text.strip()) < 50:
             # Too short — probably not a content page
             return None
@@ -350,10 +362,10 @@ class SitemapCrawler:
         modified_date = None
 
         if metadata and metadata.date:
-            from datetime import datetime, timezone
+            from datetime import datetime
             try:
                 publish_date = datetime.fromisoformat(str(metadata.date)).replace(
-                    tzinfo=timezone.utc
+                    tzinfo=UTC
                 )
             except (ValueError, TypeError):
                 pass
@@ -369,7 +381,7 @@ class SitemapCrawler:
                 language = str(hreflang["hreflang"]).split("-")[0].lower()[:10]
 
         # Extract modified_date from meta tags (trafilatura doesn't always get it)
-        from datetime import datetime, timezone
+        from datetime import datetime
         modified_meta = (
             soup.find("meta", attrs={"property": "article:modified_time"})
             or soup.find("meta", attrs={"property": "og:updated_time"})
@@ -380,7 +392,7 @@ class SitemapCrawler:
             try:
                 modified_date = datetime.fromisoformat(
                     modified_meta["content"].replace("Z", "+00:00")
-                ).replace(tzinfo=timezone.utc)
+                ).replace(tzinfo=UTC)
             except (ValueError, TypeError):
                 pass
 
@@ -395,7 +407,7 @@ class SitemapCrawler:
                 try:
                     publish_date = datetime.fromisoformat(
                         pub_meta["content"].replace("Z", "+00:00")
-                    ).replace(tzinfo=timezone.utc)
+                    ).replace(tzinfo=UTC)
                 except (ValueError, TypeError):
                     pass
 
@@ -406,7 +418,7 @@ class SitemapCrawler:
                 try:
                     dt = datetime.fromisoformat(
                         tt["datetime"].replace("Z", "+00:00")
-                    ).replace(tzinfo=timezone.utc)
+                    ).replace(tzinfo=UTC)
                     classes = tt.get("class", [])
                     if isinstance(classes, str):
                         classes = [classes]
@@ -419,6 +431,10 @@ class SitemapCrawler:
                         publish_date = dt  # First time tag as fallback
                 except (ValueError, TypeError):
                     pass
+
+        # Classify page type from URL + HTML
+        from app.services.page_type_classifier import classify_page_type
+        page_type = classify_page_type(url, body_html, headings)
 
         return NormalizedPost(
             url=url,
@@ -437,7 +453,30 @@ class SitemapCrawler:
             meta_description=meta_description,
             http_status=http_status,
             language=language,
+            page_type=page_type,
         )
+
+    _playwright_sem = asyncio.Semaphore(3)
+
+    async def _render_with_playwright(self, url: str) -> str | None:
+        """Render a JS-heavy page with headless Chromium. Returns HTML or None."""
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return None  # Playwright not installed — skip gracefully
+
+        async with self._playwright_sem:
+            try:
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    page = await browser.new_page()
+                    await page.goto(url, wait_until="networkidle", timeout=15000)
+                    html = await page.content()
+                    await browser.close()
+                    return html
+            except Exception as e:
+                logger.debug("Playwright render failed for %s: %s", url, e)
+                return None
 
     @staticmethod
     def _extract_headings(soup: BeautifulSoup) -> list[dict[str, str]]:

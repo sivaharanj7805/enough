@@ -22,12 +22,11 @@ The "stronger post" is determined by composite health score + traffic.
 """
 
 import logging
+import re
 from itertools import combinations
 from uuid import UUID
 
 import asyncpg
-
-from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +39,369 @@ logger = logging.getLogger(__name__)
 # These defaults should be tuned per-site after initial embedding generation.
 # Run: SELECT 1 - (a.embedding <=> b.embedding) FROM post_embeddings a, b
 # on known-cannibalized pairs to calibrate.
-COSINE_THRESHOLD_FLAG = 0.40    # Flag for review (was 0.85 — too high for v3-small)
-COSINE_THRESHOLD_HIGH = 0.50    # High confidence cannibalization
-COSINE_THRESHOLD_CRITICAL = 0.60  # Near-duplicate content
+COSINE_THRESHOLD_FLAG = 0.45    # Flag for review (raised from 0.40 to reduce false positives on niche sites)
+COSINE_THRESHOLD_HIGH = 0.55    # High confidence cannibalization
+COSINE_THRESHOLD_CRITICAL = 0.65  # Near-duplicate content
 
 # Min shared queries for query-only cannibalization
 MIN_SHARED_QUERIES = 3  # Require 3+ shared queries — single shared query is too weak a signal
+
+
+# ── Blended cannibalization scoring ──────────────────────────────────────────
+#
+# Cannibalization = Google doesn't know which page to show for a given query.
+# The ground truth test: "Would a human typing a single search query be
+# satisfied by either post?"
+#
+# Without GSC data, we approximate this by checking whether two posts target
+# the same inferred keyword (from URL slug + title), serve the same search
+# intent, and cover the same subtopics (from H2 headings).
+#
+# The blended score replaces raw cosine similarity as the primary signal.
+# Cosine captures topical similarity but NOT keyword competition.
+# Two SEO tool reviews are topically similar but never compete for the
+# same query if they review different products.
+
+_SLUG_STOPS = frozenset({
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+    "for", "of", "with", "by", "is", "are", "how", "what", "why",
+    "your", "you", "that", "this", "from", "it", "its", "can",
+    "www", "com", "html", "php", "blog", "post", "page",
+})
+
+# Intent modifier groups — posts only cannibalize when they share both the
+# same entity AND the same intent group
+_INTENT_GROUPS = {
+    "learning": {"guide", "how", "tutorial", "strategies", "tips", "techniques",
+                 "ways", "steps", "explained", "introduction", "basics",
+                 "beginners", "learn", "definitive", "complete", "ultimate",
+                 "simple", "comprehensive", "checklist", "course"},
+    "browsing": {"examples", "templates", "inspiration", "ideas", "samples",
+                 "list", "collection", "roundup"},
+    "evaluation": {"review", "comparison", "versus", "alternative", "alternatives",
+                   "pricing", "pros", "cons", "worth"},
+    "research": {"statistics", "stats", "report", "study", "data", "survey",
+                 "analyzed", "analysis", "research", "findings", "benchmark",
+                 "trends", "state"},
+    "shopping": {"tools", "software", "resources", "platforms", "services",
+                 "products", "apps", "programs", "deals"},
+}
+
+# Review template H2 keywords
+_REVIEW_H2S = frozenset({
+    "features", "pricing", "pros", "cons", "verdict", "alternatives",
+    "overview", "review", "summary", "plans", "integrations",
+    "key features", "who is it for", "bottom line",
+    "free trial", "customer support", "ease of use",
+})
+
+# Common title suffixes to strip when extracting the core keyword
+_TITLE_SUFFIXES = re.compile(
+    r"\s*[-–:|]\s*.+$"  # Strip "Title - Site Name" / "Title: Subtitle"
+)
+_TITLE_FORMAT_WORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+    "for", "of", "with", "by", "is", "are", "how", "what", "why",
+    "your", "you", "that", "this", "from", "it", "its", "can",
+    "get", "best", "top", "new", "most", "more", "here", "our",
+    "guide", "complete", "definitive", "ultimate", "simple", "step",
+})
+
+
+def _heading_text(h) -> str:
+    """Extract text from a heading (handles both dict and string formats)."""
+    if isinstance(h, dict):
+        return (h.get("text") or "").lower().strip()
+    return str(h).lower().strip() if h else ""
+
+
+# Format words in URL slugs that indicate article type, not topic
+_SLUG_FORMAT_WORDS = frozenset({
+    "review", "guide", "tutorial", "tips", "strategies", "examples",
+    "comparison", "alternative", "alternatives", "report", "study",
+    "statistics", "stats", "tools", "best", "free", "hub",
+})
+
+
+def _extract_slug_core(url: str) -> set[str]:
+    """Extract core topic keywords from URL slug, stripping format words.
+
+    /serpstat-review → {"serpstat"}
+    /link-building-strategies → {"link", "building"}
+    /ecommerce-website-examples → {"ecommerce", "website"}
+    """
+    from urllib.parse import urlparse
+    path = urlparse(url).path.strip("/")
+    slug = path.split("/")[-1] if "/" in path else path
+    words = set(re.findall(r"[a-z]{3,}", slug.lower()))
+    return words - _SLUG_STOPS - _SLUG_FORMAT_WORDS
+
+
+# Format markers in titles — strip these to extract the topic entity.
+# "SEO Copywriting: The Definitive Guide" → strip ": The Definitive Guide" → "seo copywriting"
+_TITLE_FORMAT_MARKERS = re.compile(
+    r"(?:"
+    r":\s*(?:the|a|an)?\s*(?:definitive|complete|comprehensive|ultimate|essential|practical)\s+guide"
+    r"|:\s*(?:a\s+)?step[- ]by[- ]step\s+guide"
+    r"|:\s*(?:a\s+)?beginner'?s?\s+guide"
+    r"|:\s*(?:a\s+)?comprehensive\s+checklist"
+    r"|:\s*how\s+to\s+.+"
+    r"|:\s*what\s+(?:is|are)\s+.+"
+    r"|:\s*everything\s+you\s+need\s+to\s+know"
+    r"|:\s*(?:a\s+)?case\s+study"
+    r"|:\s*(?:a\s+)?complete\s+list"
+    r")"
+    r"\s*(?:[-–|].+)?$",  # Also strip trailing " - Site Name"
+    re.IGNORECASE,
+)
+
+# Leading format patterns: "How to X", "What Is X", "N Ways to X"
+_TITLE_LEADING_FORMAT = re.compile(
+    r"^(?:"
+    r"how\s+to\s+"
+    r"|what\s+(?:is|are)\s+"
+    r"|\d+\s+(?:ways?|tips?|steps?|methods?|strategies|techniques|examples?|types?)\s+(?:to|of|for)\s+"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _extract_title_entity(title: str) -> str | None:
+    """Extract the topic entity from a title by stripping format markers.
+
+    Works for any title format, not just reviews:
+    "Serpstat Review: Is This SEO Tool Worth It?" → "serpstat"
+    "SEO Copywriting: The Definitive Guide" → "seo copywriting"
+    "Google RankBrain: The Definitive Guide" → "google rankbrain"
+    "Link Building: A Complete Guide" → "link building"
+    "How to Build Links With Content Marketing" → "build links content marketing"
+    "9 Ecommerce Website Examples" → "ecommerce website"
+    """
+    t = title.lower().strip()
+
+    # Pattern 1: "X Review" / "X vs Y"
+    m = re.match(r"^(.+?)\s+(review|vs\.?|versus|comparison|alternative)", t)
+    if m:
+        entity = m.group(1).strip().rstrip(":").strip()
+        entity = re.sub(r"^(the|a|an)\s+", "", entity)
+        return entity if len(entity) >= 2 else None
+
+    # Pattern 2: "Review of X"
+    m = re.match(r"^review\s*[:of]+\s*(.+?)(\s*[-–|]|$)", t)
+    if m:
+        return m.group(1).strip()
+
+    # Pattern 3: "Topic: The Definitive Guide" / "Topic: A Complete Guide" etc.
+    m = _TITLE_FORMAT_MARKERS.search(t)
+    if m:
+        entity = t[:m.start()].strip().rstrip(":").strip()
+        entity = re.sub(r"^(the|a|an)\s+", "", entity)
+        return entity if len(entity) >= 2 else None
+
+    # Pattern 3b: "X Case Study: ..." — format word BEFORE the colon
+    m = re.match(r"^(.+?)\s+(?:case\s+study|report|checklist|cheat\s+sheet)\s*:", t)
+    if m:
+        entity = m.group(1).strip()
+        entity = re.sub(r"^(the|a|an)\s+", "", entity)
+        return entity if len(entity) >= 2 else None
+
+    # Pattern 4: "How to X..." / "What Is X..." / "N Ways to X..."
+    m = _TITLE_LEADING_FORMAT.match(t)
+    if m:
+        remainder = t[m.end():].strip()
+        # Strip trailing site name / subtitle
+        remainder = re.sub(r"\s*[-–|:].+$", "", remainder)
+        # Strip trailing format words
+        remainder = re.sub(
+            r"\s+(?:in\s+\d{4}|for\s+\d{4}|guide|tutorial|tips|strategies)$",
+            "", remainder,
+        )
+        if len(remainder) >= 3:
+            return remainder
+
+    # Pattern 5: "N Best/Top X..." — extract X
+    m = re.match(r"^\d+\s+(?:best|top|key|essential|proven|incredible|awesome)\s+(.+?)(?:\s+(?:in|for)\s+\d{4})?$", t)
+    if m:
+        entity = m.group(1).strip()
+        # Strip trailing format words
+        entity = re.sub(r"\s+(?:to\s+try|you\s+should|for\s+.+)$", "", entity)
+        return entity if len(entity) >= 3 else None
+
+    return None
+
+
+def _extract_title_keywords(title: str) -> set[str]:
+    """Extract meaningful keywords from a title, stripping format words."""
+    # Remove site name suffix ("Title - Site Name")
+    t = _TITLE_SUFFIXES.sub("", title)
+    words = set(re.findall(r"[a-zA-Z]{3,}", t.lower()))
+    return words - _TITLE_FORMAT_WORDS
+
+
+def _classify_intent_group(title: str, url: str) -> str | None:
+    """Classify a post's search intent group from title + URL.
+
+    Returns one of: learning, browsing, evaluation, research, shopping, or None.
+    """
+    combined = f"{title} {url}".lower()
+    words = set(re.findall(r"[a-z]{3,}", combined))
+    best_group = None
+    best_overlap = 0
+    for group, keywords in _INTENT_GROUPS.items():
+        overlap = len(words & keywords)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_group = group
+    return best_group if best_overlap >= 1 else None
+
+
+def _h2_subtopic_jaccard(headings_a: list, headings_b: list) -> float:
+    """Compute Jaccard similarity on H2 heading content keywords.
+
+    Strips entity names (from title) so that "Serpstat Features" and
+    "Ahrefs Features" don't match on the entity, only on the subtopic word.
+    """
+    def _kw_set(headings: list) -> set[str]:
+        words = set()
+        for h in headings:
+            text = _heading_text(h)
+            if text:
+                words.update(w for w in re.findall(r"[a-z]{3,}", text)
+                             if w not in _TITLE_FORMAT_WORDS)
+        return words
+
+    kw_a = _kw_set(headings_a)
+    kw_b = _kw_set(headings_b)
+    if not kw_a or not kw_b:
+        return 0.0
+    intersection = kw_a & kw_b
+    union = kw_a | kw_b
+    return len(intersection) / len(union) if union else 0.0
+
+
+def _is_review_template(headings: list) -> bool:
+    """Check if headings follow a review article template."""
+    h_keywords = set()
+    for h in headings:
+        text = _heading_text(h)
+        if text:
+            h_keywords.update(re.findall(r"[a-z]+", text))
+    return len(h_keywords & _REVIEW_H2S) >= 3
+
+
+def compute_blended_cannibalization_score(
+    post_a: dict, post_b: dict,
+    headings_a: list, headings_b: list,
+    cosine_sim: float | None,
+) -> tuple[float, str]:
+    """Compute a blended cannibalization score (0.0 to 1.0) and severity tier.
+
+    The blended score answers: "Would a human typing a single search query
+    be satisfied by either post?" — which is the real definition of cannibalization.
+
+    Signals and weights:
+      - Cosine embedding similarity:  25% (broad topical overlap baseline)
+      - URL slug keyword overlap:     25% (same inferred target keyword)
+      - Title entity + intent match:  30% (same topic + same search purpose)
+      - H2 subtopic Jaccard:          20% (posts cover the same specific subtopics)
+
+    Returns (blended_score, severity_tier).
+
+    Severity tiers:
+      critical: blended > 0.80 — near-duplicates, merge or redirect
+      high:     blended > 0.55 — genuine query competition, differentiate
+      medium:   blended > 0.35 — potential overlap, monitor
+      low:      blended <= 0.35 — content series, don't flag
+    """
+    title_a = post_a.get("title", "")
+    title_b = post_b.get("title", "")
+    url_a = post_a.get("url", "")
+    url_b = post_b.get("url", "")
+
+    # ── Signal 1: Cosine similarity (25%) ──
+    cosine_component = min((cosine_sim or 0.0), 1.0)
+
+    # ── Signal 2: URL slug keyword overlap (25%) ──
+    slug_a = _extract_slug_core(url_a)
+    slug_b = _extract_slug_core(url_b)
+    if slug_a and slug_b:
+        slug_intersection = slug_a & slug_b
+        slug_union = slug_a | slug_b
+        slug_overlap = len(slug_intersection) / len(slug_union) if slug_union else 0.0
+    else:
+        slug_overlap = 0.0
+
+    # ── Signal 3: Title entity + intent match (30%) ──
+    entity_a = _extract_title_entity(title_a)
+    entity_b = _extract_title_entity(title_b)
+
+    # Entity match score: 1.0 if same entity, 0.0 if different named entities,
+    # 0.5 if no entity detected (can't tell)
+    entities_are_different = False
+    if entity_a and entity_b:
+        if entity_a == entity_b:
+            entity_match = 1.0
+        else:
+            entity_match = 0.0
+            entities_are_different = True
+    elif entity_a or entity_b:
+        # One has an entity, the other doesn't — probably different content types
+        entity_match = 0.2
+    else:
+        # Neither has a clear entity — fall back to title keyword overlap
+        title_kw_a = _extract_title_keywords(title_a)
+        title_kw_b = _extract_title_keywords(title_b)
+        if title_kw_a and title_kw_b:
+            title_union = title_kw_a | title_kw_b
+            entity_match = len(title_kw_a & title_kw_b) / len(title_union) if title_union else 0.0
+        else:
+            entity_match = 0.0
+
+    # Intent group match: 1.0 if same group, 0.3 if different groups, 0.5 if unknown
+    # BUT: if entities are explicitly different, intent match is irrelevant —
+    # "Serpstat Review" and "Ahrefs Review" have the same intent (evaluation)
+    # but they don't compete because they're about different products.
+    intent_a = _classify_intent_group(title_a, url_a)
+    intent_b = _classify_intent_group(title_b, url_b)
+    if entities_are_different:
+        # Different named entities → intent match doesn't matter
+        intent_match = 0.0
+    elif intent_a and intent_b:
+        intent_match = 1.0 if intent_a == intent_b else 0.3
+    else:
+        intent_match = 0.5
+
+    # Combined entity+intent: both must match for high score
+    entity_intent_score = entity_match * 0.6 + intent_match * 0.4
+
+    # ── Signal 4: H2 subtopic Jaccard (20%) ──
+    h2_jaccard = _h2_subtopic_jaccard(headings_a, headings_b)
+
+    # If both posts are review templates reviewing different entities, zero out H2 score
+    # (structurally identical H2s about different products shouldn't count)
+    if entity_a and entity_b and entity_a != entity_b:
+        if _is_review_template(headings_a) and _is_review_template(headings_b):
+            h2_jaccard = 0.0
+
+    # ── Blended score ──
+    blended = (
+        0.25 * cosine_component
+        + 0.25 * slug_overlap
+        + 0.30 * entity_intent_score
+        + 0.20 * h2_jaccard
+    )
+
+    # ── Severity tier ──
+    if blended > 0.80:
+        tier = "critical"
+    elif blended > 0.55:
+        tier = "high"
+    elif blended > 0.35:
+        tier = "medium"
+    else:
+        tier = "low"  # Content series — don't flag
+
+    return blended, tier
 
 
 class CannibalizationDetector:
@@ -102,9 +458,9 @@ class CannibalizationDetector:
         # Floors calibrated for text-embedding-3-small which produces lower absolute
         # cosine similarities (~0.35-0.45 for same-topic content vs 0.60+ in ada-002).
         # Original floors of 0.50/0.70/0.85 systematically missed real cannibalization.
-        flag = max(p85, 0.35)
-        high = max(p92, 0.45)
-        critical = max(p97, 0.55)
+        flag = max(p85, 0.40)
+        high = max(p92, 0.50)
+        critical = max(p97, 0.60)
 
         logger.info(
             "Calibrated thresholds for site %s: flag=%.3f (p85), high=%.3f (p92), "
@@ -114,12 +470,18 @@ class CannibalizationDetector:
         )
 
         # Store in sites table metadata
+        import json
+        calibration_meta = json.dumps({
+            "cosine_threshold_flag": round(flag, 4),
+            "cosine_threshold_high": round(high, 4),
+            "cosine_threshold_critical": round(critical, 4),
+        })
         await db.execute(
             """
             UPDATE sites SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb
             WHERE id = $2
             """,
-            f'{{"cosine_threshold_flag": {flag:.4f}, "cosine_threshold_high": {high:.4f}, "cosine_threshold_critical": {critical:.4f}}}',
+            calibration_meta,
             site_id,
         )
 
@@ -127,7 +489,7 @@ class CannibalizationDetector:
 
     async def detect_for_site(
         self, db: asyncpg.Connection, site_id: UUID,
-        max_pairs: int = 200,
+        max_pairs: int = 500,
     ) -> int:
         """Run cannibalization detection across all clusters for a site.
 
@@ -145,7 +507,7 @@ class CannibalizationDetector:
 
     async def _detect_for_site_impl(
         self, db: asyncpg.Connection, site_id: UUID,
-        max_pairs: int = 200,
+        max_pairs: int = 500,
     ) -> int:
         logger.info("Starting cannibalization detection for site %s", site_id)
 
@@ -209,6 +571,11 @@ class CannibalizationDetector:
             )
             total_pairs += pairs
 
+        # Scale max_pairs with site size (500 minimum, up to 1500 for large sites)
+        total_posts = sum(r["post_count"] for r in clusters if r.get("post_count"))
+        if max_pairs == 500:  # default, not user-overridden
+            max_pairs = max(500, min(total_posts * 3, 1500))
+
         # Prune to max_pairs — keep only the most severe
         if total_pairs > max_pairs:
             await db.execute("""
@@ -253,7 +620,7 @@ class CannibalizationDetector:
         posts = await db.fetch(
             """
             SELECT p.id, p.title, p.url, p.word_count,
-                   p.content_hash, p.content_intent, p.language,
+                   p.content_hash, p.content_intent, p.language, p.headings,
                    pe.embedding::text AS embedding_text
             FROM post_clusters pc
             JOIN posts p ON p.id = pc.post_id
@@ -267,8 +634,10 @@ class CannibalizationDetector:
         if len(posts) < 2:
             return 0
 
-        # Build a language map for cross-language filtering
+        # Build maps for language, intent, and headings
         lang_map: dict = {p["id"]: p["language"] for p in posts}
+        intent_map: dict = {p["id"]: p["content_intent"] for p in posts}
+        headings_map: dict = {p["id"]: (p["headings"] or []) for p in posts}
 
         # Get health scores for "stronger post" determination
         health_rows = await db.fetch(
@@ -402,8 +771,15 @@ class CannibalizationDetector:
             n_shared = len(shared_queries)
 
             # ── Determine if this is a cannibalization pair ──
+            # Intent-aware: raise threshold when intents differ (different search purposes)
+            intent_a = intent_map.get(post_a["id"])
+            intent_b = intent_map.get(post_b["id"])
+            effective_flag = t_flag
+            if intent_a and intent_b and intent_a != intent_b:
+                effective_flag = t_flag + 0.10
+
             is_cannibal = False
-            if cosine_sim is not None and cosine_sim >= t_flag:
+            if cosine_sim is not None and cosine_sim >= effective_flag:
                 is_cannibal = True
             if n_shared >= MIN_SHARED_QUERIES:
                 is_cannibal = True
@@ -411,29 +787,52 @@ class CannibalizationDetector:
             if not is_cannibal:
                 continue
 
-            # ── Determine severity (uses site-specific thresholds) ──
-            severity = self._compute_severity(
-                cosine_sim, n_shared,
-                t_flag=t_flag, t_high=t_high, t_critical=t_critical,
-            )
+            # ── Compute blended cannibalization score ──
+            # Replaces raw cosine as the primary scoring signal.
+            # Answers: "Would a human typing a single search query be
+            # satisfied by either post?"
+            h_a = headings_map.get(post_a["id"], [])
+            h_b = headings_map.get(post_b["id"], [])
+
+            if n_shared > 0:
+                # With GSC data, we have ground truth — query overlap proves cannibalization
+                # Boost the blended score proportionally to shared queries
+                blended, severity = self._compute_severity(
+                    cosine_sim, n_shared,
+                    t_flag=t_flag, t_high=t_high, t_critical=t_critical,
+                ), None
+                blended_score, blended_tier = compute_blended_cannibalization_score(
+                    post_a, post_b, h_a, h_b, cosine_sim,
+                )
+                # GSC query overlap overrides the blended tier — shared queries = real cannibalization
+                severity = self._compute_severity(
+                    cosine_sim, n_shared,
+                    t_flag=t_flag, t_high=t_high, t_critical=t_critical,
+                )
+                overlap_score = max(blended_score, 0.5)  # Floor at 0.5 when GSC confirms
+            else:
+                # No GSC data — use the blended score as the sole arbiter
+                blended_score, blended_tier = compute_blended_cannibalization_score(
+                    post_a, post_b, h_a, h_b, cosine_sim,
+                )
+                # Filter out "content series" (blended score too low)
+                if blended_tier == "low":
+                    continue
+                severity = blended_tier
+                overlap_score = blended_score
 
             # ── Determine stronger post ──
             health_a = health_map.get(post_a["id"], {"score": 0, "traffic": 0})
             health_b = health_map.get(post_b["id"], {"score": 0, "traffic": 0})
 
-            # Stronger = higher composite score; tie-break by traffic
             strength_a = health_a["score"] + health_a["traffic"] * 10
             strength_b = health_b["score"] + health_b["traffic"] * 10
             stronger_id = post_a["id"] if strength_a >= strength_b else post_b["id"]
 
-            # ── Calculate combined overlap score ──
-            overlap_score = self._compute_overlap_score(cosine_sim, n_shared, queries_a, queries_b)
+            # Numeric severity score (0-100)
+            severity_score = min(100.0, blended_score * 100)
 
-            # Compute numeric severity score (0-100) factoring in cosine + intent match
-            intent_match = 1.0 if (post_a.get("content_intent") == post_b.get("content_intent")) else 0.5
-            severity_score = min(100.0, cosine_sim * 60 + intent_match * 30 + (n_shared / max(len(queries_a or []), 1)) * 10)
-
-            # Compute resolution recommendation
+            # Resolution recommendation based on blended tier
             resolution = self._recommend_resolution(
                 cosine_sim, severity,
                 post_a.get("content_intent"), post_b.get("content_intent"),
@@ -444,8 +843,9 @@ class CannibalizationDetector:
                 """
                 INSERT INTO cannibalization_pairs
                     (cluster_id, post_a_id, post_b_id, overlap_score, severity,
-                     overlapping_queries, cosine_similarity, stronger_post_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     overlapping_queries, cosine_similarity, stronger_post_id,
+                     severity_score, resolution)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """,
                 cluster_id,
                 post_a["id"],
@@ -455,6 +855,8 @@ class CannibalizationDetector:
                 list(shared_queries)[:50] if shared_queries else None,
                 cosine_sim,
                 stronger_id,
+                severity_score,
+                resolution,
             )
 
             pairs_found += 1

@@ -125,6 +125,7 @@ export interface Cluster {
   description: string | null;
   ecosystem_state: EcosystemState | null;
   health_score: number | null;
+  silhouette_score: number | null;
   post_count: number;
   created_at: string;
   updated_at: string;
@@ -208,10 +209,28 @@ export interface ConsolidationDetail extends ConsolidationPlan {
   redirect_map: RedirectEntry[];
 }
 
+/** Matches backend WordCountSummary */
+export interface WordCountSummary {
+  pillar_words: number;
+  merge_source_words: Record<string, number>;
+  total_input_words: number;
+  recommended_output_words: number;
+  source_posts: string[];
+}
+
+/** Matches backend SEOMetadata */
+export interface SEOMetadata {
+  title_tag: string;
+  meta_description: string;
+}
+
 /** Matches backend ConsolidationDraftResponse */
 export interface ConsolidationDraft {
   draft_markdown: string;
+  draft_html: string;
   redirect_map: RedirectEntry[];
+  word_count_summary: WordCountSummary | null;
+  seo_metadata: SEOMetadata | null;
 }
 
 // ─── Oracle ──────────────────────────────────────
@@ -430,4 +449,23 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+}
+
+// ─── AI Readiness ───────────────────────────────
+export interface AIScores {
+  total_scored: number;
+  avg_citability: number | null;
+  avg_eeat: number | null;
+  avg_schema: number | null;
+  avg_extraction: number | null;
+  pct_has_schema: number | null;
+  pct_ai_ready: number | null;
+}
+
+// ─── Subscription ───────────────────────────────
+export interface Subscription {
+  tier: string;
+  status: string;
+  stripe_subscription_id: string | null;
+  current_period_end: string | null;
 }

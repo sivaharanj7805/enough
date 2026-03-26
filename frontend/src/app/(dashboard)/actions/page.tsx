@@ -30,9 +30,8 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiUrl } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useSite } from '@/lib/hooks/useSite';
 import { mutate } from 'swr';
 import type { Recommendation } from '@/lib/types';
 
@@ -68,7 +67,7 @@ function PushToWPBtn({
   postId: string;
   title?: string;
   metaDescription?: string;
-  token: string | null;
+  token?: string | null;
 }) {
   const [pushing, setPushing] = useState(false);
   const [result, setResult] = useState<'success' | 'error' | null>(null);
@@ -82,7 +81,8 @@ function PushToWPBtn({
         body: JSON.stringify({ post_id: postId, title, meta_description: metaDescription }),
         token: token ?? undefined,
       });
-      setResult(res.success ? 'success' : 'error');
+      const data = res as { success?: boolean };
+      setResult(data.success ? 'success' : 'error');
     } catch {
       setResult('error');
     }
@@ -338,12 +338,12 @@ function ActionCard({
 
           {/* ── Action Buttons from RAG data ── */}
           {(() => {
-            const ai = (rec.ai_generated_content ?? {}) as Record<string, unknown>;
+            const ai = (rec.ai_generated_content ?? {}) as Record<string, string>;
             const isWordPress = currentSite?.cms_type === 'wordpress';
             const hasMeta = ai.meta_description || ai.suggested_title || ai.new_title || ai.suggested_new_title;
             const clusterId = ai.cluster_id as string | undefined;
             const isMerge = ['merge', 'redirect', 'consolidate'].includes(rec.recommendation_type);
-            const linkTargets = ai.link_targets as Array<{ title: string; url: string; similarity: number; suggested_anchor: string }> | undefined;
+            const linkTargets = ai.link_targets as unknown as Array<{ title: string; url: string; similarity: number; suggested_anchor: string }> | undefined;
 
             if (!hasMeta && !clusterId && !linkTargets) return null;
 
@@ -371,7 +371,7 @@ function ActionCard({
                 {/* Redirect map download */}
                 {isMerge && clusterId && (
                   <a
-                    href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/v1/sites/${currentSite?.id}/intelligence/consolidation/${clusterId}/redirect-map?format=htaccess`}
+                    href={apiUrl(`/sites/${currentSite?.id}/intelligence/consolidation/${clusterId}/redirect-map?format=htaccess`)}
                     download
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#64748b]/10 text-[#94a3b8] hover:bg-[#64748b]/20 transition-colors"
                   >
@@ -384,8 +384,8 @@ function ActionCard({
 
           {/* ── Interlink targets from RAG (specific posts + anchor text) ── */}
           {(() => {
-            const ai = (rec.ai_generated_content ?? {}) as Record<string, unknown>;
-            const linkTargets = ai.link_targets as Array<{ title: string; url: string; similarity: number; suggested_anchor: string }> | undefined;
+            const ai = (rec.ai_generated_content ?? {}) as Record<string, string>;
+            const linkTargets = ai.link_targets as unknown as Array<{ title: string; url: string; similarity: number; suggested_anchor: string }> | undefined;
             if (!linkTargets || linkTargets.length === 0) return null;
 
             return (

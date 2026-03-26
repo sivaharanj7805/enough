@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, X, ExternalLink, BarChart2, Leaf, Sparkles, MapPin, Volume2, VolumeX } from 'lucide-react';
 import { useSite } from '@/lib/hooks/useSite';
@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/Badge';
 import { useSWRFetch } from '@/lib/hooks/useSWRFetch';
 import { useEcosystemVisuals } from '@/lib/hooks/useApi';
 import { EcosystemNarrative } from '@/components/landscape/EcosystemNarrative';
-import { EcosystemOverlay } from '@/components/landscape/EcosystemOverlay';
 import { OnboardingTour } from '@/components/landscape/OnboardingTour';
 import { CreatureLegend } from '@/components/landscape/CreatureLegend';
 import { ContentPlannerOverlay } from '@/components/landscape/ContentPlannerOverlay';
@@ -22,7 +21,8 @@ import { useEasterEggs } from '@/lib/hooks/useEasterEggs';
 import { ROLE_COLORS, ROLE_LABELS, TREND_ICONS, TREND_COLORS } from '@/lib/constants';
 import type { PostHealth, ClusterDetail, CannibalizationPair, Recommendation } from '@/lib/types';
 import type { EcosystemState } from '@/lib/constants';
-type CreatureType = string;
+import type { ClusterPositions } from '@/lib/types/phase6';
+type CreatureType = string | null;
 
 const CREATURE_LABELS: Record<NonNullable<CreatureType>, { emoji: string; label: string; color: string; recType: string[] }> = {
   bloomling: {
@@ -56,6 +56,9 @@ export default function LandscapePage() {
   const [activeCreature, setActiveCreature] = useState<CreatureType>(null);
   const [viewMode, setViewMode] = useState<'ecosystem' | 'data'>('ecosystem');
   const [plannerVisible, setPlannerVisible] = useState(false);
+  const [clusterPositions, setClusterPositions] = useState<ClusterPositions>({});
+  const [viewportTransform, setViewportTransform] = useState<{ x: number; y: number; k: number } | null>(null);
+  const navigateRef = useRef<((x: number, y: number) => void) | null>(null);
   const sounds = useEcosystemSounds();
   useEasterEggs();
 
@@ -104,6 +107,10 @@ export default function LandscapePage() {
   const handleClickCreature = useCallback((post: PostHealth, creature: CreatureType) => {
     setSelectedPost(post);
     setActiveCreature(creature);
+  }, []);
+
+  const handlePositionsComputed = useCallback((positions: ClusterPositions) => {
+    setClusterPositions(positions);
   }, []);
 
   if (isLoading || detailsLoading) {
@@ -238,15 +245,12 @@ export default function LandscapePage() {
               onZoomToCluster={handleZoomToCluster}
               zoomedClusterId={zoomedClusterId}
               cannPairs={cannPairs}
+              visuals={ecosystemVisuals}
               onClickCreature={handleClickCreature}
+              onPositionsComputed={handlePositionsComputed}
+              onViewportChange={setViewportTransform}
+              navigateRef={navigateRef}
             />
-
-            {ecosystemVisuals && effectiveClusters.length > 0 && (
-              <EcosystemOverlay
-                visuals={ecosystemVisuals}
-                clusters={effectiveClusters}
-              />
-            )}
 
             {/* Content planner overlay */}
             <ContentPlannerOverlay
@@ -254,13 +258,13 @@ export default function LandscapePage() {
               visible={plannerVisible}
             />
 
-            {/* Minimap */}
+            {/* Minimap with live viewport tracking */}
             <Minimap
               clusters={effectiveClusters}
               canvasWidth={800}
               canvasHeight={600}
-              viewportTransform={null}
-              onNavigate={() => {}}
+              viewportTransform={viewportTransform}
+              onNavigate={(cx, cy) => navigateRef.current?.(cx, cy)}
             />
 
             {/* Creature legend */}
@@ -271,29 +275,120 @@ export default function LandscapePage() {
           </>
         )}
 
-        {/* Data view — cluster grid */}
+        {/* Data view — enriched cluster grid (UX-6) */}
         {viewMode === 'data' && (
           <div className="h-full overflow-y-auto p-6 pt-14">
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-              {clusters.map((c) => (
-                <Card
-                  key={c.id}
-                  className="cursor-pointer hover:border-brand-border-hover transition-colors"
-                  onClick={() => { setViewMode('ecosystem'); setZoomedClusterId(c.id); }}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <p className="text-sm font-semibold text-brand-text line-clamp-2">{c.label}</p>
-                    <span
-                      className="text-xs font-bold ml-2 shrink-0"
-                      style={{ color: (c.health_score ?? 0) >= 60 ? '#22c55e' : (c.health_score ?? 0) >= 40 ? '#eab308' : '#ef4444' }}
-                    >
-                      {Math.round(c.health_score ?? 0)}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {effectiveClusters.map((c) => {
+                const score = Math.round(c.health_score ?? 0);
+                const scoreColor = score >= 60 ? '#22c55e' : score >= 40 ? '#eab308' : '#ef4444';
+                const circumference = 2 * Math.PI * 20;
+                const filled = (score / 100) * circumference;
+
+                // Role distribution from posts
+                const roleCounts: Record<string, number> = { pillar: 0, supporter: 0, competitor: 0, dead_weight: 0 };
+                (c.posts ?? []).forEach((p) => {
+                  const r = p.role ?? 'dead_weight';
+                  roleCounts[r] = (roleCounts[r] || 0) + 1;
+                });
+                const totalPosts = (c.posts ?? []).length || c.post_count || 1;
+
+                // Ecosystem state styling
+                const stateConfig: Record<string, { icon: string; color: string; bg: string }> = {
+                  forest: { icon: '🌲', color: 'text-green-400', bg: 'bg-green-500/15' },
+                  meadow: { icon: '🌻', color: 'text-lime-400', bg: 'bg-lime-500/15' },
+                  seedbed: { icon: '🌱', color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+                  swamp: { icon: '🪴', color: 'text-amber-400', bg: 'bg-amber-500/15' },
+                  desert: { icon: '🏜️', color: 'text-orange-400', bg: 'bg-orange-500/15' },
+                };
+                const state = c.ecosystem_state ?? 'desert';
+                const sc = stateConfig[state] ?? stateConfig.desert;
+
+                return (
+                  <Card
+                    key={c.id}
+                    className="cursor-pointer hover:border-brand-border-hover transition-colors"
+                    onClick={() => { setViewMode('ecosystem'); setZoomedClusterId(c.id); }}
+                  >
+                    {/* Top row: label + health ring */}
+                    <div className="flex items-start gap-3 mb-3">
+                      {/* Health score ring */}
+                      <div className="shrink-0 relative w-12 h-12">
+                        <svg width="48" height="48" viewBox="0 0 48 48">
+                          <circle cx="24" cy="24" r="20" fill="none" stroke="#1e293b" strokeWidth="3" />
+                          <circle
+                            cx="24" cy="24" r="20" fill="none"
+                            stroke={scoreColor} strokeWidth="3"
+                            strokeDasharray={`${filled} ${circumference}`}
+                            strokeLinecap="round"
+                            transform="rotate(-90 24 24)"
+                          />
+                        </svg>
+                        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: scoreColor }}>
+                          {score}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-brand-text line-clamp-2">{c.label}</p>
+                        <p className="text-xs text-brand-text-muted mt-0.5">{c.post_count} posts</p>
+                      </div>
+                    </div>
+
+                    {/* Ecosystem state badge */}
+                    <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded ${sc.bg} ${sc.color}`}>
+                      {sc.icon} {state.charAt(0).toUpperCase() + state.slice(1)}
                     </span>
-                  </div>
-                  <p className="text-xs text-brand-text-muted">{c.post_count} posts</p>
-                  <p className="text-xs text-brand-text-muted capitalize mt-0.5">{c.ecosystem_state?.replace('_', ' ')}</p>
-                </Card>
-              ))}
+
+                    {/* Role distribution mini bar */}
+                    <div className="mt-3">
+                      <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden bg-brand-surface-hover">
+                        {(['pillar', 'supporter', 'competitor', 'dead_weight'] as const).map((role) => {
+                          const pct = (roleCounts[role] / totalPosts) * 100;
+                          if (pct === 0) return null;
+                          return (
+                            <div
+                              key={role}
+                              style={{ width: `${pct}%`, backgroundColor: ROLE_COLORS[role] }}
+                              className="h-full"
+                              title={`${ROLE_LABELS[role]}: ${roleCounts[role]}`}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+                        {(['pillar', 'supporter', 'competitor', 'dead_weight'] as const).map((role) => {
+                          if (!roleCounts[role]) return null;
+                          return (
+                            <span key={role} className="flex items-center gap-1 text-[10px] text-brand-text-muted">
+                              <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: ROLE_COLORS[role] }} />
+                              {roleCounts[role]} {ROLE_LABELS[role]}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Clustering confidence badge */}
+                    <div className="flex items-center gap-2 mt-2">
+                      <span
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                          c.silhouette_score != null && c.silhouette_score >= 0.5
+                            ? 'bg-green-500/15 text-green-400'
+                            : c.silhouette_score != null && c.silhouette_score >= 0.2
+                              ? 'bg-yellow-500/15 text-yellow-400'
+                              : 'bg-gray-500/15 text-gray-400'
+                        }`}
+                      >
+                        {c.silhouette_score != null && c.silhouette_score >= 0.5
+                          ? 'High confidence'
+                          : c.silhouette_score != null && c.silhouette_score >= 0.2
+                            ? 'Mixed'
+                            : 'Low confidence'}
+                      </span>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         )}

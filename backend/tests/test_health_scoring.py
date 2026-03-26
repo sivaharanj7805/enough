@@ -103,22 +103,39 @@ class TestFreshnessScore:
     def test_2_months_old(self):
         now = datetime.now(timezone.utc)
         two_months_ago = now - timedelta(days=60)
-        assert _freshness_score(two_months_ago, now) == 90.0
+        score = _freshness_score(two_months_ago, now)
+        assert abs(score - 90.6) < 2.0  # Continuous decay: ~90.6
 
     def test_4_months_old(self):
         now = datetime.now(timezone.utc)
         four_months_ago = now - timedelta(days=120)
-        assert _freshness_score(four_months_ago, now) == 75.0
+        score = _freshness_score(four_months_ago, now)
+        assert abs(score - 82.1) < 2.0  # Continuous decay: ~82.1
 
     def test_9_months_old(self):
         now = datetime.now(timezone.utc)
         nine_months_ago = now - timedelta(days=270)
-        assert _freshness_score(nine_months_ago, now) == 60.0
+        score = _freshness_score(nine_months_ago, now)
+        assert abs(score - 64.2) < 2.0  # Continuous decay: ~64.2
 
     def test_2_years_old(self):
         now = datetime.now(timezone.utc)
         two_years_ago = now - timedelta(days=730)
-        assert _freshness_score(two_years_ago, now) == 50.0
+        score = _freshness_score(two_years_ago, now)
+        assert score == 45.0  # Hits evergreen floor (non-time-sensitive)
+
+    def test_monotonically_decreasing(self):
+        """Freshness score decreases (or stays at floor) as content ages."""
+        now = datetime.now(timezone.utc)
+        prev_score = 100.0
+        for months in [1, 3, 6, 9, 12, 18, 24]:
+            score = _freshness_score(now - timedelta(days=months * 30), now)
+            assert score <= prev_score, f"Score increased at {months} months"
+            prev_score = score
+        # Verify it actually decays before hitting the floor
+        score_3m = _freshness_score(now - timedelta(days=90), now)
+        score_6m = _freshness_score(now - timedelta(days=180), now)
+        assert score_3m > score_6m
 
     def test_no_date(self):
         now = datetime.now(timezone.utc)
@@ -126,29 +143,45 @@ class TestFreshnessScore:
 
 
 class TestContentDepthScore:
-    """Test content depth scoring vs cluster average."""
+    """Test content depth scoring — 50% absolute + 50% relative blend."""
 
     def test_very_thin(self):
-        assert _content_depth_score(200, 1000) == 10.0
+        # 200 words: absolute=8.0, relative=15.0 (ratio 0.2), base=11.5
+        score = _content_depth_score(200, 1000)
+        assert abs(score - 11.5) < 2.0
 
     def test_below_minimum(self):
-        assert _content_depth_score(400, 1000) == 30.0
+        # 400 words: absolute=16.0, relative=15.0 (ratio 0.4), base=15.5
+        score = _content_depth_score(400, 1000)
+        assert abs(score - 15.5) < 2.0
 
     def test_below_cluster_avg(self):
+        # 600 words: absolute=24.0, relative=35.0 (ratio 0.6), base=29.5
         score = _content_depth_score(600, 1000)
-        assert 40 <= score <= 60
+        assert 25 <= score <= 35
 
     def test_at_cluster_avg(self):
+        # 1000 words: absolute=40.0, relative=60.0 (ratio 1.0), base=50.0
         score = _content_depth_score(1000, 1000)
-        assert 55 <= score <= 65
+        assert 45 <= score <= 55
 
     def test_above_cluster_avg(self):
+        # 1400 words: absolute=56.0, relative=84.0 (ratio 1.4), base=70.0
         score = _content_depth_score(1400, 1000)
-        assert score > 75
+        assert score > 65
 
     def test_far_above_avg(self):
+        # 2500 words: absolute=100.0, relative=100.0, base=100.0
         score = _content_depth_score(2500, 1000)
-        assert score >= 90
+        assert score >= 95
+
+    def test_increases_with_word_count(self):
+        """Score increases monotonically with word count."""
+        prev = 0.0
+        for wc in [100, 300, 500, 800, 1000, 1500, 2000, 2500]:
+            score = _content_depth_score(wc, 1000)
+            assert score >= prev, f"Score did not increase at {wc} words"
+            prev = score
 
 
 class TestTechnicalSEOScore:

@@ -1,8 +1,7 @@
 """Ecosystem Voice — Generate Claude-powered narrative summaries per cluster."""
 
-import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import asyncpg
@@ -71,7 +70,7 @@ class EcosystemVoice:
         if state == "forest":
             pillar = await db.fetchrow(
                 """
-                SELECT p.title, p.publish_date
+                SELECT p.title, p.publish_date, ph.role
                 FROM post_clusters pc
                 JOIN posts p ON p.id = pc.post_id
                 LEFT JOIN post_health_scores ph ON ph.post_id = p.id
@@ -86,8 +85,8 @@ class EcosystemVoice:
                 if pillar["publish_date"]:
                     pub_date = pillar["publish_date"]
                     if pub_date.tzinfo is None:
-                        pub_date = pub_date.replace(tzinfo=timezone.utc)
-                    delta = datetime.now(timezone.utc) - pub_date
+                        pub_date = pub_date.replace(tzinfo=UTC)
+                    delta = datetime.now(UTC) - pub_date
                     age_months = max(1, delta.days // 30)
 
             supporter_count = await db.fetchval(
@@ -145,7 +144,7 @@ class EcosystemVoice:
             """,
             cluster_id,
             narrative,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
         )
 
         logger.info("Generated narrative for cluster %s (state=%s)", cluster_id, state)

@@ -252,6 +252,13 @@ export function useEasterEggs(): EasterEggsAPI {
     }, 2000);
   }, [discover]);
 
+  // Clean up logo click timer on unmount
+  useEffect(() => {
+    return () => {
+      if (logoClickTimer.current) clearTimeout(logoClickTimer.current);
+    };
+  }, []);
+
   const totalFound = Object.values(discovered).filter(Boolean).length;
 
   return {

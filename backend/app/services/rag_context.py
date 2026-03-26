@@ -13,7 +13,6 @@ Queries:
 5. DB: cluster-level stats (avg word count, avg health, top keywords)
 """
 
-import json
 import logging
 from uuid import UUID
 

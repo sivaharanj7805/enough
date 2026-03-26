@@ -13,13 +13,13 @@ from openai import AsyncOpenAI
 
 from app.config import get_settings
 from app.utils.rate_limiter import RateLimiter
-from app.utils.token_guard import truncate_for_api, ORACLE_CHAR_LIMIT
+from app.utils.token_guard import truncate_for_api
 
 logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 EMBEDDING_MODEL = "text-embedding-3-small"
-SIMILARITY_THRESHOLD = 0.3  # Cosine distance — lower = more similar
+SIMILARITY_THRESHOLD = 0.5  # Cosine distance — lower = more similar
 
 
 class PrePublishOracle:
@@ -83,6 +83,8 @@ class PrePublishOracle:
 
         # 4. Generate verdict via Claude
         verdict_data = await self._generate_verdict(
+            db=db,
+            site_id=site_id,
             draft_text=draft_text,
             target_keyword=target_keyword,
             similar_posts=all_similar,
@@ -122,7 +124,7 @@ class PrePublishOracle:
             JOIN posts p ON p.id = pe.post_id
             WHERE p.site_id = $2
             ORDER BY pe.embedding <=> $1::vector
-            LIMIT 10
+            LIMIT 20
             """,
             vec_str, site_id,
         )
@@ -157,7 +159,7 @@ class PrePublishOracle:
             WHERE p.site_id = $1 AND g.query ILIKE $2
             GROUP BY p.id, p.title, p.url, p.word_count
             ORDER BY total_clicks DESC
-            LIMIT 10
+            LIMIT 20
             """,
             site_id, f"%{keyword}%",
         )
@@ -219,6 +221,8 @@ class PrePublishOracle:
 
     async def _generate_verdict(
         self,
+        db: asyncpg.Connection,
+        site_id: UUID,
         draft_text: str | None,
         target_keyword: str | None,
         similar_posts: list[dict],
@@ -236,8 +240,53 @@ class PrePublishOracle:
             sim_info = f", similarity: {sp.get('similarity_score', 'N/A')}" if sp.get("similarity_score") else ""
             similar_summary += f"- {sp['title']} ({sp['url']}){sim_info}{pos_info}\n"
 
-        draft_snippet = truncate_for_api(draft_text, max_chars=2000, label="oracle_verdict") if draft_text else "N/A"
+        draft_snippet = truncate_for_api(draft_text, max_chars=4000, label="oracle_verdict") if draft_text else "N/A"
         keyword_info = target_keyword or "N/A"
+
+        # Fetch cluster context (post count + cannibalization pairs)
+        cluster_post_count = 0
+        cluster_cann_count = 0
+        cluster_id = None
+        if similar_posts:
+            from uuid import UUID as _UUID
+            first_post_id = _UUID(similar_posts[0]["post_id"])
+            cluster_row = await db.fetchrow(
+                """
+                SELECT pc.cluster_id, c.post_count
+                FROM post_clusters pc
+                JOIN clusters c ON c.id = pc.cluster_id
+                WHERE pc.post_id = $1
+                LIMIT 1
+                """,
+                first_post_id,
+            )
+            if cluster_row:
+                cluster_id = cluster_row["cluster_id"]
+                cluster_post_count = cluster_row["post_count"] or 0
+                cann_row = await db.fetchrow(
+                    "SELECT COUNT(*) AS cnt FROM cannibalization_pairs WHERE cluster_id = $1",
+                    cluster_id,
+                )
+                cluster_cann_count = cann_row["cnt"] if cann_row else 0
+
+        # Check GSC for existing top-5 ranking post
+        gsc_note = ""
+        if target_keyword:
+            gsc_row = await db.fetchrow(
+                """
+                SELECT gm.avg_position, p.title, p.url
+                FROM gsc_metrics gm
+                JOIN posts p ON p.id = gm.post_id
+                WHERE p.site_id = $1 AND gm.query ILIKE $2 AND gm.avg_position <= 5
+                ORDER BY gm.avg_position LIMIT 1
+                """,
+                site_id, f"%{target_keyword}%",
+            )
+            if gsc_row:
+                gsc_note = (
+                    f'GSC DATA: An existing post already ranks at position {gsc_row["avg_position"]:.1f} '
+                    f'for "{target_keyword}". Strongly consider updating it instead of publishing new content.\n'
+                )
 
         prompt = f"""You are a content ecosystem analyst. Assess whether this new content should \
 be published, should update an existing post, or should be skipped entirely.
@@ -250,7 +299,8 @@ EXISTING SIMILAR POSTS ({len(similar_posts)} found):
 {similar_summary or "(none)"}
 
 CLUSTER STATE: {cluster_state or "unknown"}
-VERY SIMILAR POSTS (cosine distance < 0.3): {very_similar_count}
+CLUSTER CONTEXT: This cluster has {cluster_post_count} total posts and {cluster_cann_count} cannibalization pairs.
+{gsc_note}VERY SIMILAR POSTS (cosine distance < 0.5): {very_similar_count}
 
 Analyze and provide your assessment. Consider:
 1. Is there significant topic overlap with existing content?
@@ -276,7 +326,6 @@ Reply in this exact JSON format:
             raw = response.content[0].text.strip()
 
             # Parse JSON from Claude response
-            import json
             # Try to extract JSON from the response
             verdict = self._parse_json_response(raw)
         except Exception as e:

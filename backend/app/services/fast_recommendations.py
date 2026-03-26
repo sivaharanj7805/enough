@@ -9,8 +9,8 @@ the Tier 2 enrichment in recommendations.py.
 """
 
 import logging
-from uuid import UUID
 from typing import Any
+from uuid import UUID
 
 import asyncpg
 
@@ -48,12 +48,26 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
     "seo_title_length": {
         "recommendation_type": "optimize",
         "title_tpl": "Fix title length: {title}",
-        "summary_tpl": "Title is {title_length} characters (recommended: 50-60). Titles over 60 characters get truncated in Google search results, reducing click-through rate.",
-        "actions_tpl": [
-            "Shorten title from {title_length} to under 60 characters",
-            "Front-load the primary keyword in the first 40 characters",
-            "Remove filler words (ultimate, comprehensive, complete guide to) unless they add value",
-        ],
+        "summary_fn": lambda d: (
+            f"Title is only {d['title_length']} characters (recommended: 30-60). "
+            "Short titles miss keyword opportunities and look sparse in search results."
+            if d.get("title_length", 50) < 30
+            else f"Title is {d['title_length']} characters (recommended: 30-60). "
+            "Titles over 60 characters get truncated in Google search results, reducing click-through rate."
+        ),
+        "actions_fn": lambda d: (
+            [
+                f"Expand title from {d['title_length']} to 30-60 characters",
+                "Add the primary keyword and a descriptive modifier (e.g., 'Easy', 'Homemade', 'Best')",
+                "Include the content type (Recipe, Guide, How-To) if not already present",
+            ]
+            if d.get("title_length", 50) < 30
+            else [
+                f"Shorten title from {d['title_length']} to under 60 characters",
+                "Front-load the primary keyword in the first 40 characters",
+                "Remove filler words (ultimate, comprehensive, complete guide to) unless they add value",
+            ]
+        ),
         "effort_hours": 0.25,
         "priority_fn": lambda d: "low",
     },
@@ -107,6 +121,43 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "effort_hours": 0.5,
         "priority_fn": lambda d: "high",
+    },
+    # ── Content decay with AI citation framing (GEO-6) ────────────────────────
+    "decay_severe": {
+        "recommendation_type": "update",
+        "title_tpl": "Urgent: update decaying content: {title}",
+        "summary_tpl": (
+            "This post hasn't been updated in over 12 months and is losing rankings. "
+            "In 2026, stale content faces a double penalty: Google ranks it lower AND AI systems "
+            "stop citing it entirely. Posts older than 12 months are rarely cited by ChatGPT or Perplexity."
+        ),
+        "actions_tpl": [
+            "Update all statistics, data points, and examples to current year",
+            "Add a visible 'Last updated: [today's date]' timestamp",
+            "Refresh the introduction with current context and a TL;DR answer",
+            "Add an FAQ section with 3-5 current questions on this topic",
+            "Update the dateModified in your Article JSON-LD schema",
+            "Review and update any broken or outdated external links",
+        ],
+        "effort_hours": 2.0,
+        "priority_fn": lambda d: "high",
+    },
+    "decay_moderate": {
+        "recommendation_type": "update",
+        "title_tpl": "Refresh stale content: {title}",
+        "summary_tpl": (
+            "This post hasn't been updated in 6-12 months. AI citation risk: "
+            "AI systems actively replace older sources with fresher competitors. "
+            "Without an update, this content is becoming invisible to AI-generated answers."
+        ),
+        "actions_tpl": [
+            "Update the 'Last updated' date after making substantive edits",
+            "Refresh any statistics or data points older than 6 months",
+            "Add 1-2 new insights, examples, or data points",
+            "Check that the opening still directly answers the primary query",
+        ],
+        "effort_hours": 1.0,
+        "priority_fn": lambda d: "medium",
     },
     # ── 2026 AI-era SEO templates ─────────────────────────────────────────────
     "low_ai_citability": {
@@ -168,12 +219,12 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         "title_tpl": "Restructure for AI extraction: {title}",
         "summary_tpl": (
             "AI Extraction Score: {extraction_score}/100. "
-            "This post doesn't answer its primary query in the first 100 words, "
+            "This post doesn't answer its primary query in the first 200 words, "
             "and H2 sections don't lead with direct answers. "
             "AI systems prefer content that front-loads answers and uses clear structure."
         ),
         "actions_tpl": [
-            "Move the core answer to the first 100 words — state what the post covers immediately",
+            "Move the core answer to the first 200 words — state what the post covers immediately",
             "Rewrite each H2 section to start with a 1-2 sentence direct answer before elaborating",
             "Add a concise TL;DR or key takeaways section at the top",
             "Convert any long prose answers to numbered lists or bullet points",
@@ -181,6 +232,113 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "effort_hours": 1.5,
         "priority_fn": lambda d: "medium",
+    },
+    # ── GEO-specific problem types (GEO-3 / GEO-8) ──────────────────────────
+    "geo_no_faq_section": {
+        "recommendation_type": "add_faq_section",
+        "title_tpl": "Add FAQ section for AI citation: {title}",
+        "summary_tpl": (
+            "This post has no FAQ section. Posts with structured FAQ sections are "
+            "significantly more likely to be cited by ChatGPT, Perplexity, and Google AI Overviews. "
+            "AI systems extract Q&A pairs directly from FAQ sections."
+        ),
+        "actions_tpl": [
+            "Add an H2 'Frequently Asked Questions' section at the bottom of the post",
+            "Include 3-5 questions phrased as users would prompt an AI (e.g. 'What is...', 'How do I...')",
+            "Keep each answer concise: 40-100 words, directly answering the question",
+            "Add FAQPage JSON-LD schema markup to match the FAQ section",
+            "Use your top GSC queries for this topic as the FAQ questions",
+        ],
+        "effort_hours": 1.0,
+        "priority_fn": lambda d: "medium",
+    },
+    "geo_no_question_headers": {
+        "recommendation_type": "reformat_headers_geo",
+        "title_tpl": "Reformat headers as questions for AI: {title}",
+        "summary_tpl": (
+            "Only {question_header_ratio:.0%} of H2/H3 headers are question-format. "
+            "AI systems match natural language prompts to question-format headers. "
+            "Target: at least 30% of headers should be questions."
+        ),
+        "actions_tpl": [
+            "Reformat H2 headers as questions that match how users prompt AI",
+            "Example: change 'Benefits of X' to 'What are the benefits of X?'",
+            "Example: change 'Implementation Guide' to 'How do you implement X?'",
+            "Keep some non-question headers for variety — target 30-50% questions",
+            "Each question header should be followed by a direct 1-2 sentence answer",
+        ],
+        "effort_hours": 0.5,
+        "priority_fn": lambda d: "medium",
+    },
+    "geo_low_data_density": {
+        "recommendation_type": "increase_data_density",
+        "title_tpl": "Add data points for AI citation: {title}",
+        "summary_tpl": (
+            "Data density: {data_density_per_200w:.1f} data points per 200 words (target: 1.0). "
+            "AI systems preferentially cite content with specific statistics, percentages, and measurements. "
+            "Posts with higher data density are cited 2-3x more often."
+        ),
+        "actions_tpl": [
+            "Add specific statistics with numbers (percentages, dollar amounts, counts)",
+            "Include at least 1 data point per 200 words of content",
+            "Attribute data to credible sources (industry reports, studies, official data)",
+            "Add a data table or comparison chart with specific numbers",
+            "Replace vague claims ('many companies') with specific data ('73% of B2B companies')",
+        ],
+        "effort_hours": 1.5,
+        "priority_fn": lambda d: "medium",
+    },
+    "geo_no_answer_first": {
+        "recommendation_type": "add_answer_first",
+        "title_tpl": "Add TL;DR for AI extraction: {title}",
+        "summary_tpl": (
+            "The first 200 words don't directly answer the query implied by the title. "
+            "AI systems extract the first passage that directly answers a prompt. "
+            "Posts that front-load answers are cited 40% more often in AI Overviews."
+        ),
+        "actions_tpl": [
+            "Add a TL;DR paragraph in the first 200 words that directly answers the title's question",
+            "Include at least one specific data point in the opening",
+            "Use declarative language: 'X is...' or 'The best way to Y is...'",
+            "Don't start with a story, question, or background — lead with the answer",
+            "The TL;DR should work as a standalone answer if extracted by AI",
+        ],
+        "effort_hours": 0.5,
+        "priority_fn": lambda d: "medium",
+    },
+    "geo_missing_faq_schema": {
+        "recommendation_type": "add_faq_schema",
+        "title_tpl": "Add FAQPage schema markup: {title}",
+        "summary_tpl": (
+            "This post has FAQ-like content but no FAQPage JSON-LD schema. "
+            "Structured FAQ schema makes Q&A pairs directly extractable by AI systems "
+            "and increases eligibility for Google rich results."
+        ),
+        "actions_tpl": [
+            "Add FAQPage JSON-LD schema wrapping your FAQ section's Q&A pairs",
+            "Each Question should have a corresponding acceptedAnswer",
+            "Validate the schema at schema.org/validator",
+            "Ensure the schema Q&A pairs exactly match the visible FAQ content",
+        ],
+        "effort_hours": 0.5,
+        "priority_fn": lambda d: "high",
+    },
+    "geo_no_freshness_date": {
+        "recommendation_type": "add_freshness_signal",
+        "title_tpl": "Add visible update date: {title}",
+        "summary_tpl": (
+            "No visible 'Last updated' timestamp detected. AI systems favor content with "
+            "recent modification dates. Posts older than 6 months without a visible update "
+            "date are 3x less likely to be cited by AI."
+        ),
+        "actions_tpl": [
+            "Add a visible 'Last updated: [date]' element near the top of the post",
+            "Use a <time datetime='YYYY-MM-DD'> HTML element for machine readability",
+            "Update the dateModified field in your Article JSON-LD schema",
+            "Actually update the content when you update the date — AI systems cross-check",
+        ],
+        "effort_hours": 0.25,
+        "priority_fn": lambda d: "low",
     },
 }
 
@@ -190,7 +348,7 @@ async def generate_fast_recommendations(
     site_id: UUID,
 ) -> int:
     """Generate template-based recommendations for all detected problems.
-    
+
     Returns the number of recommendations generated.
     """
     logger.info("Generating fast template-based recommendations for site %s", site_id)
@@ -260,7 +418,7 @@ async def generate_fast_recommendations(
         details = prob["details"] if isinstance(prob["details"], dict) else {}
         cluster_info = post_cluster_map.get(post_id, (None, "Unknown", 1500))
         cluster_avg = int(cluster_info[2])
-        word_count = prob["word_count"] or 0
+        word_count = prob["word_count"] if prob["word_count"] is not None else 0
 
         ctx = {
             "title": (prob["title"] or "Untitled")[:80],
@@ -282,8 +440,15 @@ async def generate_fast_recommendations(
 
         try:
             title = template["title_tpl"].format(**ctx)
-            summary = template["summary_tpl"].format(**ctx)
-            actions = [a.format(**ctx) for a in template["actions_tpl"]]
+            # Support both static templates (summary_tpl) and dynamic functions (summary_fn)
+            if "summary_fn" in template:
+                summary = template["summary_fn"](ctx)
+            else:
+                summary = template["summary_tpl"].format(**ctx)
+            if "actions_fn" in template:
+                actions = template["actions_fn"](ctx)
+            else:
+                actions = [a.format(**ctx) for a in template["actions_tpl"]]
             priority = template["priority_fn"](ctx)
         except (KeyError, ValueError) as e:
             logger.warning("Template error for %s on %s: %s", ptype, post_id, e)
@@ -355,8 +520,8 @@ async def generate_fast_recommendations(
             summary = f"These two posts are near-identical (cosine={cos:.3f}). Set up a 301 redirect from the weaker post to the stronger one."
             actions = [
                 f"301 redirect {redirect_url} → {keep_url}",
-                f"Merge any unique content from the redirected post into the kept post",
-                f"Update any internal links pointing to the old URL",
+                "Merge any unique content from the redirected post into the kept post",
+                "Update any internal links pointing to the old URL",
             ]
             priority = "critical"
             effort = 0.5
@@ -367,10 +532,10 @@ async def generate_fast_recommendations(
             title = f"Merge overlapping content: {pair[f'title_{keep.lower()}'][:50]}"
             summary = f"These posts overlap significantly (cosine={cos:.3f}). Merge unique sections from the shorter post into the longer one, then redirect."
             actions = [
-                f"Compare both posts section by section",
+                "Compare both posts section by section",
                 f"Move unique paragraphs from '{pair[f'title_{merge.lower()}'][:40]}' into '{pair[f'title_{keep.lower()}'][:40]}'",
-                f"301 redirect the merged post to the consolidated one",
-                f"Update internal links",
+                "301 redirect the merged post to the consolidated one",
+                "Update internal links",
             ]
             priority = "high"
             effort = 2.0
@@ -379,10 +544,10 @@ async def generate_fast_recommendations(
             title = f"Differentiate competing content: {pair['title_a'][:50]}"
             summary = f"These posts have significant topic overlap (cosine={cos:.3f}). Differentiate by targeting distinct keywords and angles."
             actions = [
-                f"Identify the unique angle for each post",
-                f"Adjust titles and H1s to target different keyword variants",
-                f"Cross-link between the two posts with descriptive anchor text",
-                f"Consider making one a 'beginner' guide and the other 'advanced'",
+                "Identify the unique angle for each post",
+                "Adjust titles and H1s to target different keyword variants",
+                "Cross-link between the two posts with descriptive anchor text",
+                "Consider making one a 'beginner' guide and the other 'advanced'",
             ]
             priority = "medium"
             effort = 1.5
@@ -412,7 +577,7 @@ async def generate_fast_recommendations(
         JOIN post_embeddings pe ON pe.post_id = p.id
         WHERE p.site_id = $1
         AND p.id NOT IN (
-            SELECT DISTINCT target_post_id FROM internal_links 
+            SELECT DISTINCT target_post_id FROM internal_links
             WHERE target_post_id IS NOT NULL
         )
         LIMIT 20
@@ -442,7 +607,7 @@ async def generate_fast_recommendations(
             for s in link_sources[:3]
         ]
         actions = [
-            f"This post has 0 inbound internal links — it won't be crawled or ranked effectively.",
+            "This post has 0 inbound internal links — it won't be crawled or ranked effectively.",
             "Add a contextual link from these highly relevant posts:",
             *source_list,
             "Aim for anchor text that describes the target topic, not generic 'click here'.",

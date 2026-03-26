@@ -1,7 +1,6 @@
 """Google Analytics 4 data sync service."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import date, timedelta
 from uuid import UUID
@@ -166,7 +165,7 @@ class GA4SyncService:
                 path = urlparse(p["url"]).path.rstrip("/").lower()
                 path_to_post_id[path] = p["id"]
             except Exception:
-                pass
+                logger.warning("Failed to parse URL for post %s", p["id"])
 
         synced = 0
         for row in rows:

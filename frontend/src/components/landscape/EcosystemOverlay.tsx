@@ -1,56 +1,23 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import type { EcosystemVisualsResponse, ClusterPositions } from '@/lib/types/phase6';
-import type { ClusterDetail } from '@/lib/types';
+import * as RiverRenderer from './RiverRenderer';
+import * as GrassRenderer from './GrassRenderer';
+import * as WeatherRenderer from './WeatherRenderer';
+import * as AnimalRenderer from './AnimalRenderer';
+import * as TerrainFeatureRenderer from './TerrainFeatureRenderer';
 
 interface EcosystemOverlayProps {
   visuals: EcosystemVisualsResponse;
-  clusters: ClusterDetail[];
+  positions: ClusterPositions;
 }
 
-export function EcosystemOverlay({ visuals, clusters }: EcosystemOverlayProps) {
+export function EcosystemOverlay({ visuals, positions }: EcosystemOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
-
-  // Build cluster positions from the cluster data
-  // Uses a deterministic layout matching the SVG force layout
-  const getClusterPositions = useCallback((): ClusterPositions => {
-    if (clusters.length === 0) return {};
-
-    const canvas = canvasRef.current;
-    if (!canvas) return {};
-
-    const width = canvas.width;
-    const height = canvas.height;
-    const maxPosts = Math.max(...clusters.map((c) => c.posts.length), 1);
-    const minRadius = 60;
-    const maxRadius = 180;
-
-    const positions: ClusterPositions = {};
-
-    // Simple deterministic layout: distribute clusters in a grid-like pattern
-    const cols = Math.ceil(Math.sqrt(clusters.length));
-    const rows = Math.ceil(clusters.length / cols);
-    const cellW = width / (cols + 1);
-    const cellH = height / (rows + 1);
-
-    clusters.forEach((cluster, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const postRatio = cluster.posts.length / maxPosts;
-      const radius = minRadius + postRatio * (maxRadius - minRadius);
-
-      positions[cluster.id] = {
-        id: cluster.id,
-        x: cellW * (col + 1),
-        y: cellH * (row + 1),
-        radius,
-      };
-    });
-
-    return positions;
-  }, [clusters]);
+  const positionsRef = useRef<ClusterPositions>(positions);
+  positionsRef.current = positions;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -75,9 +42,24 @@ export function EcosystemOverlay({ visuals, clusters }: EcosystemOverlayProps) {
     const animate = (timestamp: number) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const clusterPositions = getClusterPositions();
+      const clusterPositions = positionsRef.current;
 
-      // Render layers removed (renderers deleted)
+      // Render layers in order (back to front)
+      // 1. Fog weather (behind everything)
+      // 2. Rivers + water particles
+      RiverRenderer.draw(ctx, visuals.rivers, clusterPositions, timestamp);
+
+      // 3. Grass around cluster edges
+      GrassRenderer.draw(ctx, visuals.grass, clusterPositions, timestamp);
+
+      // 4. Terrain features (boulders, erosion, mushrooms)
+      TerrainFeatureRenderer.draw(ctx, visuals.terrain_features, clusterPositions, timestamp);
+
+      // 5. Ground animals (foxes, deer)
+      AnimalRenderer.draw(ctx, visuals.animals, clusterPositions, timestamp);
+
+      // 6. Weather effects (clouds, rain, sun above)
+      WeatherRenderer.draw(ctx, visuals.weather, clusterPositions, timestamp);
 
       animFrameRef.current = requestAnimationFrame(animate);
     };
@@ -88,13 +70,13 @@ export function EcosystemOverlay({ visuals, clusters }: EcosystemOverlayProps) {
       cancelAnimationFrame(animFrameRef.current);
       resizeObserver.disconnect();
     };
-  }, [visuals, getClusterPositions]);
+  }, [visuals]);
 
   return (
     <canvas
       ref={canvasRef}
       className="absolute inset-0 pointer-events-none z-[5]"
-      style={{ mixBlendMode: 'screen' }}
+      style={{ mixBlendMode: 'normal' }}
     />
   );
 }

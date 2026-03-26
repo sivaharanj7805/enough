@@ -51,8 +51,8 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
 
-      - name: Type check (optional)
-        run: ruff format --check . || true
+      - name: Format check
+        run: ruff format --check .
 
       - name: Run tests
         run: pytest --tb=short -q

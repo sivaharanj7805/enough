@@ -6,12 +6,13 @@ extracts internal links, and normalizes to the standard schema.
 
 import logging
 import re
+from datetime import UTC
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 
-from app.services.normalizer import NormalizedPost, InternalLink, compute_content_hash
+from app.services.normalizer import InternalLink, NormalizedPost, compute_content_hash
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -191,7 +192,7 @@ class WordPressConnector:
     def _extract_internal_links(self, soup: BeautifulSoup, current_url: str) -> list[InternalLink]:
         """Extract links pointing to the same domain."""
         links: list[InternalLink] = []
-        current_parsed = urlparse(current_url)
+        urlparse(current_url)
 
         for anchor in soup.find_all("a", href=True):
             href = anchor["href"]
@@ -214,12 +215,12 @@ def _parse_wp_date(date_str: str | None):
     """Parse a WordPress date string to datetime."""
     if not date_str:
         return None
-    from datetime import datetime, timezone
+    from datetime import datetime
     try:
         # WP dates are typically ISO format without timezone (assumed UTC)
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except (ValueError, TypeError):
         return None

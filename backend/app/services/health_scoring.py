@@ -1,13 +1,14 @@
 """Post-level and cluster-level health scoring with ecosystem state assignment.
 
-7-factor health score model (0-100):
-  1. Traffic trend (growing/stable/declining/dead)     — 25%
-  2. Ranking positions (avg position for top queries)  — 20%
-  3. Engagement (bounce rate, time on page)            — 15%
-  4. Freshness (months since last update)              — 15%
+8-factor health score model (0-100):
+  1. Traffic trend (growing/stable/declining/dead)     — 20%
+  2. Ranking positions (avg position for top queries)  — 18%
+  3. Engagement (bounce rate, time on page)            — 12%
+  4. Freshness (months since last update)              — 12%
   5. Content depth (word count vs cluster average)     — 10%
-  6. Internal links (inbound from other posts)         — 10%
+  6. Internal links (inbound from other posts)         — 8%
   7. Technical SEO (meta description, title, headings) — 5%
+  8. AI Readiness (citability + E-E-A-T + schema + extraction) — 15%
 
 Each factor normalized 0-100, then weighted sum.
 
@@ -16,28 +17,29 @@ Assigns roles (pillar, supporter, competitor, dead_weight) and
 ecosystem states (forest, swamp, desert, seedbed, meadow).
 """
 
+import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import asyncpg
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# 7-factor weights per spec (full-data mode)
-W_TRAFFIC_TREND = 0.25
-W_RANKING = 0.20
-W_ENGAGEMENT = 0.15
-W_FRESHNESS = 0.15
+# 8-factor weights per spec (full-data mode)
+W_TRAFFIC_TREND = 0.20
+W_RANKING = 0.18
+W_ENGAGEMENT = 0.12
+W_FRESHNESS = 0.12
 W_CONTENT_DEPTH = 0.10
-W_INTERNAL_LINKS = 0.10
+W_INTERNAL_LINKS = 0.08
 W_TECHNICAL_SEO = 0.05
+W_AI_READINESS = 0.15
 
 # Factors that require GA4/GSC external data
 EXTERNAL_DATA_FACTORS = {"traffic_trend", "ranking", "engagement"}
 # Factors that work from crawl-only data
-CRAWL_ONLY_FACTORS = {"freshness", "content_depth", "internal_links", "technical_seo"}
+CRAWL_ONLY_FACTORS = {"freshness", "content_depth", "internal_links", "technical_seo", "ai_readiness"}
 
 
 def compute_dynamic_weights(
@@ -50,31 +52,49 @@ def compute_dynamic_weights(
 
     Returns dict mapping factor name → weight (all sum to 1.0).
     """
+    if has_ga4 and has_gsc:
+        # Full data mode — all 8 original factors
+        return {
+            "traffic_trend": W_TRAFFIC_TREND,
+            "ranking": W_RANKING,
+            "engagement": W_ENGAGEMENT,
+            "freshness": W_FRESHNESS,
+            "content_depth": W_CONTENT_DEPTH,
+            "internal_links": W_INTERNAL_LINKS,
+            "technical_seo": W_TECHNICAL_SEO,
+            "ai_readiness": W_AI_READINESS,
+        }
+
+    if not has_ga4 and not has_gsc:
+        # Crawl-only mode — use proxy signals instead of zeroing 50%
+        return {
+            "traffic_trend": 0.0,
+            "ranking": 0.0,
+            "engagement": 0.0,
+            "freshness": 0.12,
+            "content_depth": 0.10,
+            "internal_links": 0.08,
+            "technical_seo": 0.07,
+            "ai_readiness": 0.18,
+            "predicted_engagement": 0.25,
+            "content_structure": 0.20,
+        }
+
+    # Partial data — zero missing factors, redistribute
     weights = {
-        "traffic_trend": W_TRAFFIC_TREND,
-        "ranking": W_RANKING,
-        "engagement": W_ENGAGEMENT,
+        "traffic_trend": W_TRAFFIC_TREND if has_ga4 else 0.0,
+        "ranking": W_RANKING if has_gsc else 0.0,
+        "engagement": W_ENGAGEMENT if has_ga4 else 0.0,
         "freshness": W_FRESHNESS,
         "content_depth": W_CONTENT_DEPTH,
         "internal_links": W_INTERNAL_LINKS,
         "technical_seo": W_TECHNICAL_SEO,
+        "ai_readiness": W_AI_READINESS,
     }
-
-    # Zero out unavailable factors
-    if not has_ga4:
-        weights["traffic_trend"] = 0.0
-        weights["engagement"] = 0.0
-    if not has_gsc:
-        weights["ranking"] = 0.0
-        # Traffic trend needs GA4 pageviews (already zeroed if no GA4)
-        # but if we have GA4 but no GSC, traffic trend still works
-
-    # Redistribute: scale remaining weights to sum to 1.0
     total = sum(weights.values())
     if total > 0 and total < 1.0:
         scale = 1.0 / total
         weights = {k: v * scale for k, v in weights.items()}
-
     return weights
 
 
@@ -121,29 +141,94 @@ class HealthScorer:
         elif not has_gsc:
             logger.info("No GSC data for site %s — excluding ranking factor", site_id)
 
-        # Clear old health scores
+        # Detect content profile (short-form vs long-form)
+        wc_stats = await db.fetchrow(
+            """SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY word_count) AS median_wc,
+                      stddev(word_count) AS stddev_wc
+               FROM posts WHERE site_id = $1 AND word_count > 50""",
+            site_id,
+        )
+        median_wc = float(wc_stats["median_wc"] or 1000) if wc_stats else 1000
+        stddev_wc = float(wc_stats["stddev_wc"] or 500) if wc_stats else 500
+        is_short_form = median_wc < 600 and stddev_wc < 400
+        if is_short_form:
+            logger.info("Site %s detected as short-form (median %dw, stddev %dw)", site_id, median_wc, stddev_wc)
+
+        # Clear old health scores ONLY for posts in leaf clusters (preserve AI score columns).
+        # Previous bug: NULLing ALL posts then only re-scoring leaf-cluster posts
+        # left posts outside leaf clusters with NULL scores permanently.
         await db.execute(
             """
-            DELETE FROM post_health_scores
-            WHERE post_id IN (SELECT id FROM posts WHERE site_id = $1)
+            UPDATE post_health_scores SET
+                traffic_contribution = NULL,
+                ranking_strength = NULL,
+                trend = NULL,
+                internal_link_score = NULL,
+                composite_score = NULL,
+                role = NULL,
+                engagement_score = NULL,
+                freshness_score = NULL,
+                content_depth_score = NULL,
+                technical_seo_score = NULL
+            WHERE post_id IN (
+                SELECT DISTINCT pc.post_id FROM post_clusters pc
+                JOIN clusters c ON c.id = pc.cluster_id
+                WHERE c.site_id = $1
+                  AND c.id NOT IN (
+                      SELECT parent_cluster_id FROM clusters
+                      WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+                  )
+            )
             """,
             site_id,
         )
 
         clusters = await db.fetch(
-            "SELECT id FROM clusters WHERE site_id = $1", site_id,
+            """SELECT id FROM clusters WHERE site_id = $1
+               AND id NOT IN (
+                   SELECT parent_cluster_id FROM clusters
+                   WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+               )""",
+            site_id,
         )
         if not clusters:
             logger.warning("No clusters for site %s — run clustering first", site_id)
             return 0
 
+        # Score clusters — parallel for large sites, sequential for small
         total_scored = 0
-        for cluster_row in clusters:
-            scored = await self._score_cluster(
-                db, cluster_row["id"], site_id,
-                has_ga4=has_ga4, has_gsc=has_gsc,
+        if len(clusters) > 10:
+            # Parallel scoring with connection pool (max 5 concurrent)
+            from app.database import get_pool
+            pool = await get_pool()
+            sem = asyncio.Semaphore(5)
+
+            async def _score_one(cluster_id: UUID) -> int:
+                async with sem:
+                    async with pool.acquire() as conn:
+                        return await self._score_cluster(
+                            conn, cluster_id, site_id,
+                            has_ga4=has_ga4, has_gsc=has_gsc,
+                            is_short_form=is_short_form,
+                        )
+
+            results = await asyncio.gather(
+                *[_score_one(c["id"]) for c in clusters],
+                return_exceptions=True,
             )
-            total_scored += scored
+            for r in results:
+                if isinstance(r, int):
+                    total_scored += r
+                elif isinstance(r, Exception):
+                    logger.warning("Cluster scoring failed: %s", r)
+        else:
+            for cluster_row in clusters:
+                scored = await self._score_cluster(
+                    db, cluster_row["id"], site_id,
+                    has_ga4=has_ga4, has_gsc=has_gsc,
+                    is_short_form=is_short_form,
+                )
+                total_scored += scored
 
         # Record health score snapshot in history table
         if total_scored > 0:
@@ -194,14 +279,14 @@ class HealthScorer:
 
     async def _score_cluster(
         self, db: asyncpg.Connection, cluster_id: UUID, site_id: UUID,
-        has_ga4: bool = True, has_gsc: bool = True,
+        has_ga4: bool = True, has_gsc: bool = True, is_short_form: bool = False,
     ) -> int:
         """Score all posts in a cluster and assign ecosystem state.
 
         When has_ga4/has_gsc are False, dynamically rebalances weights
         to use only crawl-derived factors (graceful degradation).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ninety_days_ago = now - timedelta(days=90)
         sixty_days_ago = now - timedelta(days=60)
         thirty_days_ago = now - timedelta(days=30)
@@ -214,7 +299,8 @@ class HealthScorer:
         post_rows = await db.fetch(
             """
             SELECT p.id, p.title, p.url, p.publish_date, p.modified_date,
-                   p.word_count, p.headings, p.meta_description, p.body_html
+                   p.word_count, p.headings, p.meta_description, p.body_html,
+                   p.readability_score
             FROM post_clusters pc
             JOIN posts p ON p.id = pc.post_id
             WHERE pc.cluster_id = $1
@@ -357,6 +443,20 @@ class HealthScorer:
             cannibalizing_ids.add(cr["post_a_id"])
             cannibalizing_ids.add(cr["post_b_id"])
 
+        # ── Batch 7: AI readiness scores ──
+        ai_rows = await db.fetch(
+            """
+            SELECT post_id, ai_citability_score, eeat_score, schema_score, extraction_score
+            FROM post_health_scores
+            WHERE post_id = ANY($1::uuid[])
+              AND ai_citability_score IS NOT NULL
+            """,
+            post_ids,
+        )
+        ai_scores_map: dict[UUID, dict] = {
+            r["post_id"]: dict(r) for r in ai_rows
+        }
+
         # ── Score each post ──
         post_metrics: list[dict] = []
 
@@ -386,7 +486,7 @@ class HealthScorer:
 
             # Factor 5: Content depth (10%)
             wc = row["word_count"] or 0
-            depth_score = _content_depth_score(wc, cluster_avg_word_count, body_html=row.get("body_html"))
+            depth_score = _content_depth_score(wc, cluster_avg_word_count, body_html=row.get("body_html"), short_form=is_short_form)
 
             # Factor 6: Internal links (10%)
             inbound = inbound_map.get(post_id, 0)
@@ -402,6 +502,33 @@ class HealthScorer:
                 body_html=row.get("body_html"),
             )
 
+            # Factor 8: Predicted Engagement proxy (crawl-only substitute for GA4 engagement)
+            predicted_engagement = _predicted_engagement_score(
+                body_html=row.get("body_html"),
+                readability_score=row.get("readability_score"),
+                headings=row.get("headings"),
+            )
+
+            # Factor 9: Content Structure (crawl-only richness signal)
+            content_structure = _content_structure_score(
+                body_html=row.get("body_html"),
+                word_count=wc,
+                headings=row.get("headings"),
+            )
+
+            # Factor 10: AI Readiness (15%) — average of 4 AI dimensions
+            ai_scores_row = ai_scores_map.get(post_id)
+            if ai_scores_row:
+                ai_dims = [v for v in [
+                    ai_scores_row.get("ai_citability_score"),
+                    ai_scores_row.get("eeat_score"),
+                    ai_scores_row.get("schema_score"),
+                    ai_scores_row.get("extraction_score"),
+                ] if v is not None]
+                ai_readiness_score = sum(ai_dims) / len(ai_dims) if ai_dims else 0.0
+            else:
+                ai_readiness_score = 0.0
+
             # Composite (0-100) — dynamically weighted
             composite = (
                 weights["traffic_trend"] * trend_score
@@ -411,6 +538,9 @@ class HealthScorer:
                 + weights["content_depth"] * depth_score
                 + weights["internal_links"] * link_score
                 + weights["technical_seo"] * tech_score
+                + weights["ai_readiness"] * ai_readiness_score
+                + weights.get("predicted_engagement", 0) * predicted_engagement
+                + weights.get("content_structure", 0) * content_structure
             )
 
             # Traffic contribution (for cluster weighting)
@@ -423,11 +553,10 @@ class HealthScorer:
             role = _assign_role(composite, traffic_contribution, r_pv, is_cannibalizing, has_traffic_data=has_traffic_data)
 
             # Page importance multiplier for prioritisation
-            page_importance = 1.0
             if inbound >= 10:
-                page_importance = 2.0  # Hub / pillar page
+                pass  # Hub / pillar page
             elif inbound >= 5:
-                page_importance = 1.5
+                pass
 
             post_metrics.append({
                 "post_id": post_id,
@@ -446,26 +575,49 @@ class HealthScorer:
                 "publish_date": row["publish_date"],
             })
 
-        # ── Batch upsert health scores (one per post, keep highest) ──
+        # ── Z-score normalization: spread scores across wider range ──
+        # Spread factor of 12 differentiates posts without crushing low-scorers.
+        # Only activate when stddev > 2.0 — tight clusters (low variance)
+        # shouldn't be artificially spread. Floor of 15 prevents implausible
+        # single-digit scores (a real post with content should never be 5/100).
+        if post_metrics:
+            raw_scores = [m["composite"] for m in post_metrics]
+            mean_score = sum(raw_scores) / len(raw_scores)
+            variance = sum((s - mean_score) ** 2 for s in raw_scores) / max(len(raw_scores), 1)
+            stddev = variance ** 0.5
+            if stddev > 2.0:
+                for m in post_metrics:
+                    normalized = 50 + (m["composite"] - mean_score) / stddev * 12
+                    m["composite"] = max(15.0, min(95.0, normalized))
+
+        # Determine score confidence level
+        score_confidence = (
+            "full" if has_ga4 and has_gsc
+            else "partial" if has_ga4 or has_gsc
+            else "crawl_only"
+        )
+
+        # ── Batch upsert health scores (one per post in leaf clusters) ──
         await db.executemany(
             """
             INSERT INTO post_health_scores
                 (post_id, traffic_contribution, ranking_strength,
                  trend, internal_link_score, composite_score, role,
                  engagement_score, freshness_score, content_depth_score,
-                 technical_seo_score)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                 technical_seo_score, score_confidence)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (post_id) DO UPDATE SET
-                traffic_contribution = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.traffic_contribution ELSE post_health_scores.traffic_contribution END,
-                ranking_strength = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.ranking_strength ELSE post_health_scores.ranking_strength END,
-                trend = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.trend ELSE post_health_scores.trend END,
-                internal_link_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.internal_link_score ELSE post_health_scores.internal_link_score END,
-                composite_score = GREATEST(EXCLUDED.composite_score, post_health_scores.composite_score),
-                role = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.role ELSE post_health_scores.role END,
-                engagement_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.engagement_score ELSE post_health_scores.engagement_score END,
-                freshness_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.freshness_score ELSE post_health_scores.freshness_score END,
-                content_depth_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.content_depth_score ELSE post_health_scores.content_depth_score END,
-                technical_seo_score = CASE WHEN EXCLUDED.composite_score > post_health_scores.composite_score THEN EXCLUDED.technical_seo_score ELSE post_health_scores.technical_seo_score END
+                traffic_contribution = EXCLUDED.traffic_contribution,
+                ranking_strength = EXCLUDED.ranking_strength,
+                trend = EXCLUDED.trend,
+                internal_link_score = EXCLUDED.internal_link_score,
+                composite_score = EXCLUDED.composite_score,
+                role = EXCLUDED.role,
+                engagement_score = EXCLUDED.engagement_score,
+                freshness_score = EXCLUDED.freshness_score,
+                content_depth_score = EXCLUDED.content_depth_score,
+                technical_seo_score = EXCLUDED.technical_seo_score,
+                score_confidence = EXCLUDED.score_confidence
             """,
             [
                 (
@@ -473,6 +625,7 @@ class HealthScorer:
                     m["trend"], m["internal_link_score"], m["composite"],
                     m["role"], m["engagement_score"], m["freshness_score"],
                     m["content_depth_score"], m["technical_seo_score"],
+                    score_confidence,
                 )
                 for m in post_metrics
             ],
@@ -496,6 +649,7 @@ class HealthScorer:
                 cluster_health=cluster_health,
                 now=now,
                 thirty_days_ago=thirty_days_ago,
+                has_traffic_data=has_ga4 or has_gsc,
             )
 
             await db.execute(
@@ -556,15 +710,16 @@ def _compute_trend(
 def _ranking_score(avg_position: float) -> float:
     """Ranking score 0-100.
 
-    Position 1 = 100, Position 10 = 60, Position 20 = 30, Position 50+ = 0.
+    Position 1 = 100, Position 3 = ~80, Position 10 = ~35, Position 20 = ~15, Position 50+ = 0.
+    Uses a steeper exponent (1.5) because positions beyond 10 get near-zero real traffic.
     """
     if avg_position <= 1:
         return 100.0
     if avg_position >= 50:
         return 0.0
 
-    # Exponential decay — top positions worth much more
-    return max(0.0, 100.0 * (1.0 - (avg_position - 1.0) / 49.0) ** 0.7)
+    # Steep exponential decay — top 3 positions get the vast majority of clicks
+    return max(0.0, 100.0 * (1.0 - (avg_position - 1.0) / 49.0) ** 1.5)
 
 
 def _engagement_score(bounce_rate: float, avg_time_seconds: float) -> float:
@@ -619,25 +774,19 @@ def _freshness_score(
     evergreen_floor = 10.0 if time_sensitive else 45.0
 
     if last_updated.tzinfo is None:
-        last_updated = last_updated.replace(tzinfo=timezone.utc)
+        last_updated = last_updated.replace(tzinfo=UTC)
 
     days_old = (now - last_updated).days
     months_old = days_old / 30.44  # Average days per month
 
+    import math
+
+    # Continuous exponential decay instead of step function
+    # 1 month = 95, 3 months = 86, 6 months = 74, 12 months = 55, 24 months = 30
     if months_old < 1:
         return 100.0
-    if months_old < 3:
-        return 90.0
-    if months_old < 6:
-        return 75.0
-    if months_old < 12:
-        return max(60.0, evergreen_floor)
-    if months_old < 24:
-        return max(50.0, evergreen_floor)
-    if months_old < 48:
-        return max(45.0, evergreen_floor)
-    # 4+ years old — still valuable if evergreen
-    return evergreen_floor
+    raw = 100.0 * math.exp(-0.05 * months_old)
+    return max(evergreen_floor, raw)
 
 
 def _content_quality_bonus(body_html: str | None) -> float:
@@ -665,7 +814,7 @@ def _content_quality_bonus(body_html: str | None) -> float:
     if "<table" in html:
         bonus += 2.0
     # External links (citations / references)
-    ext_links = re.findall(r'href=["\']https?://(?!(?:www\.)?close\.com)', html)
+    ext_links = re.findall(r'href=["\']https?://', html)
     if ext_links:
         bonus += min(3.0, len(ext_links) * 0.3)
     # Images
@@ -674,39 +823,55 @@ def _content_quality_bonus(body_html: str | None) -> float:
     return min(15.0, bonus)
 
 
-def _content_depth_score(word_count: int, cluster_avg: float, body_html: str | None = None) -> float:
+def _content_depth_score(
+    word_count: int, cluster_avg: float, body_html: str | None = None, short_form: bool = False,
+) -> float:
     """Content depth score 0-100 based on word count vs cluster average.
 
-    Includes bonus for content quality signals (lists, data, code, tables,
-    citations, images).
-
-    Below 500 words: penalized
-    At cluster average: 60
-    Above cluster average: up to 100
-    2x+ cluster average: 100 (diminishing returns)
+    For short-form sites (median < 600w), uses a gentler absolute curve
+    that doesn't penalize concise writing as heavily.
     """
-    if word_count < 300:
-        return 10.0
-    if word_count < 500:
-        return 30.0
-
     if cluster_avg <= 0:
         cluster_avg = 500.0
 
-    ratio = word_count / cluster_avg
-
-    if ratio < 0.5:
-        base = 20.0
-    elif ratio < 0.75:
-        base = 40.0
-    elif ratio < 1.0:
-        base = 55.0 + (ratio - 0.75) * 20.0  # 55-60
-    elif ratio < 1.5:
-        base = 60.0 + (ratio - 1.0) * 60.0  # 60-90
+    # Absolute scale depends on content profile
+    if short_form:
+        # Short-form: 200w=40, 500w=70, 1000+=100
+        if word_count < 50:
+            absolute = word_count / 50.0 * 5.0
+        elif word_count < 200:
+            absolute = 20.0 + (word_count - 50) / 150.0 * 20.0  # 20-40
+        elif word_count < 500:
+            absolute = 40.0 + (word_count - 200) / 300.0 * 30.0  # 40-70
+        else:
+            absolute = min(100.0, 70.0 + (word_count - 500) / 500.0 * 30.0)  # 70-100
     else:
-        base = min(100.0, 90.0 + (ratio - 1.5) * 20.0)  # 90-100
+        # Long-form: 0w=0, 500=25, 1000=50, 2000=80, 3000+=100
+        absolute = min(100.0, (word_count / 2500.0) * 100.0) if word_count >= 100 else word_count / 100.0 * 5.0
 
+    # Relative scale: how does this compare to cluster peers?
+    ratio = word_count / cluster_avg
+    if ratio < 0.5:
+        relative = 15.0
+    elif ratio < 0.75:
+        relative = 35.0
+    elif ratio < 1.0:
+        relative = 50.0 + (ratio - 0.75) * 40.0  # 50-60
+    elif ratio < 1.5:
+        relative = 60.0 + (ratio - 1.0) * 60.0  # 60-90
+    else:
+        relative = min(100.0, 90.0 + (ratio - 1.5) * 20.0)  # 90-100
+
+    # Blend — short-form sites weight relative higher (their cluster avg IS the right length)
+    if short_form:
+        base = 0.35 * absolute + 0.65 * relative
+    else:
+        base = 0.5 * absolute + 0.5 * relative
+
+    # Quality bonus cap is higher for short-form (density matters more than length)
     bonus = _content_quality_bonus(body_html)
+    max_bonus = 25.0 if short_form else 15.0
+    bonus = min(max_bonus, bonus)
     return min(100.0, base + bonus)
 
 
@@ -730,7 +895,6 @@ def _technical_seo_score(
     7. Has structured data (JSON-LD)
     8. Has canonical tag
     """
-    import re as _re
     score = 0.0
     pts = 12.5  # 8 checks × 12.5 = 100
 
@@ -789,6 +953,107 @@ def _technical_seo_score(
     return min(100.0, score)
 
 
+def _predicted_engagement_score(
+    body_html: str | None = None,
+    readability_score: float | None = None,
+    headings: list | None = None,
+) -> float:
+    """Predict engagement from structural signals (proxy for GA4 bounce/time).
+
+    Sites without GA4 get this as a substitute for the engagement factor.
+    """
+    score = 0.0
+    html = body_html or ""
+
+    # Has images (lower bounce)
+    if any(tag in html for tag in ["<img", "<picture", "<figure", "data-src"]):
+        score += 20.0
+
+    # Has lists (better scannability)
+    if "<li" in html:
+        score += 15.0
+
+    # Readability in sweet spot (60-80 Flesch = easy to read but not simplistic)
+    if readability_score is not None:
+        if 60 <= readability_score <= 80:
+            score += 20.0
+        elif 40 <= readability_score < 60 or 80 < readability_score <= 90:
+            score += 10.0
+
+    # Good heading structure (3+ H2s = well-organized)
+    h_count = len(headings) if headings else 0
+    if h_count >= 5:
+        score += 15.0
+    elif h_count >= 3:
+        score += 10.0
+
+    # Table of contents signal (long posts with many headings)
+    if h_count >= 6 and "table of contents" in html.lower():
+        score += 10.0
+
+    # Code blocks (for technical content — shows depth)
+    if "<pre" in html or "<code" in html:
+        score += 10.0
+
+    return min(100.0, score)
+
+
+def _content_structure_score(
+    body_html: str | None = None,
+    word_count: int = 0,
+    headings: list | None = None,
+) -> float:
+    """Score content richness/structure (proxy for content quality without traffic data)."""
+    score = 0.0
+    html = body_html or ""
+
+    # Heading density (H2s per 500 words)
+    h_count = len(headings) if headings else 0
+    if word_count > 0:
+        density = h_count / (word_count / 500.0)
+        if density >= 1.5:
+            score += 25.0
+        elif density >= 0.8:
+            score += 15.0
+        elif density >= 0.4:
+            score += 8.0
+
+    # List richness
+    li_count = html.count("<li")
+    if li_count >= 10:
+        score += 20.0
+    elif li_count >= 5:
+        score += 12.0
+    elif li_count >= 2:
+        score += 5.0
+
+    # Image count
+    img_count = html.count("<img") + html.count("<picture") + html.count("<figure")
+    if img_count >= 5:
+        score += 20.0
+    elif img_count >= 2:
+        score += 12.0
+    elif img_count >= 1:
+        score += 5.0
+
+    # Tables
+    if "<table" in html:
+        score += 15.0
+
+    # External links (authority signals)
+    ext_links = html.count('href="http') - html.count('href="http://localhost') - html.count('href="https://localhost')
+    if ext_links >= 5:
+        score += 15.0
+    elif ext_links >= 2:
+        score += 8.0
+
+    # Blockquotes (citations, expert quotes)
+    if "<blockquote" in html:
+        score += 5.0
+
+    return min(100.0, score)
+
+
 def _assign_role(
     composite: float,
     traffic_contribution: float,
@@ -803,14 +1068,13 @@ def _assign_role(
     """
     if not has_traffic_data:
         # Derive role from composite score (content quality signals only)
-        # Use stricter thresholds so not everything becomes "pillar"
         if is_cannibalizing:
             return "competitor"
-        if composite >= 70:
+        if composite >= 55:
             return "pillar"
-        if composite >= 45:
+        if composite >= 35:
             return "supporter"
-        if composite >= 20:
+        if composite >= 15:
             return "at_risk"
         return "dead_weight"
 
@@ -832,6 +1096,7 @@ def _assign_ecosystem_state(
     cluster_health: float,
     now: datetime,
     thirty_days_ago: datetime,
+    has_traffic_data: bool = True,
 ) -> str:
     """Assign ecosystem state to a cluster."""
     has_pillar = any(m["role"] == "pillar" for m in post_metrics)
@@ -839,15 +1104,9 @@ def _assign_ecosystem_state(
     total_possible_pairs = post_count * (post_count - 1) / 2 if post_count > 1 else 1
     cannibalization_rate = cannibal_pairs_count / total_possible_pairs
 
-    all_declining = all(m["trend"] in ("declining", "dead") for m in post_metrics)
-
-    avg_traffic = (
-        sum(m["traffic"] for m in post_metrics) / post_count if post_count > 0 else 0
-    )
-
     has_recent = any(
         m["publish_date"] is not None
-        and m["publish_date"].replace(tzinfo=timezone.utc) >= thirty_days_ago
+        and m["publish_date"].replace(tzinfo=UTC) >= thirty_days_ago
         for m in post_metrics
     )
 
@@ -855,17 +1114,30 @@ def _assign_ecosystem_state(
     if has_recent and post_count <= 3:
         return "seedbed"
 
-    # Swamp: high cannibalization
-    if cannibalization_rate > 0.5 or (post_count > 8 and not has_pillar):
-        return "swamp"
+    if has_traffic_data:
+        # With traffic data, use full signals
+        all_declining = all(m["trend"] in ("declining", "dead") for m in post_metrics)
+        avg_traffic = sum(m["traffic"] for m in post_metrics) / post_count if post_count > 0 else 0
 
-    # Desert: all declining or dead
-    if all_declining or avg_traffic < 5:
-        return "desert"
+        if cannibalization_rate > 0.5 or (post_count > 8 and not has_pillar):
+            return "swamp"
+        if all_declining or avg_traffic < 5:
+            return "desert"
+        if has_pillar and cannibalization_rate < 0.2 and cluster_health > 50:
+            return "forest"
+    else:
+        # Without traffic, use content quality signals only
+        avg_freshness = sum(m.get("freshness_score", 45) for m in post_metrics) / max(post_count, 1)
 
-    # Forest: healthy with pillar
-    if has_pillar and cannibalization_rate < 0.2 and cluster_health > 50:
-        return "forest"
+        # Swamp: only if cannibalization is genuinely high (>50%)
+        if cannibalization_rate > 0.5:
+            return "swamp"
+        # Desert: very stale content
+        if avg_freshness < 25:
+            return "desert"
+        # Forest: has pillar, low cannibalization, good health
+        if has_pillar and cannibalization_rate < 0.2 and cluster_health > 50:
+            return "forest"
 
     # Meadow: everything else
     return "meadow"

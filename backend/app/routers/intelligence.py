@@ -1,11 +1,38 @@
 """Intelligence endpoints — clustering, cannibalization, health, consolidation, oracle."""
 
 import logging
-from uuid import UUID
 from typing import Annotated
+from uuid import UUID
 
-# In-memory lock to prevent concurrent pipeline runs per site
-_running_pipelines: set[UUID] = set()
+import asyncpg
+
+
+# Database-level pipeline lock helper (replaces process-local set)
+async def _try_acquire_pipeline_lock(db: asyncpg.Connection, site_id: UUID) -> bool:
+    """Attempt to acquire a database-level lock for a site's pipeline.
+
+    Returns True if lock acquired (no pipeline running), False if already running.
+    Uses pipeline_jobs table status to prevent concurrent runs across workers.
+    """
+    row = await db.fetchrow(
+        """SELECT id FROM pipeline_jobs
+           WHERE site_id = $1 AND status = 'running'
+           LIMIT 1""",
+        site_id,
+    )
+    return row is None
+
+
+async def _set_pipeline_status(site_id: UUID, status: str) -> None:
+    """Update pipeline status in the database."""
+    pool = await get_pool()
+    async with pool.acquire() as db:
+        await db.execute(
+            """INSERT INTO pipeline_jobs (site_id, status, started_at)
+               VALUES ($1, $2, NOW())
+               ON CONFLICT (site_id) DO UPDATE SET status = $2, started_at = NOW()""",
+            site_id, status,
+        )
 
 import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -13,42 +40,40 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id, require_oracle, require_consolidation
+from app.dependencies import get_current_user_id, require_consolidation, require_oracle
 
 limiter = Limiter(key_func=get_remote_address)
+from datetime import UTC
+
 from app.models.schemas import (
-    TaskTriggerResponse,
-    ClusterResponse,
-    ClusterDetailResponse,
-    PostHealthResponse,
+    AlertsListResponse,
     CannibalizationPairResponse,
-    SiteHealthResponse,
+    ClusterDetailResponse,
+    ClusterResponse,
     ClusterSummary,
-    ConsolidationPlanResponse,
     ConsolidationDetailResponse,
     ConsolidationDraftResponse,
-    RedirectEntry,
-    OracleRequest,
-    OracleVerdictResponse,
-    SimilarPostInfo,
-    PillarPostInfo,
-    MergeCandidateInfo,
-    PipelineStatusResponse,
-    EcosystemVisualsResponse,
+    ConsolidationPlanResponse,
     ContentProblemResponse,
     ContentProblemSummary,
-    ProblemDetectionResponse,
-    RecommendationResponse,
-    RecommendationListResponse,
-    RecommendationStatusUpdate,
-    CannibalizationRecommendationRequest,
-    AlertsListResponse,
+    EcosystemVisualsResponse,
+    OracleRequest,
+    OracleVerdictResponse,
+    PipelineStatusResponse,
     PositionAlertResponse,
-    SinceLastVisitResponse,
+    PostHealthResponse,
+    ProblemDetectionResponse,
+    RecommendationListResponse,
+    RecommendationResponse,
+    RecommendationStatusUpdate,
+    RedirectEntry,
     ROISummaryResponse,
+    SimilarPostInfo,
+    SinceLastVisitResponse,
+    SiteHealthResponse,
+    TaskTriggerResponse,
     TopContentGapResponse,
 )
-
 from app.utils.task_retry import with_retry
 
 logger = logging.getLogger(__name__)
@@ -89,9 +114,12 @@ async def _run_clustering(site_id: UUID) -> None:
 async def _run_clustering_safe(site_id: UUID) -> None:
     """Wrapper that clears the pipeline lock after completion."""
     try:
+        await _set_pipeline_status(site_id, "running")
         await _run_clustering(site_id)
-    finally:
-        _running_pipelines.discard(site_id)
+        await _set_pipeline_status(site_id, "completed")
+    except Exception:
+        await _set_pipeline_status(site_id, "failed")
+        raise
 
 
 @with_retry(max_retries=2, base_delay=5.0)
@@ -136,7 +164,7 @@ async def _update_pipeline_status(
     completed: bool = False,
 ) -> None:
     """Update pipeline job status in DB."""
-    from datetime import datetime, timezone
+    from datetime import datetime
     async with pool.acquire() as conn:
         if started:
             await conn.execute(
@@ -152,7 +180,7 @@ async def _update_pipeline_status(
                     error = NULL,
                     updated_at = NOW()
                 """,
-                site_id, current_step, datetime.now(timezone.utc),
+                site_id, current_step, datetime.now(UTC),
             )
             return
 
@@ -178,7 +206,7 @@ async def _update_pipeline_status(
             idx += 1
         if completed:
             sets.append(f"completed_at = ${idx}")
-            params.append(datetime.now(timezone.utc))
+            params.append(datetime.now(UTC))
             idx += 1
 
         await conn.execute(
@@ -197,11 +225,10 @@ async def _run_full_pipeline(site_id: UUID) -> None:
     4. Problem detection (decay, thin, SEO, orphans)
     5. Recommendations (AI-generated for all problems + growth)
     """
-    from app.services.clustering import TopicClusterer
     from app.services.cannibalization import CannibalizationDetector
+    from app.services.clustering import TopicClusterer
     from app.services.health_scoring import HealthScorer
     from app.services.problem_detection import ProblemDetector
-    from app.services.recommendations import RecommendationEngine
 
     logger.info("BG task: full intelligence pipeline started for site %s", site_id)
     pool = await get_pool()
@@ -258,10 +285,10 @@ async def _run_full_pipeline(site_id: UUID) -> None:
             step_completed="problem_detection",
         )
 
-        # Step 5: AI Recommendations
+        # Step 5: Fast template recommendations (zero Claude calls)
+        from app.services.fast_recommendations import generate_fast_recommendations
         async with pool.acquire() as conn:
-            engine = RecommendationEngine()
-            recs = await engine.generate_for_site(conn, site_id)
+            recs = await generate_fast_recommendations(conn, site_id)
             logger.info("Pipeline step 5 complete: %d recommendations generated", recs)
 
         await _update_pipeline_status(
@@ -311,9 +338,8 @@ async def trigger_clustering(
 ):
     """Trigger topic clustering for a site (background task)."""
     await _verify_site(site_id, user_id, db)
-    if site_id in _running_pipelines:
+    if not await _try_acquire_pipeline_lock(db, site_id):
         raise HTTPException(status_code=429, detail="Pipeline already running for this site")
-    _running_pipelines.add(site_id)
     background_tasks.add_task(_run_clustering_safe, site_id)
     return TaskTriggerResponse(message="Clustering started", site_id=site_id)
 
@@ -405,9 +431,14 @@ async def list_cannibalization(
     site_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
+    limit: int = 200,
+    offset: int = 0,
 ):
-    """List all cannibalization pairs grouped by cluster, sorted by severity."""
+    """List cannibalization pairs grouped by cluster, sorted by severity (paginated)."""
     await _verify_site(site_id, user_id, db)
+
+    # Clamp limit to a reasonable maximum
+    limit = min(limit, 200)
 
     severity_order = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
     rows = await db.fetch(
@@ -430,8 +461,9 @@ async def list_cannibalization(
         LEFT JOIN post_health_scores phb ON phb.post_id = cp.post_b_id
         WHERE c.site_id = $1
         ORDER BY {severity_order}, cp.overlap_score DESC
+        LIMIT $2 OFFSET $3
         """,
-        site_id,
+        site_id, limit, offset,
     )
 
     results = []
@@ -974,11 +1006,10 @@ async def trigger_recommendations(
     await _verify_site(site_id, user_id, db)
 
     async def _run_recommendations(sid: UUID) -> None:
-        from app.services.recommendations import RecommendationEngine
+        from app.services.fast_recommendations import generate_fast_recommendations
         pool = await get_pool()
         async with pool.acquire() as conn:
-            engine = RecommendationEngine()
-            count = await engine.generate_for_site(conn, sid)
+            count = await generate_fast_recommendations(conn, sid)
             logger.info("Generated %d recommendations for site %s", count, sid)
 
     background_tasks.add_task(_run_recommendations, site_id)
@@ -998,9 +1029,14 @@ async def list_recommendations(
     recommendation_type: str | None = None,
     priority: str | None = None,
     status: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
 ):
-    """List all recommendations for a site with optional filters."""
+    """List recommendations for a site with optional filters (paginated)."""
     await _verify_site(site_id, user_id, db)
+
+    # Clamp limit to a reasonable maximum
+    limit = min(limit, 200)
 
     query = "SELECT * FROM recommendations WHERE site_id = $1"
     params: list = [site_id]
@@ -1020,6 +1056,9 @@ async def list_recommendations(
         idx += 1
 
     query += " ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, created_at DESC"
+    query += f" LIMIT ${idx} OFFSET ${idx + 1}"
+    params.append(limit)
+    params.append(offset)
 
     rows = await db.fetch(query, *params)
 
@@ -1272,9 +1311,9 @@ async def quick_scan(
         import time
         t0 = time.time()
         try:
+            from app.services.fast_recommendations import generate_fast_recommendations
             from app.services.health_scoring import HealthScorer
             from app.services.problem_detection import ProblemDetector
-            from app.services.fast_recommendations import generate_fast_recommendations
 
             pool = await get_pool()
             async with pool.acquire() as conn:
@@ -1744,10 +1783,10 @@ async def get_roi_summary(
         """,
         site_id,
     )
-    from datetime import datetime, timezone
+    from datetime import datetime
     days_active = 0
     if first_completed:
-        days_active = (datetime.now(timezone.utc) - first_completed).days
+        days_active = (datetime.now(UTC) - first_completed).days
 
     # Health score change: earliest vs latest from health_score_history
     health_history = await db.fetch(

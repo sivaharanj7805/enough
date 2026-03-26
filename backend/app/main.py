@@ -5,8 +5,8 @@ import os
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.asyncio import AsyncioIntegration
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 # Initialise Sentry before anything else
 _sentry_dsn = os.environ.get("SENTRY_DSN", "")
@@ -23,8 +23,21 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings, validate_production
-from app.database import get_pool, close_pool
-from app.routers import auth, sites, ingestion, analytics, intelligence, actions, retention, google_integration, audit_report, og_image, gamification, competitors
+from app.database import close_pool, get_pool
+from app.routers import (
+    actions,
+    analytics,
+    audit_report,
+    auth,
+    competitors,
+    gamification,
+    google_integration,
+    ingestion,
+    intelligence,
+    og_image,
+    retention,
+    sites,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -63,9 +76,9 @@ app = FastAPI(
 settings = get_settings()
 
 from app.middleware.security import (
-    SecurityHeadersMiddleware,
-    RequestSizeLimitMiddleware,
     HostValidationMiddleware,
+    RequestSizeLimitMiddleware,
+    SecurityHeadersMiddleware,
 )
 
 # Security headers on every response
@@ -92,10 +105,12 @@ app.add_middleware(
 # ── API Rate Limiting (slowapi) ──
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── v1 API Router ──
@@ -113,7 +128,9 @@ v1_router.include_router(og_image.router, prefix="/sites", tags=["OG"])
 v1_router.include_router(gamification.router, tags=["Gamification"])
 v1_router.include_router(competitors.router, prefix="/sites", tags=["Competitors"])
 
-from app.routers import unsubscribe
+from app.routers import prospects, unsubscribe
+
+v1_router.include_router(prospects.router, tags=["Prospects"])
 v1_router.include_router(unsubscribe.router, tags=["Unsubscribe"])
 
 app.include_router(v1_router)

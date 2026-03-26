@@ -1,8 +1,8 @@
 """Analytics and post data endpoints."""
 
 import logging
-from uuid import UUID
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,9 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.schemas import (
-    PostResponse, PostDetailResponse, PostListResponse,
-    GA4MetricResponse, GSCMetricResponse, InternalLinkSchema,
     AnalyticsOverview,
+    GA4MetricResponse,
+    GSCMetricResponse,
+    InternalLinkSchema,
+    PostDetailResponse,
+    PostListResponse,
+    PostResponse,
 )
 
 logger = logging.getLogger(__name__)

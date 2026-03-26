@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Spinner } from '@/components/ui/Spinner';
+import { apiUrl } from '@/lib/api';
 import Link from 'next/link';
 import {
   Shield,
@@ -46,7 +47,11 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Can I try it first?',
-    a: "Yes. Enter your blog URL above and we\u2019ll send you a free audit report with your health score and issue count. No credit card required.",
+    a: "Yes. Enter your blog URL above and we\u2019ll send you a free audit report with your health score, AI Readiness grade, and issue count. No credit card required.",
+  },
+  {
+    q: 'What is AI Readiness and why does it matter?',
+    a: "Google AI Overviews now appear on ~50% of searches and cut organic CTR by 34%. Enough scores every post on 4 AI dimensions: citability, E-E-A-T, schema markup, and extraction structure. We tell you exactly which posts AI systems skip and what to change so ChatGPT, Perplexity, and Google AI Overviews cite your content.",
   },
 ];
 
@@ -54,9 +59,9 @@ const FAQ_ITEMS = [
 const PLANS = {
   growth: {
     name: 'Growth',
-    monthlyPrice: 99,
-    annualPrice: 990,
-    monthlyEquiv: '$82.50',
+    monthlyPrice: 149,
+    annualPrice: 1490,
+    monthlyEquiv: '$124.17',
     features: [
       '500 posts',
       '1 site',
@@ -72,9 +77,9 @@ const PLANS = {
   },
   scale: {
     name: 'Scale',
-    monthlyPrice: 249,
-    annualPrice: 2490,
-    monthlyEquiv: '$207.50',
+    monthlyPrice: 349,
+    annualPrice: 3490,
+    monthlyEquiv: '$290.83',
     features: [
       '2,000 posts',
       '3 sites',
@@ -115,7 +120,7 @@ function LandingPage() {
     setLoading(true);
     setErrors({});
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/sites/audit-report/pdf`, {
+      const res = await fetch(apiUrl('/sites/audit-report/pdf'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, email }),
@@ -161,7 +166,10 @@ function LandingPage() {
             <span className="text-[#3B82F6]"> &mdash; in your inbox in 25 minutes. Free.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-[14px] leading-relaxed text-[#9BA1AD]">
-            Enough finds the cannibalization, decay, and dead weight your SEO tool misses &mdash; and tells you exactly what to fix.
+            Google AI Overviews cut organic CTR by 34%. Enough finds the cannibalization, decay, and dead weight your SEO tool misses &mdash; plus your AI Readiness score showing why ChatGPT doesn&apos;t cite you.
+          </p>
+          <p className="mx-auto mt-3 max-w-2xl text-[13px] font-medium text-[#E8EAED]">
+            Actual meta descriptions to copy. Specific posts to merge. Redirect maps ready to implement.
           </p>
 
           {/* What You'll Get */}
@@ -240,7 +248,7 @@ function LandingPage() {
                       Requesting...
                     </>
                   ) : (
-                    'Get Your Free Audit'
+                    'Get Free Audit + AI Score'
                   )}
                 </button>
               </div>
@@ -294,11 +302,6 @@ function LandingPage() {
               <p className="text-lg font-semibold text-[#E8EAED]">200 cannibalization pairs</p>
               <p className="text-[12px] text-[#9BA1AD]">and 24 exact duplicates found</p>
             </div>
-            <div className="hidden sm:block h-8 w-px bg-[#23262F]" />
-            <div>
-              <p className="text-lg font-semibold text-[#3B82F6]">1,247 blogs analyzed</p>
-              <p className="text-[12px] text-[#9BA1AD]">and counting</p>
-            </div>
           </div>
         </div>
       </section>
@@ -350,7 +353,7 @@ function LandingPage() {
       <section className="py-24 px-6 border-t border-[#23262F]">
         <div className="mx-auto max-w-4xl">
           <h2 className="text-center text-[28px] font-semibold mb-14">How it works</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {[
               {
                 step: '1',
@@ -362,13 +365,19 @@ function LandingPage() {
                 step: '2',
                 icon: BarChart3,
                 title: 'We analyze everything',
-                desc: 'Embeddings, clustering, health scoring, cannibalization detection. 25 minutes, fully automated.',
+                desc: 'Embeddings, clustering, health scoring, cannibalization detection, AI readiness. 25 minutes, fully automated.',
               },
               {
                 step: '3',
+                icon: Shield,
+                title: 'Get your AI Readiness score',
+                desc: 'Find out why ChatGPT doesn\u2019t cite you. See which posts are invisible to AI and what to change.',
+              },
+              {
+                step: '4',
                 icon: Zap,
                 title: 'Act on specific fixes',
-                desc: 'Not vague suggestions. Actual meta descriptions to copy. Specific posts to merge. Redirect maps ready to implement.',
+                desc: 'Actual meta descriptions to copy. Specific posts to merge. FAQ sections to add. Redirect maps ready to implement.',
               },
             ].map(({ step, icon: Icon, title, desc }) => (
               <div key={step} className="text-center">
@@ -383,6 +392,19 @@ function LandingPage() {
               </div>
             ))}
           </div>
+
+          {/* Product screenshot */}
+          <div className="mt-16 rounded-xl border border-[#23262F] overflow-hidden shadow-2xl shadow-[#3B82F6]/5">
+            <img
+              src="/ecosystem-preview.png"
+              alt="Enough ecosystem landscape — interactive visualization of your content clusters, health scores, and cannibalization patterns"
+              className="w-full"
+              loading="lazy"
+            />
+          </div>
+          <p className="text-center mt-4 text-[13px] text-[#9BA1AD]">
+            Your content ecosystem, visualized. Every cluster, every connection, every problem.
+          </p>
         </div>
       </section>
 
@@ -427,7 +449,12 @@ function LandingPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Growth */}
-            <div className="rounded-xl border border-[#3B82F6] bg-[#13151B] p-6 ring-2 ring-[#3B82F6] flex flex-col">
+            <div className="rounded-xl border border-[#3B82F6] bg-[#13151B] p-6 ring-2 ring-[#3B82F6] flex flex-col relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <span className="rounded-full bg-[#3B82F6] px-3 py-1 text-[11px] font-bold text-white uppercase tracking-wider">
+                  Most Popular
+                </span>
+              </div>
               <h3 className="text-lg font-semibold">{PLANS.growth.name}</h3>
               <div className="mt-2 mb-1">
                 <span className="text-4xl font-bold">
@@ -540,7 +567,7 @@ function LandingPage() {
       <footer className="border-t border-[#23262F] py-8 px-6">
         <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="text-[12px] text-[#9BA1AD]">
-            &copy; 2025 Enough. All rights reserved.
+            &copy; 2026 Enough. All rights reserved.
           </span>
           <div className="flex items-center gap-6 text-[12px] text-[#9BA1AD]">
             <Link href="/terms" className="hover:text-[#E8EAED] transition-colors">

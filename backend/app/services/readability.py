@@ -138,7 +138,7 @@ class ReadabilityScorer:
                     logger.debug("Skipping non-English post (detected: %s): %s", lang, post["id"])
                     continue
             except Exception:
-                pass  # Default to scoring if detection fails
+                logger.debug("Language detection failed, defaulting to score: %s", post["id"])
 
             fre = compute_flesch_reading_ease(text)
             grade = compute_grade_level(text)
@@ -161,10 +161,10 @@ class ReadabilityScorer:
             await db.execute(
                 """
                 UPDATE posts
-                SET readability_score = $1, grade_level = $2
-                WHERE id = $3
+                SET readability_score = $1, grade_level = $2, readability_details = $3
+                WHERE id = $4
                 """,
-                fre, grade, post["id"],
+                fre, grade, readability_details, post["id"],
             )
             scored += 1
 

@@ -1,38 +1,58 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { apiUrl } from '@/lib/api';
 
 export default function UnsubscribePage() {
   const searchParams = useSearchParams();
   const email = searchParams.get('email');
-  const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
+  const [status, setStatus] = useState<'confirm' | 'loading' | 'done' | 'error'>(
+    email ? 'confirm' : 'error'
+  );
 
-  useEffect(() => {
+  const handleUnsubscribe = () => {
     if (!email) {
       setStatus('error');
       return;
     }
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/unsubscribe?email=${encodeURIComponent(email)}`)
+    setStatus('loading');
+
+    fetch(apiUrl(`/unsubscribe?email=${encodeURIComponent(email)}`))
       .then((res) => {
         if (res.ok) setStatus('done');
         else setStatus('error');
       })
       .catch(() => setStatus('error'));
-  }, [email]);
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-sm p-12 max-w-md text-center">
+    <div className="min-h-screen bg-[#0B0D11] flex items-center justify-center p-4">
+      <div className="bg-[#111827] rounded-xl shadow-sm p-12 max-w-md text-center border border-[#1e293b]">
+        {status === 'confirm' && (
+          <>
+            <h1 className="text-2xl font-semibold mb-3 text-[#e2e8f0]">Unsubscribe</h1>
+            <p className="text-[#64748b] text-sm leading-relaxed mb-6">
+              Are you sure you want to unsubscribe <strong>{email}</strong> from
+              Enough emails?
+            </p>
+            <button
+              onClick={handleUnsubscribe}
+              className="px-6 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors"
+            >
+              Confirm Unsubscribe
+            </button>
+          </>
+        )}
         {status === 'loading' && (
-          <p className="text-gray-500">Processing...</p>
+          <p className="text-[#64748b]">Processing...</p>
         )}
         {status === 'done' && (
           <>
             <div className="text-5xl mb-4">&#10003;</div>
-            <h1 className="text-2xl font-semibold mb-3">You&apos;ve been unsubscribed</h1>
-            <p className="text-gray-500 text-sm leading-relaxed">
+            <h1 className="text-2xl font-semibold mb-3 text-[#e2e8f0]">You&apos;ve been unsubscribed</h1>
+            <p className="text-[#64748b] text-sm leading-relaxed">
               You won&apos;t receive any more emails from Enough. If this was a mistake,
               just submit a new audit at{' '}
               <a href="https://enough.app" className="text-green-600 underline">
@@ -43,8 +63,8 @@ export default function UnsubscribePage() {
         )}
         {status === 'error' && (
           <>
-            <h1 className="text-2xl font-semibold mb-3">Something went wrong</h1>
-            <p className="text-gray-500 text-sm">
+            <h1 className="text-2xl font-semibold mb-3 text-[#e2e8f0]">Something went wrong</h1>
+            <p className="text-[#64748b] text-sm">
               We couldn&apos;t process your unsubscribe request. Please try again or contact support.
             </p>
           </>

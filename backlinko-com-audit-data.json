@@ -1,0 +1,296 @@
+{
+  "site_name": "backlinko.com",
+  "site_domain": "backlinko.com",
+  "total_posts": 149,
+  "analyzed_at": null,
+  "overall_health": 50,
+  "cluster_count": 10,
+  "problem_count": 637,
+  "rec_count": 536,
+  "cann_pair_count": 90,
+  "cann_post_count": 69,
+  "orphan_count": 51,
+  "thin_content_count": 7,
+  "exact_duplicate_count": 0,
+  "ai_citability_score": 70.9,
+  "ai_eeat_score": 59.2,
+  "ai_schema_score": 0.0,
+  "ai_extraction_score": 76.9,
+  "ai_pct_ready": 71.8,
+  "ai_pct_schema": 0.0,
+  "score_confidence": "crawl_only",
+  "top_clusters": [
+    {
+      "label": "Email, Traffic & Days",
+      "description": "",
+      "post_count": 23,
+      "health_score": 50,
+      "ecosystem_state": "meadow"
+    },
+    {
+      "label": "Examples, Customers & Ecommerce",
+      "description": "",
+      "post_count": 23,
+      "health_score": 50,
+      "ecosystem_state": "forest"
+    },
+    {
+      "label": "Hub, Backlinko & Tools",
+      "description": "",
+      "post_count": 23,
+      "health_score": 50,
+      "ecosystem_state": "meadow"
+    },
+    {
+      "label": "Tips, Image & Optimization",
+      "description": "",
+      "post_count": 17,
+      "health_score": 50,
+      "ecosystem_state": "forest"
+    },
+    {
+      "label": "Million, Results & Revenue",
+      "description": "",
+      "post_count": 16,
+      "health_score": 50,
+      "ecosystem_state": "meadow"
+    },
+    {
+      "label": "Tools, Free & Services",
+      "description": "",
+      "post_count": 15,
+      "health_score": 50,
+      "ecosystem_state": "meadow"
+    },
+    {
+      "label": "Tags, Redirects & Fix",
+      "description": "",
+      "post_count": 13,
+      "health_score": 50,
+      "ecosystem_state": "forest"
+    },
+    {
+      "label": "Worth, Features & Good",
+      "description": "",
+      "post_count": 7,
+      "health_score": 50,
+      "ecosystem_state": "desert"
+    }
+  ],
+  "top_cann_pairs": [
+    {
+      "post_a_title": "SEO Copywriting: The Definitive Guide",
+      "post_a_url": "https://backlinko.com/seo-copywriting",
+      "post_b_title": "The 17 Most Important SEO Tips for Higher Rankings",
+      "post_b_url": "https://backlinko.com/actionable-seo-tips",
+      "overlap_score": 0.89,
+      "severity": "medium",
+      "recommendation": null
+    },
+    {
+      "post_a_title": "Meta Tags: What They Are & How to Use Them to Boost Your SEO",
+      "post_a_url": "https://backlinko.com/meta-tags",
+      "post_b_title": "8 HTML Tags for SEO (The Ones That Actually Matter)",
+      "post_b_url": "https://backlinko.com/html-tags",
+      "overlap_score": 0.866,
+      "severity": "medium",
+      "recommendation": null
+    },
+    {
+      "post_a_title": "How to Create an Email Newsletter (That Actually Drives Results)",
+      "post_a_url": "https://backlinko.com/write-email-newsletter",
+      "post_b_title": "Need to Improve Your Email Open Rates? Try These 8 Tips",
+      "post_b_url": "https://backlinko.com/email-open-rate",
+      "overlap_score": 0.865,
+      "severity": "medium",
+      "recommendation": null
+    },
+    {
+      "post_a_title": "We Analyzed 912 Million Blog Posts. Here's What We Learned About Content Marketing",
+      "post_a_url": "https://backlinko.com/content-study",
+      "post_b_title": "The B2B Content Marketing Report",
+      "post_b_url": "https://backlinko.com/b2b-content-marketing-report",
+      "overlap_score": 0.855,
+      "severity": "medium",
+      "recommendation": null
+    },
+    {
+      "post_a_title": "The 17 Most Important SEO Tips for Higher Rankings",
+      "post_a_url": "https://backlinko.com/actionable-seo-tips",
+      "post_b_title": "Google RankBrain: The Definitive Guide",
+      "post_b_url": "https://backlinko.com/google-rankbrain-seo",
+      "overlap_score": 0.851,
+      "severity": "medium",
+      "recommendation": null
+    },
+    {
+      "post_a_title": "The 17 Most Important SEO Tips for Higher Rankings",
+      "post_a_url": "https://backlinko.com/actionable-seo-tips",
+      "post_b_title": "SEO Case Study: How I Increased My Organic Traffic 652% in 7 Days",
+      "post_b_url": "https://backlinko.com/skyscraper-technique-2-0",
+      "overlap_score": 0.848,
+      "severity": "medium",
+      "recommendation": null
+    },
+    {
+      "post_a_title": "We Analyzed 912 Million Blog Posts. Here's What We Learned About Content Marketing",
+      "post_a_url": "https://backlinko.com/content-study",
+      "post_b_title": "We Analyzed 3.6 Billion Articles. Here's What We Learned About Evergreen Content",
+      "post_b_url": "https://backlinko.com/evergreen-content-study",
+      "overlap_score": 0.822,
+      "severity": "medium",
+      "recommendation": null
+    },
+    {
+      "post_a_title": "How I Built 5,660 Backlinks in 30 Days [New Strategy]",
+      "post_a_url": "https://backlinko.com/reverse-outreach",
+      "post_b_title": "How to Build Links With Content Marketing",
+      "post_b_url": "https://backlinko.com/content-link-building",
+      "overlap_score": 0.822,
+      "severity": "medium",
+      "recommendation": null
+    }
+  ],
+  "top_recs": [
+    {
+      "title": "Fix orphan page: The 17 Most Important SEO Tips for Higher Rankings",
+      "summary": "This post has no internal links pointing to it. Orphan pages are nearly invisible to search engines and get minimal crawl budget.",
+      "rec_type": "interlink",
+      "post_title": "The 17 Most Important SEO Tips for Higher Rankings",
+      "post_url": "https://backlinko.com/actionable-seo-tips",
+      "priority": 3.0
+    },
+    {
+      "title": "Fix orphan page: Free Competitor Analysis Tool: Analyze Your SEO & PPC Rivals",
+      "summary": "This post has no internal links pointing to it. Orphan pages are nearly invisible to search engines and get minimal crawl budget.",
+      "rec_type": "interlink",
+      "post_title": "Free Competitor Analysis Tool: Analyze Your SEO & PPC Rivals",
+      "post_url": "https://backlinko.com/competitor-analysis",
+      "priority": 3.0
+    },
+    {
+      "title": "Fix orphan page: How to Get Backlinks With Guestographics",
+      "summary": "This post has no internal links pointing to it. Orphan pages are nearly invisible to search engines and get minimal crawl budget.",
+      "rec_type": "interlink",
+      "post_title": "How to Get Backlinks With Guestographics",
+      "post_url": "https://backlinko.com/how-to-get-backlinks",
+      "priority": 3.0
+    },
+    {
+      "title": "Add FAQPage schema markup: Landing Page Guide: Create Pages That Convert Super Well",
+      "summary": "This post has FAQ-like content but no FAQPage JSON-LD schema. Structured FAQ schema makes Q&A pairs directly extractable by AI systems and increases eligibility for Google rich results.",
+      "rec_type": "add_faq_schema",
+      "post_title": "Landing Page Guide: Create Pages That Convert Super Well",
+      "post_url": "https://backlinko.com/landing-page-guide",
+      "priority": 3.0
+    },
+    {
+      "title": "Fix orphan page: 47 Key AI Statistics for 2026",
+      "summary": "This post has no internal links pointing to it. Orphan pages are nearly invisible to search engines and get minimal crawl budget.",
+      "rec_type": "interlink",
+      "post_title": "47 Key AI Statistics for 2026",
+      "post_url": "https://backlinko.com/ai-statistics",
+      "priority": 3.0
+    },
+    {
+      "title": "Add FAQPage schema markup: 15 Image SEO Tips for Better Image Optimization",
+      "summary": "This post has FAQ-like content but no FAQPage JSON-LD schema. Structured FAQ schema makes Q&A pairs directly extractable by AI systems and increases eligibility for Google rich results.",
+      "rec_type": "add_faq_schema",
+      "post_title": "15 Image SEO Tips for Better Image Optimization",
+      "post_url": "https://backlinko.com/image-seo",
+      "priority": 3.0
+    },
+    {
+      "title": "Add FAQPage schema markup: Voice Search: The Definitive Guide",
+      "summary": "This post has FAQ-like content but no FAQPage JSON-LD schema. Structured FAQ schema makes Q&A pairs directly extractable by AI systems and increases eligibility for Google rich results.",
+      "rec_type": "add_faq_schema",
+      "post_title": "Voice Search: The Definitive Guide",
+      "post_url": "https://backlinko.com/optimize-for-voice-search",
+      "priority": 3.0
+    },
+    {
+      "title": "Fix orphan page: The SEO Services Report",
+      "summary": "This post has no internal links pointing to it. Orphan pages are nearly invisible to search engines and get minimal crawl budget.",
+      "rec_type": "interlink",
+      "post_title": "The SEO Services Report",
+      "post_url": "https://backlinko.com/seo-services-statistics",
+      "priority": 3.0
+    }
+  ],
+  "worst_posts": [
+    {
+      "title": "How Do Search Engines Work? (Quick Guide for Beginners)",
+      "url": "https://backlinko.com/how-search-engines-work",
+      "health_score": 25,
+      "role": "supporter",
+      "issue": "geo_low_data_density, geo_missing_faq_schema, geo_no_answer_first, missing_schema, orphan, readability_too_complex"
+    },
+    {
+      "title": "The SEO Services Report",
+      "url": "https://backlinko.com/seo-services-statistics",
+      "health_score": 27,
+      "role": "supporter",
+      "issue": "geo_no_answer_first, geo_no_faq_section, geo_no_question_headers, missing_schema, orphan"
+    },
+    {
+      "title": "We Analyzed 1.3 Million YouTube Videos. Here's What We Learned About YouTube SEO",
+      "url": "https://backlinko.com/youtube-ranking-factors",
+      "health_score": 28,
+      "role": "supporter",
+      "issue": "geo_low_data_density, geo_no_faq_section, geo_no_question_headers, missing_schema, seo_title_length"
+    },
+    {
+      "title": "The Digital Marketing Templates Library",
+      "url": "https://backlinko.com/introducing-the-digital-marketing-templates-library",
+      "health_score": 29,
+      "role": "at_risk",
+      "issue": "geo_low_data_density, geo_no_faq_section, geo_no_freshness_date, low_ai_citability, missing_schema, orphan, poor_ai_structure, thin_below_cluster_avg, thin_content, weak_eeat"
+    },
+    {
+      "title": "Google TrustRank: The Definitive Guide",
+      "url": "https://backlinko.com/google-trustrank",
+      "health_score": 29,
+      "role": "pillar",
+      "issue": "geo_low_data_density, geo_no_faq_section, missing_schema, orphan"
+    }
+  ],
+  "best_posts": [
+    {
+      "title": "Mangools Review: How Does This SEO Tool Stack Up?",
+      "url": "https://backlinko.com/mangools-review",
+      "health_score": 77,
+      "role": "pillar"
+    },
+    {
+      "title": "We Analyzed 4 Million Google Search Results. Here's What We Learned About Organic CTR",
+      "url": "https://backlinko.com/google-ctr-stats",
+      "health_score": 77,
+      "role": "pillar"
+    },
+    {
+      "title": "Google Analytics 4 (GA4): The Ultimate Guide",
+      "url": "https://backlinko.com/google-analytics-4",
+      "health_score": 76,
+      "role": "pillar"
+    },
+    {
+      "title": "5 Ways to Search a Website for Keywords (+ Examples)",
+      "url": "https://backlinko.com/search-website-for-keywords",
+      "health_score": 76,
+      "role": "pillar"
+    },
+    {
+      "title": "Shopify SEO: The Complete Beginner\u2019s Guide",
+      "url": "https://backlinko.com/shopify-seo",
+      "health_score": 76,
+      "role": "pillar"
+    }
+  ],
+  "key_findings": [
+    "69 of your 149 posts have significant content overlap (90 cannibalization pairs detected)",
+    "51 orphan posts have no inbound internal links",
+    "7 posts are too thin relative to cluster average",
+    "100% of posts have no schema markup \u2014 missing Article/FAQ JSON-LD that dramatically increases AI Overview citations"
+  ],
+  "headline": "69 of 149 posts have significant content overlap across 10 topic clusters"
+}

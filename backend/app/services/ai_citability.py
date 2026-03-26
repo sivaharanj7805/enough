@@ -8,12 +8,12 @@ Scores each post on 4 dimensions:
 
 All signals derived from already-crawled body_html + body_text. Zero new API calls.
 """
-import asyncio
 import json
 import logging
 import re
-import asyncpg
 from uuid import UUID
+
+import asyncpg
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -150,6 +150,46 @@ def compute_citability_score(body_text: str, body_html: str) -> tuple[float, dic
     if citation_matches >= 2:
         score += 5
 
+    # ── GEO-1 additions ──
+
+    # Question-format H2/H3 headers (AI systems match prompts to question headers)
+    if body_html:
+        q_soup = _parse_html(body_html)
+        h_tags = q_soup.find_all(["h2", "h3"])
+        question_headers = sum(
+            1 for h in h_tags
+            if re.match(r"^(what|how|why|when|where|which|who|can|does|is|are|should|will)\s", h.get_text(strip=True), re.I)
+        )
+        total_headers = len(h_tags)
+        question_ratio = question_headers / max(total_headers, 1)
+        signals["question_headers"] = question_headers
+        signals["total_headers"] = total_headers
+        signals["question_header_ratio"] = round(question_ratio, 2)
+        if question_ratio >= 0.3:
+            score += 15
+        elif question_ratio >= 0.15:
+            score += 7
+
+    # Data density — specific numbers/stats per 200 words
+    data_points = len(re.findall(r"\d+[\.,]?\d*\s*%|\$\d+|\d{2,}[\.,]\d+|\d+\s*(million|billion|thousand|users|customers|companies)", text, re.I))
+    data_density = (data_points / max(words, 1)) * 200  # per 200 words
+    signals["data_points"] = data_points
+    signals["data_density_per_200w"] = round(data_density, 2)
+    if data_density >= 1.0:
+        score += 10
+    elif data_density >= 0.5:
+        score += 5
+
+    # Answer-first structure — first 200 words contain a direct answer
+    first_200 = " ".join(text.split()[:200])
+    has_answer_first = bool(
+        re.search(r"\b(is|are|means|refers to|the (best|most|key|main)|you (can|should|need)|here's|here is)\b", first_200, re.I)
+        and (re.search(r"\d", first_200) or re.search(r"\b(is|are|means|refers to|can be defined as)\b", first_200, re.I))
+    )
+    signals["answer_first_200w"] = has_answer_first
+    if has_answer_first:
+        score += 10
+
     signals["citability_score"] = round(min(score, 100))
     return round(min(score, 100)), signals
 
@@ -171,7 +211,7 @@ def compute_eeat_score(body_html: str) -> tuple[float, dict]:
     signals: dict = {}
     score = 0.0
 
-    # Author byline detection
+    # Author byline detection — check structured selectors first, then text patterns
     author_selectors = [
         {"itemprop": "author"}, {"class": re.compile(r"author|byline", re.I)},
         {"rel": "author"}, {"name": "author"},
@@ -184,22 +224,50 @@ def compute_eeat_score(body_html: str) -> tuple[float, dict]:
             author_found = True
             author_name = tag.get_text(strip=True)[:60]
             break
-    # Also check meta
-    meta_author = soup.find("meta", attrs={"name": "author"})
-    if meta_author and meta_author.get("content"):
-        author_found = True
-        author_name = meta_author["content"][:60]
+    # Check meta tag
+    if not author_found:
+        meta_author = soup.find("meta", attrs={"name": "author"})
+        if meta_author and meta_author.get("content"):
+            author_found = True
+            author_name = meta_author["content"][:60]
+    # Check for author page links (e.g. /author/brian-dean, /blog/authors/...)
+    if not author_found:
+        author_link = soup.find("a", href=re.compile(r"/authors?/[^/]+", re.I))
+        if author_link:
+            author_found = True
+            author_name = author_link.get_text(strip=True)[:60] or None
+    # Check text-based patterns: "Written by ...", "By ...", "Author: ..."
+    if not author_found:
+        body_text_snippet = soup.get_text(" ", strip=True)[:3000]
+        author_text_match = re.search(
+            r"(?:written by|by|author[:\s]+|reviewed by|edited by)\s+([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)",
+            body_text_snippet,
+            re.IGNORECASE,
+        )
+        if author_text_match:
+            author_found = True
+            author_name = author_text_match.group(1).strip()[:60]
 
     signals["author_found"] = author_found
     signals["author_name"] = author_name
     if author_found:
         score += 20
 
-    # Author credentials / bio
-    bio_patterns = re.compile(r"author|bio|about.*author", re.I)
+    # Author credentials / bio — check structured sections and text patterns
+    bio_patterns = re.compile(r"author|bio|about.*author|writer|contributor", re.I)
     bio_section = soup.find(True, {"class": bio_patterns}) or soup.find(True, {"id": bio_patterns})
     bio_text = bio_section.get_text(" ", strip=True) if bio_section else ""
+    # If no structured bio section, check for author page link (signals author identity)
+    if not bio_text and author_found:
+        # Having a named author with a link to their profile counts as a bio signal
+        author_page_link = soup.find("a", href=re.compile(r"/authors?/[^/]+", re.I))
+        if author_page_link:
+            bio_text = f"Author page: {author_name or 'linked'}"
     has_credentials = bool(AUTHOR_CREDENTIAL_PATTERNS.search(bio_text)) if bio_text else False
+    # Also check the full page for credential patterns near the author name
+    if not has_credentials and author_name:
+        nearby_text = soup.get_text(" ", strip=True)[:5000]
+        has_credentials = bool(AUTHOR_CREDENTIAL_PATTERNS.search(nearby_text))
     signals["has_author_bio"] = bool(bio_text)
     signals["has_author_credentials"] = has_credentials
     if bio_text and has_credentials:
@@ -207,9 +275,31 @@ def compute_eeat_score(body_html: str) -> tuple[float, dict]:
     elif bio_text:
         score += 10
 
-    # Date signals
+    # Date signals — check <time> elements, meta tags, and text patterns
     time_tags = soup.find_all("time", attrs={"datetime": True})
     has_date = len(time_tags) > 0
+    # Check meta date tags
+    if not has_date:
+        for meta_name in ["article:published_time", "article:modified_time",
+                          "datePublished", "dateModified", "date"]:
+            meta_tag = soup.find("meta", attrs={"property": meta_name}) or \
+                       soup.find("meta", attrs={"name": meta_name})
+            if meta_tag and meta_tag.get("content"):
+                has_date = True
+                break
+    # Check text-based date patterns: "Last updated", "Updated on", "Published"
+    if not has_date:
+        body_text_snippet = soup.get_text(" ", strip=True)[:3000]
+        date_text_match = re.search(
+            r"(?:last updated|updated on|published on|posted on|modified|updated)\s*[:\s]*"
+            r"(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z.]*\s+\d{1,2},?\s+\d{4}"
+            r"|\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}"
+            r"|\d{4}[/\-]\d{1,2}[/\-]\d{1,2})",
+            body_text_snippet,
+            re.IGNORECASE,
+        )
+        if date_text_match:
+            has_date = True
     signals["has_visible_date"] = has_date
     if has_date:
         score += 15
@@ -395,18 +485,46 @@ def compute_extraction_score(body_text: str, body_html: str, headings: list[dict
     elif def_count >= 1:
         score += 10
 
-    # FAQ / Q&A structure
-    faq_patterns = re.compile(
-        r"(frequently asked|faq|q:|question:|^(what|how|why|when|where|who|can|does|is|are)\s)",
-        re.IGNORECASE | re.MULTILINE,
-    )
-    faq_matches = len(faq_patterns.findall(text))
-    has_faq = faq_matches >= 3
-    signals["faq_structure"] = has_faq
-    if has_faq:
+    # FAQ / Q&A structure — detect dedicated FAQ section (GEO-1 enhanced)
+    # Look for explicit FAQ heading or consecutive question-format H3s
+    has_faq_heading = bool(soup.find(["h2", "h3"], string=re.compile(r"(frequently asked|FAQ|common questions)", re.I)))
+    # Count consecutive Q&A pairs: H3 with question mark followed by short paragraph
+    h3_questions = 0
+    for h3 in soup.find_all("h3"):
+        h3_text = h3.get_text(strip=True)
+        if h3_text.endswith("?") or re.match(r"^(what|how|why|when|where|which|who|can|does|is|are|should)\s", h3_text, re.I):
+            next_p = h3.find_next_sibling("p")
+            if next_p and len(next_p.get_text(strip=True).split()) <= 150:
+                h3_questions += 1
+
+    has_faq_section = has_faq_heading or h3_questions >= 3
+    signals["has_faq_section"] = has_faq_section
+    signals["faq_qa_pairs"] = h3_questions
+    if has_faq_section and h3_questions >= 3:
         score += 20
-    elif faq_matches >= 1:
+    elif has_faq_section or h3_questions >= 2:
+        score += 15
+    elif h3_questions >= 1:
+        score += 5
+
+    # Standalone section test — sections should begin with topic sentence, not pronoun reference
+    pronoun_starts = 0
+    for h2 in soup.find_all("h2"):
+        next_p = h2.find_next_sibling("p")
+        if next_p:
+            first_word = next_p.get_text(strip=True).split()[0] if next_p.get_text(strip=True) else ""
+            if first_word.lower() in ("this", "it", "that", "these", "those", "they", "he", "she"):
+                pronoun_starts += 1
+    total_h2_count = len(soup.find_all("h2"))
+    if total_h2_count == 0:
+        standalone_ratio = 0.0  # Can't evaluate standalone sections without H2s
+    else:
+        standalone_ratio = 1 - (pronoun_starts / total_h2_count)
+    signals["standalone_section_ratio"] = round(standalone_ratio, 2)
+    if standalone_ratio >= 0.8:
         score += 10
+    elif standalone_ratio >= 0.5:
+        score += 5
 
     # Lists under H2 sections
     ul_ol_tags = soup.find_all(["ul", "ol"])
@@ -416,6 +534,33 @@ def compute_extraction_score(body_text: str, body_html: str, headings: list[dict
         score += 10
     elif list_items >= 2:
         score += 5
+
+    # GEO-5: Quote-worthiness — concise paragraphs with numbers/claims
+    quotable_paragraphs = 0
+    for p in soup.find_all("p"):
+        p_text = p.get_text(strip=True)
+        words = p_text.split()
+        # Quotable: 10-40 words, contains a number, has a claim verb
+        if 10 <= len(words) <= 40 and re.search(r"\d+%?", p_text):
+            if re.search(r"\b(increase|decrease|reduce|improve|boost|grow|drop|rise|save|cost)\b", p_text, re.I):
+                quotable_paragraphs += 1
+    signals["quotable_paragraphs"] = quotable_paragraphs
+    if quotable_paragraphs >= 3:
+        score += 10
+    elif quotable_paragraphs >= 1:
+        score += 5
+
+    # GEO-5: Comparison table extractability
+    tables = soup.find_all("table")
+    extractable_tables = 0
+    for table in tables:
+        rows = table.find_all("tr")
+        headers = table.find_all("th")
+        if len(rows) >= 3 and len(headers) >= 2:
+            extractable_tables += 1
+    signals["extractable_tables"] = extractable_tables
+    if extractable_tables >= 1:
+        score += 10
 
     signals["extraction_score"] = round(min(score, 100))
     return round(min(score, 100)), signals
@@ -474,13 +619,14 @@ class AICitabilityService:
 
             await db.execute(
                 """
-                UPDATE post_health_scores SET
-                    ai_citability_score = $1,
-                    eeat_score = $2,
-                    schema_score = $3,
-                    extraction_score = $4,
-                    ai_signals = $5
-                WHERE post_id = $6
+                INSERT INTO post_health_scores (post_id, ai_citability_score, eeat_score, schema_score, extraction_score, ai_signals)
+                VALUES ($6, $1, $2, $3, $4, $5)
+                ON CONFLICT (post_id) DO UPDATE SET
+                    ai_citability_score = EXCLUDED.ai_citability_score,
+                    eeat_score = EXCLUDED.eeat_score,
+                    schema_score = EXCLUDED.schema_score,
+                    extraction_score = EXCLUDED.extraction_score,
+                    ai_signals = EXCLUDED.ai_signals
                 """,
                 float(cite_score), float(eeat_score),
                 float(schema_score), float(extract_score),
@@ -582,11 +728,100 @@ def generate_ai_problems(post_id: UUID, title: str,
             "severity": "medium",
             "description": (
                 f"Poor AI extraction structure (score: {int(extract)}/100). "
-                "This post doesn't answer its primary query in the first 100 words, "
+                "This post doesn't answer its primary query in the first 200 words, "
                 "and H2 sections don't start with concise direct answers. "
                 "AI systems prefer content that front-loads answers."
             ),
             "metadata": {"extraction_score": extract},
+        })
+
+    # ── GEO-specific granular problems (GEO-8) ──
+
+    # No FAQ section
+    if not signals.get("has_faq_section") and not signals.get("extract_has_faq_section"):
+        problems.append({
+            "post_id": post_id,
+            "problem_type": "geo_no_faq_section",
+            "severity": "medium",
+            "description": (
+                "No FAQ section detected. Posts with structured FAQ sections are "
+                "significantly more likely to be cited by AI systems. Add 3-5 Q&A pairs "
+                "covering common questions about this topic."
+            ),
+            "metadata": {},
+        })
+
+    # Low question-format headers
+    q_ratio = signals.get("question_header_ratio", 0)
+    if q_ratio < 0.3 and signals.get("total_headers", 0) >= 3:
+        problems.append({
+            "post_id": post_id,
+            "problem_type": "geo_no_question_headers",
+            "severity": "medium",
+            "description": (
+                f"Only {int(q_ratio * 100)}% of headers are question-format "
+                f"({signals.get('question_headers', 0)} of {signals.get('total_headers', 0)}). "
+                "AI systems match natural language prompts to question headers. Target: 30%+."
+            ),
+            "metadata": {"question_header_ratio": q_ratio},
+        })
+
+    # Low data density
+    data_density = signals.get("data_density_per_200w", 0)
+    if data_density < 0.5:
+        problems.append({
+            "post_id": post_id,
+            "problem_type": "geo_low_data_density",
+            "severity": "medium",
+            "description": (
+                f"Data density: {data_density:.1f} data points per 200 words (target: 1.0). "
+                "AI systems preferentially cite content with specific statistics. "
+                "Add more numbers, percentages, and attributed data."
+            ),
+            "metadata": {"data_density_per_200w": data_density},
+        })
+
+    # No answer-first structure
+    if not signals.get("answer_first_200w") and not signals.get("direct_opening"):
+        problems.append({
+            "post_id": post_id,
+            "problem_type": "geo_no_answer_first",
+            "severity": "medium",
+            "description": (
+                "The first 200 words don't directly answer the query. "
+                "AI systems extract the first passage that answers a prompt. "
+                "Add a TL;DR with a direct answer and at least one data point."
+            ),
+            "metadata": {},
+        })
+
+    # Has FAQ content but missing FAQPage schema
+    has_faq_content = signals.get("has_faq_section") or signals.get("extract_has_faq_section") or signals.get("faq_qa_pairs", 0) >= 2
+    has_faq_schema = "FAQPage" in signals.get("schema_types", [])
+    if has_faq_content and not has_faq_schema:
+        problems.append({
+            "post_id": post_id,
+            "problem_type": "geo_missing_faq_schema",
+            "severity": "high",
+            "description": (
+                "This post has FAQ content but no FAQPage JSON-LD schema. "
+                "Adding structured data makes Q&A pairs directly extractable by AI "
+                "and increases eligibility for Google rich results."
+            ),
+            "metadata": {},
+        })
+
+    # No freshness date visible
+    if not signals.get("eeat_has_visible_date"):
+        problems.append({
+            "post_id": post_id,
+            "problem_type": "geo_no_freshness_date",
+            "severity": "low",
+            "description": (
+                "No visible 'Last updated' date detected. AI systems favor content "
+                "with recent modification dates. Add a visible timestamp."
+            ),
+            "metadata": {},
         })
 
     return problems

@@ -237,16 +237,28 @@ class TestNewHealthFactors:
         now = datetime.now(timezone.utc)
 
         assert _freshness_score(now, now) == 100.0
-        assert _freshness_score(now - timedelta(days=60), now) == 90.0
-        assert _freshness_score(now - timedelta(days=120), now) == 75.0
-        assert _freshness_score(now - timedelta(days=270), now) == 60.0
-        assert _freshness_score(now - timedelta(days=450), now) == 50.0
-        assert _freshness_score(now - timedelta(days=730), now) == 50.0
+        # Continuous exponential decay: 100 * exp(-0.05 * months_old)
+        score_60d = _freshness_score(now - timedelta(days=60), now)
+        assert abs(score_60d - 90.6) < 2.0  # ~2 months
+        score_120d = _freshness_score(now - timedelta(days=120), now)
+        assert abs(score_120d - 82.1) < 2.0  # ~4 months
+        score_270d = _freshness_score(now - timedelta(days=270), now)
+        assert abs(score_270d - 64.2) < 2.0  # ~9 months
+        score_450d = _freshness_score(now - timedelta(days=450), now)
+        assert abs(score_450d - 47.7) < 2.0  # ~15 months, above evergreen floor
+        score_730d = _freshness_score(now - timedelta(days=730), now)
+        assert score_730d == 45.0  # Hits evergreen floor
 
     def test_content_depth_penalty_short(self):
         from app.services.health_scoring import _content_depth_score
-        assert _content_depth_score(200, 1000) == 10.0
-        assert _content_depth_score(400, 1000) == 30.0
+        # 200 words: absolute=8, relative=15, base=11.5
+        score_200 = _content_depth_score(200, 1000)
+        assert abs(score_200 - 11.5) < 2.0
+        # 400 words: absolute=16, relative=15, base=15.5
+        score_400 = _content_depth_score(400, 1000)
+        assert abs(score_400 - 15.5) < 2.0
+        # Short content scores less than long content
+        assert score_200 < score_400
 
     def test_content_depth_bonus_long(self):
         from app.services.health_scoring import _content_depth_score
@@ -293,11 +305,11 @@ class TestNewHealthFactors:
         from app.services.health_scoring import (
             W_TRAFFIC_TREND, W_RANKING, W_ENGAGEMENT,
             W_FRESHNESS, W_CONTENT_DEPTH, W_INTERNAL_LINKS,
-            W_TECHNICAL_SEO,
+            W_TECHNICAL_SEO, W_AI_READINESS,
         )
         total = (
             W_TRAFFIC_TREND + W_RANKING + W_ENGAGEMENT
             + W_FRESHNESS + W_CONTENT_DEPTH + W_INTERNAL_LINKS
-            + W_TECHNICAL_SEO
+            + W_TECHNICAL_SEO + W_AI_READINESS
         )
         assert abs(total - 1.0) < 0.001

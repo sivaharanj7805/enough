@@ -47,10 +47,10 @@ class CompetitorCompareService:
 
         # Get content gaps data if available
         gaps = await db.fetch(
-            """SELECT topic, gap_type, priority
+            """SELECT query, gap_type, impressions
                FROM content_gaps
                WHERE site_id = $1
-               ORDER BY priority DESC
+               ORDER BY impressions DESC
                LIMIT 20""",
             site_id,
         ) if await self._table_exists(db, "content_gaps") else []
@@ -78,9 +78,9 @@ class CompetitorCompareService:
         # Identify content gaps (topics competitor likely covers but we don't)
         gap_topics = [
             {
-                "topic": g["topic"],
+                "topic": g["query"],
                 "gap_type": g["gap_type"],
-                "priority": g["priority"],
+                "impressions": g["impressions"],
             }
             for g in gaps
         ]

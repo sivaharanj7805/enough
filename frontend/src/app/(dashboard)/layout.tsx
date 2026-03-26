@@ -7,6 +7,7 @@ import { useSubscription } from '@/lib/hooks/useApi';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { Spinner } from '@/components/ui/Spinner';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { OraclePanel } from '@/components/oracle/OraclePanel';
 import { Sparkles } from 'lucide-react';
 
@@ -69,7 +70,9 @@ export default function DashboardLayout({
           className="flex-1 overflow-auto bg-[#0B0D11]"
         >
           <div className="mx-auto max-w-[1200px] px-6 py-6 md:px-16">
-            {children}
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
           </div>
         </main>
       </div>
@@ -83,6 +86,7 @@ export default function DashboardLayout({
                      hover:bg-[#2563eb] transition-all duration-200 hover:shadow-[#3b82f6]/20
                      hover:shadow-xl hover:scale-105"
           title="Ask Oracle anything"
+          aria-label="Ask Oracle anything"
         >
           <Sparkles size={16} />
           <span>Ask Oracle</span>

@@ -1,7 +1,7 @@
 """OG image endpoint — returns a styled SVG for social sharing previews."""
 import logging
-from uuid import UUID
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException

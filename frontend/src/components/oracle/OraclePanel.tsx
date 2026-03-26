@@ -36,7 +36,8 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
 
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 150);
+      const timer = setTimeout(() => inputRef.current?.focus(), 150);
+      return () => clearTimeout(timer);
     }
   }, [open]);
 
@@ -127,6 +128,7 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-[#64748b] hover:text-[#e2e8f0] hover:bg-[#1e293b] transition-colors"
+              aria-label="Close Oracle panel"
             >
               <X size={16} />
             </button>

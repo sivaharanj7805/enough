@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiUrl } from '@/lib/api';
 import {
   CheckCircle,
   XCircle,
@@ -67,7 +67,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Site Settings state
-  const [siteUrl, setSiteUrl] = useState(currentSite?.url ?? '');
+  const [siteUrl, setSiteUrl] = useState(currentSite?.domain ?? '');
   const [cmsType, setCmsType] = useState<string>('Sitemap');
   const [recrawlSchedule, setRecrawlSchedule] = useState<string>('Manual');
   const [savingSiteSettings, setSavingSiteSettings] = useState(false);
@@ -77,8 +77,8 @@ export default function SettingsPage() {
   const [savingNotifications, setSavingNotifications] = useState(false);
 
   useEffect(() => {
-    if (currentSite?.url) setSiteUrl(currentSite.url);
-  }, [currentSite?.url]);
+    if (currentSite?.domain) setSiteUrl(currentSite.domain);
+  }, [currentSite?.domain]);
 
   const showMessage = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
@@ -114,8 +114,7 @@ export default function SettingsPage() {
 
   const handleConnect = () => {
     if (!siteId) return;
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'https://pst-leaving-otherwise-roles.trycloudflare.com';
-    window.location.href = `${apiBase}/v1/auth/google?site_id=${siteId}`;
+    window.location.href = apiUrl(`/sites/${siteId}/google/connect`);
   };
 
   const handleDisconnect = async () => {

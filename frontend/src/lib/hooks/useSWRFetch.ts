@@ -12,7 +12,7 @@ export function useSWRFetch<T>(
   const token = session?.access_token;
 
   return useSWR<T>(
-    path ? [path, token] : null,
+    path && token ? [path, token] : null,
     async ([url, currentToken]: [string, string | undefined]) => {
       return apiFetch<T>(url, { token: currentToken });
     },
