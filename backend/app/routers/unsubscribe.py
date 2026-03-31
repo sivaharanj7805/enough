@@ -37,7 +37,7 @@ async def unsubscribe(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Unsubscribed — Enough</title>
+  <title>Unsubscribed — Tended</title>
   <style>
     body { font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; color: #1e293b; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
     .card { background: #fff; border-radius: 12px; padding: 48px; max-width: 480px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -50,7 +50,7 @@ async def unsubscribe(
   <div class="card">
     <div class="check">&#10003;</div>
     <h1>You've been unsubscribed</h1>
-    <p>You won't receive any more emails from Enough. If this was a mistake, just submit a new audit at <a href="https://enough.app" style="color:#16a34a;">enough.app</a>.</p>
+    <p>You won't receive any more emails from Tended. If this was a mistake, just submit a new audit at <a href="https://tended.app" style="color:#16a34a;">tended.app</a>.</p>
   </div>
 </body>
 </html>""", status_code=200)

@@ -39,6 +39,12 @@ export interface Post {
   cms_categories: string[];
   cms_tags: string[];
   word_count: number | null;
+  /** Pipeline-computed fields (surfaced per productplan.md gap analysis) */
+  page_type: string | null;
+  content_intent: string | null;
+  readability_score: number | null;
+  grade_level: number | null;
+  pagerank_score: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -55,6 +61,9 @@ export interface PostHealth {
   traffic_contribution: number | null;
   ranking_strength: number | null;
   internal_link_score: number | null;
+  score_confidence: 'full' | 'partial' | 'crawl_only' | null;
+  x_pos: number | null;
+  y_pos: number | null;
 }
 
 // ─── Analytics ───────────────────────────────────
@@ -87,9 +96,24 @@ export interface InternalLink {
 }
 
 export interface PostDetail extends Post {
+  composite_score: number | null;
+  role: string | null;
+  cluster_id: string | null;
+  cluster_name: string | null;
+  factor_scores: Record<string, number | null> | null;
+  ai_citability_score: number | null;
   ga4_metrics: GA4Metric[];
   gsc_metrics: GSCMetric[];
   internal_links: InternalLink[];
+  ai_signals: Record<string, unknown> | null;
+  meta_description: string | null;
+  meta_title: string | null;
+  headings: Array<Record<string, string>> | null;
+  headings_count: number | null;
+  h1_count: number | null;
+  h2_count: number | null;
+  h3_count: number | null;
+  image_count: number | null;
 }
 
 export interface PostListResponse {
@@ -127,6 +151,8 @@ export interface Cluster {
   health_score: number | null;
   silhouette_score: number | null;
   post_count: number;
+  center_x: number | null;
+  center_y: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -145,6 +171,9 @@ export interface CannibalizationPair {
   post_b: PostHealth;
   overlap_score: number;
   severity: Severity;
+  resolution: string | null;
+  stronger_post_id: string | null;
+  chunk_confirmed: boolean | null;
   overlapping_queries: string[] | null;
 }
 
@@ -268,7 +297,7 @@ export interface OracleVerdict {
 export interface PipelineStatus {
   site_id: string;
   status: 'idle' | 'running' | 'completed' | 'failed';
-  current_step: 'clustering' | 'cannibalization' | 'health_scoring' | null;
+  current_step: 'clustering' | 'cannibalization' | 'health_scoring' | 'rebuilding' | string | null;
   steps_completed: string[];
   started_at: string | null;
   completed_at: string | null;

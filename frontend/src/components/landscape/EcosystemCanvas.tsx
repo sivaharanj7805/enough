@@ -141,22 +141,48 @@ export function EcosystemCanvas({
       const updaters: ((t: number) => void)[] = [];
 
       // ── D3 force layout ──
+      // Seed with UMAP centroids for deterministic, topologically meaningful layout.
+      // Falls back to random positions if no UMAP data available (legacy / first run).
       interface ForceNode extends d3.SimulationNodeDatum { id: string; radius: number; }
       const minRadius = 70;
       const maxRadius = 200;
       const maxPosts = Math.max(...clusters.map(c => c.posts.length), 1);
 
+      // Scale UMAP centroids to canvas viewport
+      const hasUmapPositions = clusters.some(c => c.center_x != null && c.center_y != null);
+      let umapToCanvas: (cx: number | null, cy: number | null) => [number, number];
+
+      if (hasUmapPositions) {
+        const xs = clusters.filter(c => c.center_x != null).map(c => c.center_x!);
+        const ys = clusters.filter(c => c.center_y != null).map(c => c.center_y!);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        const rangeX = maxX - minX || 1;
+        const rangeY = maxY - minY || 1;
+        const pad = 0.15;
+        umapToCanvas = (cx, cy) => [
+          width * pad + (((cx ?? 0) - minX) / rangeX) * width * (1 - 2 * pad),
+          height * pad + (((cy ?? 0) - minY) / rangeY) * height * (1 - 2 * pad),
+        ];
+      } else {
+        umapToCanvas = () => [
+          width / 2 + (Math.random() - 0.5) * width * 0.5,
+          height / 2 + (Math.random() - 0.5) * height * 0.5,
+        ];
+      }
+
       const regions = clusters.map(cluster => {
         const postRatio = cluster.posts.length / maxPosts;
         const radius = minRadius + postRatio * (maxRadius - minRadius);
+        const [ix, iy] = umapToCanvas(cluster.center_x, cluster.center_y);
         return {
           id: cluster.id,
           label: cluster.label,
           ecosystemState: (cluster.ecosystem_state ?? 'desert') as EcosystemState,
           healthScore: cluster.health_score ?? 0,
           posts: cluster.posts,
-          x: width / 2 + (Math.random() - 0.5) * width * 0.5,
-          y: height / 2 + (Math.random() - 0.5) * height * 0.5,
+          x: ix,
+          y: iy,
           radius,
         };
       });
@@ -473,14 +499,38 @@ export function EcosystemCanvas({
         rc.addChild(tex);
 
         // Vegetation for each post
+        // Use UMAP 2D positions when available (topologically meaningful placement),
+        // falling back to angular layout for posts without positions.
         const maxTraffic = Math.max(...region.posts.map(p => p.traffic_contribution ?? 0), 0.01);
         const postCount = region.posts.length;
 
+        // Pre-compute UMAP-to-local mapping for posts with positions
+        const postsWithUmap = region.posts.filter(p => p.x_pos != null && p.y_pos != null);
+        let umapToLocal: ((xp: number, yp: number) => [number, number]) | null = null;
+        if (postsWithUmap.length >= 2) {
+          const uxs = postsWithUmap.map(p => p.x_pos!);
+          const uys = postsWithUmap.map(p => p.y_pos!);
+          const uMinX = Math.min(...uxs), uMaxX = Math.max(...uxs);
+          const uMinY = Math.min(...uys), uMaxY = Math.max(...uys);
+          const uRangeX = uMaxX - uMinX || 1;
+          const uRangeY = uMaxY - uMinY || 1;
+          const usableRadius = region.radius * 0.6;
+          umapToLocal = (xp, yp) => [
+            ((xp - uMinX) / uRangeX - 0.5) * 2 * usableRadius,
+            ((yp - uMinY) / uRangeY - 0.5) * 2 * usableRadius * 0.7,
+          ];
+        }
+
         region.posts.forEach((post, i) => {
-          const angle = (i / Math.max(postCount, 1)) * Math.PI * 2;
-          const dist = region.radius * 0.3 + (i % 3) * region.radius * 0.15;
-          const px = Math.cos(angle) * dist;
-          const py = Math.sin(angle) * dist * 0.7;
+          let px: number, py: number;
+          if (umapToLocal && post.x_pos != null && post.y_pos != null) {
+            [px, py] = umapToLocal(post.x_pos, post.y_pos);
+          } else {
+            const angle = (i / Math.max(postCount, 1)) * Math.PI * 2;
+            const dist = region.radius * 0.3 + (i % 3) * region.radius * 0.15;
+            px = Math.cos(angle) * dist;
+            py = Math.sin(angle) * dist * 0.7;
+          }
           const scale = trafficScale(post.traffic_contribution ?? 0, maxTraffic);
 
           let veg;

@@ -162,7 +162,7 @@ class DripSequenceService:
                 "html": html_body,
                 "attachments": [
                     {
-                        "filename": f"enough-audit-{domain}.pdf",
+                        "filename": f"tended-audit-{domain}.pdf",
                         "content": base64.b64encode(pdf_bytes).decode(),
                     }
                 ],
@@ -294,21 +294,21 @@ class DripSequenceService:
     # ── HTML Templates ──
 
     def _base_wrapper(self, inner_html: str, email: str = "") -> str:
-        """Wrap email content in Enough-branded template (white, professional)."""
-        unsubscribe = f"https://enough.app/unsubscribe?email={email}" if email else "#"
+        """Wrap email content in Tended-branded template (white, professional)."""
+        unsubscribe = f"https://tended.app/unsubscribe?email={email}" if email else "#"
         return f"""
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;padding:32px;border-radius:12px;border:1px solid #e5e7eb;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Tended</h1>
     <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Publish Less. Grow More.</p>
   </div>
   {inner_html}
   <div style="text-align:center;margin-top:32px;">
-    <a href="https://enough.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Subscribe to Enough &rarr;</a>
+    <a href="https://tended.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Subscribe to Tended &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:11px;">
     <a href="{unsubscribe}" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a>
-    &nbsp;&bull;&nbsp; Enough &mdash; Content Ecosystem Intelligence
+    &nbsp;&bull;&nbsp; Tended &mdash; Content Ecosystem Intelligence
   </div>
 </div>"""
 
@@ -351,7 +351,7 @@ class DripSequenceService:
         inner = f"""
   <span style="display:none;max-height:0;overflow:hidden;">Here's one of the {rec_count} fixes we found for {blog_name}...</span>
   <h2 style="font-size:18px;margin:0 0 8px;color:#111827;">One of {rec_count} Fixes for {blog_name}</h2>
-  <p style="color:#64748b;font-size:14px;">Remember your audit from a couple days ago? Here's a preview of what Enough found:</p>
+  <p style="color:#64748b;font-size:14px;">Remember your audit from a couple days ago? Here's a preview of what Tended found:</p>
   <div style="background:#f8fafc;padding:16px;border-radius:8px;border-left:4px solid #f97316;margin:20px 0;">
     <div style="color:#f97316;font-weight:600;font-size:14px;">{rec_title}</div>
     <div style="color:#374151;font-size:13px;margin-top:8px;">{rec_summary}</div>
@@ -382,6 +382,6 @@ class DripSequenceService:
   <p style="font-size:14px;color:#374151;">We have <strong>{rec_count} specific, actionable fixes</strong> ready for you. Each one tells you exactly what to do, which post to fix, and what impact to expect.</p>
   <p style="font-size:14px;color:#16a34a;font-weight:600;">$149/month. 30-day money-back guarantee. Cancel anytime.</p>
   <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">
-    <p style="font-size:12px;color:#64748b;">P.S. Know another content team or agency? Forward them this report &mdash; or have them request a free audit at <a href="https://enough.app" style="color:#16a34a;">enough.app</a>.</p>
+    <p style="font-size:12px;color:#64748b;">P.S. Know another content team or agency? Forward them this report &mdash; or have them request a free audit at <a href="https://tended.app" style="color:#16a34a;">tended.app</a>.</p>
   </div>"""
         return self._base_wrapper(inner, email=email)

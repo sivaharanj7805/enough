@@ -49,6 +49,7 @@ export const pipeline = {
       description: 'Prioritizing what to fix first for maximum traffic impact.',
     },
   },
+  rebuilding: 'Refreshing your data\u2026 Your scores and clusters are being recalculated. This usually takes under 2 minutes.',
   discovering: 'Discovering posts\u2026',
   found: (count: number, processed: number) =>
     `Found ${count} posts \u2014 processing ${processed} so far`,
@@ -59,7 +60,7 @@ export const pipeline = {
 // ─── Setup Checklist ────────────────────────────
 
 export const setup = {
-  heading: 'Get the most from Enough',
+  heading: 'Get the most from Tended',
   steps: {
     connectBlog: {
       label: 'Connect your blog',
@@ -194,7 +195,7 @@ export const onboarding = {
   filterPlaceholder: '/blog/, /resources/ (comma-separated)',
   filterHelp: 'Only analyze URLs containing these paths. Leave blank to analyze everything.',
   submitButton: 'Analyze my blog',
-  readOnly: 'Read-only \u2014 Enough never modifies your content or blog.',
+  readOnly: 'Read-only \u2014 Tended never modifies your content or blog.',
   analyzing: 'Analyzing your blog',
   complete: 'Analysis complete',
 } as const;
@@ -273,6 +274,51 @@ export const EMPTY_STATES = {
     title: 'Impact data will be available in 7-14 days',
     description: "We're tracking the effect of your changes.",
   },
+  workshop: {
+    title: 'No ideas yet',
+    description: 'Ask the AI panel a question, or click a cluster to get started.',
+  },
+  patcher: {
+    title: 'Pick a recommendation to fix',
+    description: 'Your top-priority items are ready to work on.',
+    emptyTitle: 'Nothing to patch',
+    emptyDescription: 'All recommendations are either completed or dismissed. Nice work.',
+    stepComplete: 'Step complete',
+    allDone: 'All steps complete — nice work!',
+    allDoneSub: 'Mark this recommendation as done when you are satisfied with the result.',
+    aiPanelTitle: 'AI Assistant',
+    aiPlaceholder: 'Ask a question about this step...',
+  },
+} as const;
+
+// ─── Pioneer ────────────────────────────────────
+
+export const pioneer = {
+  pageTitle: 'Pioneer',
+  pageSubtitle: 'Create new content with your data as co-pilot',
+  inputPlaceholder: 'What do you want to write about?',
+  inputHint: 'Type your idea and we\u2019ll scan your content for fit, overlap, and opportunities',
+  briefingTitle: 'Briefing',
+  clusterFit: 'Cluster fit',
+  overlapRisk: 'Overlap risk',
+  clusterImpact: 'Cluster impact',
+  siteKnows: 'What your site knows',
+  siteDoesntKnow: 'What your site doesn\u2019t know',
+  proceed: 'Proceed',
+  rethink: 'Rethink',
+  buildTitle: 'Build Canvas',
+  sectionTitle: 'Title',
+  sectionAngle: 'Angle',
+  sectionOutline: 'Outline',
+  sectionData: 'Data & Evidence',
+  sectionLinks: 'Internal Links',
+  sectionPreflight: 'Pre-Flight Check',
+  linkTo: 'Link TO this post from',
+  linkFrom: 'Link FROM this post to',
+  exportBrief: 'Export Brief',
+  askPlaceholder: 'Ask something...',
+  aiPanelTitle: 'AI Context',
+  noClusterData: 'Connect your blog and run the pipeline to see cluster data here.',
 } as const;
 
 // ─── Misc ───────────────────────────────────────
@@ -321,7 +367,7 @@ export const BUTTON_LABELS = {
 export const ERROR_MESSAGES = {
   urlUnreachable: "We couldn't reach that URL. Make sure it's publicly accessible and try again.",
   serverError: "Something went wrong on our end. We're looking into it. Try again in a few minutes.",
-  tooFewPosts: "Your blog has fewer than 10 posts. Enough works best with 25+ posts.",
+  tooFewPosts: "Your blog has fewer than 10 posts. Tended works best with 25+ posts.",
   sessionExpired: "Your session has expired. Please log in again.",
   networkOffline: "You're offline. Some features may be unavailable.",
 };

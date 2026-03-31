@@ -1,4 +1,4 @@
-"""Enough — Content Ecosystem Intelligence Platform (Phase 1)."""
+"""Tended — Content Ecosystem Intelligence Platform (Phase 1)."""
 
 import logging
 import os
@@ -51,20 +51,35 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
-    logger.info("Starting Enough backend...")
+    import asyncio
+
+    logger.info("Starting Tended backend...")
     # Validate production configuration at startup — fail fast if misconfigured
     validate_production()
-    await get_pool()
+    pool = await get_pool()
     logger.info("Database pool ready")
+
+    # Start the job queue worker — processes crawl/pipeline jobs from Postgres.
+    # Survives process restarts (jobs stay in DB), unlike BackgroundTasks.
+    from app.services.job_queue import run_worker
+    worker_task = asyncio.create_task(run_worker(pool))
+
     yield
+
+    # Graceful shutdown: cancel the worker, then close the pool
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
     await close_pool()
-    logger.info("Enough backend shutdown complete")
+    logger.info("Tended backend shutdown complete")
 
 
 _is_production = os.environ.get("ENVIRONMENT", "production") == "production"
 
 app = FastAPI(
-    title="Enough",
+    title="Tended",
     description="Content Ecosystem Intelligence Platform — Phase 1 API",
     version="0.1.0",
     lifespan=lifespan,
@@ -147,7 +162,7 @@ async def health_check():
                 raise Exception("Unexpected DB response")
         return {
             "status": "ok",
-            "service": "enough-backend",
+            "service": "tended-backend",
             "version": "0.1.0",
             "database": "connected",
         }
@@ -158,7 +173,7 @@ async def health_check():
             status_code=503,
             content={
                 "status": "degraded",
-                "service": "enough-backend",
+                "service": "tended-backend",
                 "version": "0.1.0",
                 "database": "disconnected",
                 # Do not expose internal error details to clients

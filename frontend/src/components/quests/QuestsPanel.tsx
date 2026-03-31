@@ -128,7 +128,7 @@ function computeProgress(
 
 // ─── localStorage persistence ───────────────────────
 
-const STORAGE_KEY = 'enough_quests_state';
+const STORAGE_KEY = 'tended_quests_state';
 
 function loadQuestState(): QuestState | null {
   if (typeof window === 'undefined') return null;

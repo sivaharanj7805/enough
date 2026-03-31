@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Globe, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowRight, Globe, CheckCircle, Loader2, AlertCircle, Circle } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { onboarding, pipeline, errors } from '@/lib/copy';
 
 type Step = 'url' | 'creating' | 'crawling' | 'analyzing' | 'done' | 'error';
 
@@ -23,43 +24,24 @@ interface CrawlStatus {
   early_findings?: EarlyFindings | null;
 }
 
-const PIPELINE_STAGES = [
-  {
-    key: 'crawling',
-    label: 'Crawling posts',
-    emoji: '🕷️',
-    education: 'We\'re downloading every page on your blog and extracting the text content, headings, links, and metadata.',
-  },
-  {
-    key: 'embedding',
-    label: 'Understanding content',
-    emoji: '🧠',
-    education: 'Each post gets a 1,536-dimension "fingerprint" that captures what it\'s about — so we can find posts that overlap.',
-  },
-  {
-    key: 'analyzing',
-    label: 'Scoring health',
-    emoji: '🔬',
-    education: 'We score each post on 6 factors: traffic, ranking, engagement, freshness, depth, and technical SEO.',
-  },
-  {
-    key: 'clustering',
-    label: 'Clustering topics',
-    emoji: '🗂️',
-    education: 'Posts are grouped by topic similarity using machine learning — revealing your natural content pillars.',
-  },
-  {
-    key: 'completed',
-    label: 'Building recommendations',
-    emoji: '✦',
-    education: 'Prioritizing what to fix first — merges, rewrites, internal links, schema — ordered by traffic impact.',
-  },
+const STAGES = Object.entries(pipeline.stages).map(([key, v]) => ({
+  key, label: v.label, education: v.description,
+}));
+
+const CMS_OPTIONS = [
+  { value: 'wordpress', label: 'WordPress' },
+  { value: 'sitemap', label: 'Sitemap' },
+  { value: 'hubspot', label: 'HubSpot' },
+  { value: 'webflow', label: 'Webflow' },
+  { value: 'ghost', label: 'Ghost' },
 ];
+
+const inputCls =
+  'w-full rounded-lg bg-brand-bg border border-brand-border px-4 py-3 text-sm text-brand-text placeholder:text-brand-text-tertiary focus:outline-none focus:ring-2 focus:ring-brand-accent/40 focus:border-brand-accent disabled:opacity-50 transition-colors';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const auth = useAuth();
-  const token = auth.session?.access_token;
+  const token = useAuth().session?.access_token;
 
   const [step, setStep] = useState<Step>('url');
   const [url, setUrl] = useState('');
@@ -68,406 +50,230 @@ export default function OnboardingPage() {
   const [urlPatterns, setUrlPatterns] = useState('');
   const [siteId, setSiteId] = useState<string | null>(null);
   const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
-  const [pipelineStage, setPipelineStage] = useState<string>('crawling');
+  const [pipelineStage, setPipelineStage] = useState('crawling');
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      abortRef.current = true;
-    };
-  }, []);
-
-  // Check for existing sites with active pipelines — resume if found
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const sites = await apiFetch<{ id: string; name: string; domain: string }[]>(
-          '/sites',
-          { token },
-        );
-        if (cancelled || !sites || sites.length === 0) return;
-
-        // Check each site for a running pipeline
-        for (const site of sites) {
-          try {
-            const status = await apiFetch<CrawlStatus>(
-              `/sites/${site.id}/crawl/status`,
-              { token },
-            );
-            if (cancelled) return;
-
-            if (status.status === 'completed') {
-              // Site already analyzed — redirect to dashboard
-              router.replace('/today');
-              return;
-            }
-
-            if (
-              status.status === 'crawling' ||
-              status.status === 'embedding' ||
-              status.status === 'analyzing' ||
-              status.status === 'clustering'
-            ) {
-              // Active pipeline found — resume polling
-              setSiteId(site.id);
-              setUrl(site.domain);
-              setCrawlStatus(status);
-              setPipelineStage(status.status);
-              setStep('crawling');
-              void pollStatus(site.id);
-              return;
-            }
-          } catch {
-            // Status check failed for this site — try next
-          }
-        }
-      } catch {
-        // Sites fetch failed — show normal URL form
-      }
-    })();
-
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  useEffect(() => () => { abortRef.current = true; }, []);
 
   const extractDomain = (input: string): string => {
     try {
       const u = new URL(input.startsWith('http') ? input : `https://${input}`);
       return u.hostname.replace(/^www\./, '');
-    } catch {
-      return input.replace(/^www\./, '').split('/')[0];
-    }
+    } catch { return input.replace(/^www\./, '').split('/')[0]; }
   };
 
   const pollStatus = async (id: string) => {
     let attempts = 0;
-    const maxAttempts = 120; // ~25 min max with backoff
-    const BASE_DELAY_MS = 5000;
-    const MAX_DELAY_MS = 30000;
-
-    while (attempts < maxAttempts && !abortRef.current) {
-      // Exponential backoff: 5s → 7.5s → 11.25s → ... capped at 30s
-      const delay = Math.min(BASE_DELAY_MS * Math.pow(1.5, attempts), MAX_DELAY_MS);
-      await new Promise((r) => setTimeout(r, delay));
+    while (attempts < 120 && !abortRef.current) {
+      await new Promise((r) => setTimeout(r, Math.min(5000 * Math.pow(1.5, attempts), 30000)));
       attempts++;
-
       try {
-        const status = await apiFetch<CrawlStatus>(
-          `/sites/${id}/crawl/status`,
-          { token },
-        );
-        setCrawlStatus(status);
-        setPipelineStage(status.status);
-
-        if (status.status === 'completed') {
-          setStep('done');
-          return;
-        }
-        if (status.status === 'failed') {
-          setError('Pipeline failed. Check that your blog has a sitemap.xml.');
-          setStep('error');
-          return;
-        }
-      } catch {
-        // poll failure is ok, keep trying
-      }
+        const s = await apiFetch<CrawlStatus>(`/sites/${id}/crawl/status`, { token });
+        setCrawlStatus(s);
+        setPipelineStage(s.status);
+        if (s.status === 'completed') { setStep('done'); return; }
+        if (s.status === 'failed') { setError(errors.pipelineFailed); setStep('error'); return; }
+      } catch { /* keep trying */ }
     }
-    setError('Analysis is taking longer than expected. Check back in a few minutes.');
+    setError(errors.pipelineTimeout);
     setStep('error');
   };
 
+  // Resume an active pipeline if one exists
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sites = await apiFetch<{ id: string; name: string; domain: string }[]>('/sites', { token });
+        if (cancelled || !sites?.length) return;
+        for (const site of sites) {
+          try {
+            const s = await apiFetch<CrawlStatus>(`/sites/${site.id}/crawl/status`, { token });
+            if (cancelled) return;
+            if (s.status === 'completed') { router.replace('/today'); return; }
+            if (['crawling', 'embedding', 'analyzing', 'clustering'].includes(s.status)) {
+              setSiteId(site.id); setUrl(site.domain); setCrawlStatus(s);
+              setPipelineStage(s.status); setStep('crawling');
+              void pollStatus(site.id); return;
+            }
+          } catch { /* try next */ }
+        }
+      } catch { /* show form */ }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   const handleSubmit = async () => {
     if (!url.trim()) return;
-    setError(null);
-    setStep('creating');
-
+    setError(null); setStep('creating');
     const domain = extractDomain(url);
-    const name = siteName.trim() || domain;
     const sitemapUrl = url.startsWith('http') ? url : `https://${url}`;
-
     try {
-      // Create site
       const site = await apiFetch<{ id: string; name: string }>('/sites', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({
-          name,
-          domain,
-          cms_type: cmsType,
-          sitemap_url: sitemapUrl.includes('sitemap') ? sitemapUrl : null,
-        }),
+        method: 'POST', token,
+        body: JSON.stringify({ name: siteName.trim() || domain, domain, cms_type: cmsType, sitemap_url: sitemapUrl.includes('sitemap') ? sitemapUrl : null }),
       });
-
-      setSiteId(site.id);
-      setStep('crawling');
-
-      // Trigger full pipeline (with optional URL path filter)
-      const patterns = urlPatterns.trim()
-        ? urlPatterns.split(',').map(p => p.trim()).filter(Boolean)
-        : [];
+      setSiteId(site.id); setStep('crawling');
+      const patterns = urlPatterns.trim() ? urlPatterns.split(',').map((p) => p.trim()).filter(Boolean) : [];
       await apiFetch(`/sites/${site.id}/pipeline`, {
-        method: 'POST',
-        token,
+        method: 'POST', token,
         body: patterns.length ? JSON.stringify({ url_patterns: patterns }) : undefined,
       });
-
-      // Poll for progress
       void pollStatus(site.id);
-
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
-      setStep('error');
+      setError(e instanceof Error ? e.message : errors.generic); setStep('error');
     }
   };
 
-  const currentStageIndex = PIPELINE_STAGES.findIndex((s) => s.key === pipelineStage);
+  const stageIdx = STAGES.findIndex((s) => s.key === pipelineStage);
+  const findings = crawlStatus?.early_findings;
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center p-6">
+    <div className="min-h-screen bg-brand-bg flex items-center justify-center p-6">
       <div className="w-full max-w-lg">
-        {/* Logo */}
         <div className="text-center mb-10">
-          <h1 className="text-2xl font-bold text-[#e2e8f0]">enough</h1>
-          <p className="text-sm text-[#64748b] mt-1">Content Ecosystem Intelligence</p>
+          <h1 className="text-2xl font-bold text-brand-text tracking-tight">tended.</h1>
+          <p className="text-sm text-brand-text-tertiary mt-1">Content Ecosystem Intelligence</p>
         </div>
 
-        {/* Step: URL entry */}
+        {/* Step 1: URL Entry */}
         {(step === 'url' || step === 'creating') && (
-          <div className="rounded-2xl bg-[#111827] border border-[#1e293b] p-8">
+          <div className="rounded-xl bg-brand-surface border border-brand-border p-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-[#22c55e]/10 flex items-center justify-center">
-                <Globe size={20} className="text-[#22c55e]" />
+              <div className="w-10 h-10 rounded-lg bg-brand-success/10 flex items-center justify-center">
+                <Globe size={20} className="text-brand-success" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-[#e2e8f0]">Connect your blog</h2>
-                <p className="text-sm text-[#64748b]">We&apos;ll analyze every post and find what to fix</p>
+                <h2 className="text-lg font-semibold text-brand-text">{onboarding.title}</h2>
+                <p className="text-sm text-brand-text-secondary">{onboarding.subtitle}</p>
               </div>
             </div>
-
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
-                  CMS type
-                </label>
-                <select
-                  value={cmsType}
-                  onChange={(e) => setCmsType(e.target.value)}
-                  disabled={step === 'creating'}
-                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors appearance-none"
-                >
-                  <option value="wordpress">WordPress</option>
-                  <option value="sitemap">Sitemap</option>
-                  <option value="hubspot">HubSpot</option>
-                  <option value="webflow">Webflow</option>
-                  <option value="ghost">Ghost</option>
+                <label className="block text-xs font-medium text-brand-text-secondary mb-1.5">CMS type</label>
+                <select value={cmsType} onChange={(e) => setCmsType(e.target.value)} disabled={step === 'creating'} aria-label="CMS type" className={`${inputCls} appearance-none`}>
+                  {CMS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-
               <div>
-                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
-                  Blog URL or sitemap URL
-                </label>
-                <input
-                  type="text"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
-                  placeholder="https://yourblog.com"
-                  disabled={step === 'creating'}
-                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
-                />
-                <p className="text-[#64748b] text-xs mt-1.5">
-                  We&apos;ll analyze your blog&apos;s content. This is read-only — we never modify your site.
-                </p>
+                <label className="block text-xs font-medium text-brand-text-secondary mb-1.5">{onboarding.urlLabel}</label>
+                <input type="text" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }} placeholder={onboarding.urlPlaceholder} disabled={step === 'creating'} aria-label={onboarding.urlLabel} className={inputCls} />
+                <p className="text-brand-text-tertiary text-xs mt-1.5">{onboarding.readOnly}</p>
               </div>
-
               <div>
-                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
-                  Site name <span className="text-[#475569]">(optional)</span>
+                <label className="block text-xs font-medium text-brand-text-secondary mb-1.5">
+                  {onboarding.nameLabel} <span className="text-brand-text-tertiary">(optional)</span>
                 </label>
-                <input
-                  type="text"
-                  value={siteName}
-                  onChange={(e) => setSiteName(e.target.value)}
-                  placeholder="My Blog"
-                  disabled={step === 'creating'}
-                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
-                />
+                <input type="text" value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder={onboarding.namePlaceholder} disabled={step === 'creating'} aria-label={onboarding.nameLabel} className={inputCls} />
               </div>
-
               <div>
-                <label className="block text-xs font-medium text-[#94a3b8] mb-1.5">
-                  URL path filter <span className="text-[#475569]">(optional — recommended for large sites)</span>
+                <label className="block text-xs font-medium text-brand-text-secondary mb-1.5">
+                  {onboarding.filterLabel} <span className="text-brand-text-tertiary">(optional)</span>
                 </label>
-                <input
-                  type="text"
-                  value={urlPatterns}
-                  onChange={(e) => setUrlPatterns(e.target.value)}
-                  placeholder="/blog/, /resources/ (comma-separated)"
-                  disabled={step === 'creating'}
-                  className="w-full rounded-xl bg-[#0a0f1a] border border-[#1e293b] px-4 py-3 text-sm text-[#e2e8f0] placeholder-[#475569] focus:outline-none focus:border-[#22c55e] disabled:opacity-50 transition-colors"
-                />
-                <p className="text-[#475569] text-xs mt-1">
-                  Only analyze URLs containing these paths. Leave blank to analyze everything.
-                </p>
+                <input type="text" value={urlPatterns} onChange={(e) => setUrlPatterns(e.target.value)} placeholder={onboarding.filterPlaceholder} disabled={step === 'creating'} aria-label={onboarding.filterLabel} className={inputCls} />
+                <p className="text-brand-text-tertiary text-xs mt-1">{onboarding.filterHelp}</p>
               </div>
-
-              <button
-                onClick={() => void handleSubmit()}
-                disabled={!url.trim() || step === 'creating'}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#3b82f6] text-white font-semibold py-3 text-sm hover:bg-[#2563eb] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {step === 'creating' ? (
-                  <><Loader2 size={16} className="animate-spin" /> Creating site...</>
-                ) : (
-                  <>Analyze my blog <ArrowRight size={16} /></>
-                )}
+              <button onClick={() => void handleSubmit()} disabled={!url.trim() || step === 'creating'} aria-label={onboarding.submitButton} className="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-accent text-white px-6 py-3 font-semibold text-sm hover:bg-brand-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                {step === 'creating'
+                  ? <><Loader2 size={16} className="animate-spin" /> Creating site...</>
+                  : <>{onboarding.submitButton} <ArrowRight size={16} /></>}
               </button>
             </div>
-
-            <p className="mt-4 text-xs text-center text-[#475569]">
-              Takes 10–40 min depending on blog size. We&apos;ll analyze every post.
-            </p>
-            <p className="mt-2 text-xs text-center text-[#334155]">
-              🔒 Read-only — Enough never modifies your content or blog.
-            </p>
+            <p className="mt-5 text-xs text-center text-brand-text-tertiary">{pipeline.timeEstimate}</p>
           </div>
         )}
 
-        {/* Step: Pipeline running */}
+        {/* Step 2: Pipeline Running */}
         {(step === 'crawling' || step === 'analyzing') && (
-          <div className="rounded-2xl bg-[#111827] border border-[#1e293b] p-8">
+          <div className="rounded-xl bg-brand-surface border border-brand-border p-8">
             <div className="text-center mb-8">
-              <div className="text-4xl mb-3">🔬</div>
-              <h2 className="text-lg font-semibold text-[#e2e8f0]">Analyzing your blog</h2>
-              <p className="text-sm text-[#64748b] mt-1">
-                {crawlStatus?.posts_found
-                  ? `Found ${crawlStatus.posts_found} posts — processing ${crawlStatus.posts_processed || 0} so far`
-                  : 'Discovering posts...'}
+              <div className="w-12 h-12 rounded-full bg-brand-accent/10 flex items-center justify-center mx-auto mb-4">
+                <Loader2 size={24} className="animate-spin text-brand-accent" />
+              </div>
+              <h2 className="text-lg font-semibold text-brand-text">{onboarding.analyzing}</h2>
+              <p className="text-sm text-brand-text-secondary mt-1">
+                {crawlStatus?.posts_found ? pipeline.found(crawlStatus.posts_found, crawlStatus.posts_processed || 0) : pipeline.discovering}
               </p>
             </div>
-
-            {/* Early findings preview — show once 50+ posts analyzed */}
-            {crawlStatus?.early_findings?.preview_ready && (
-              <div className="mb-6 rounded-xl bg-[#22c55e]/5 border border-[#22c55e]/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-widest text-[#22c55e] mb-3">
-                  Early look — full analysis still running
-                </p>
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div>
-                    <div className="text-xl font-bold text-[#e2e8f0]">
-                      {crawlStatus.early_findings.clusters_found}
-                    </div>
-                    <div className="text-xs text-[#64748b]">Topic clusters</div>
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold text-[#f97316]">
-                      {crawlStatus.early_findings.cann_pairs_found}
-                    </div>
-                    <div className="text-xs text-[#64748b]">Overlap pairs</div>
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold text-[#eab308]">
-                      {crawlStatus.early_findings.thin_content_count}
-                    </div>
-                    <div className="text-xs text-[#64748b]">Thin content</div>
-                  </div>
-                </div>
-                <p className="text-xs text-[#64748b] mt-3 text-center">
-                  From first {crawlStatus.early_findings.posts_sampled} posts analyzed
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              {PIPELINE_STAGES.map((stage, i) => {
-                const isDone = i < currentStageIndex;
-                const isActive = stage.key === pipelineStage || (pipelineStage === 'completed' && i === PIPELINE_STAGES.length - 1);
-                const isPending = i > currentStageIndex;
-
+            {/* Vertical timeline */}
+            <div className="relative ml-3">
+              {STAGES.map((stage, i) => {
+                const isDone = i < stageIdx;
+                const isActive = stage.key === pipelineStage || (pipelineStage === 'completed' && i === STAGES.length - 1);
                 return (
-                  <div
-                    key={stage.key}
-                    className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
-                      isActive ? 'bg-[#22c55e]/10 border border-[#22c55e]/30' :
-                      isDone ? 'bg-[#0a0f1a]/50' : 'opacity-40'
-                    }`}
-                  >
-                    <span className="text-lg w-6 text-center">
-                      {isDone ? '✓' : isActive ? stage.emoji : '○'}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <span className={`text-sm font-medium ${
-                        isDone ? 'text-[#22c55e]' :
-                        isActive ? 'text-[#e2e8f0]' : 'text-[#475569]'
-                      }`}>
-                        {stage.label}
-                      </span>
-                      {isActive && stage.education && (
-                        <p className="text-xs text-[#64748b] mt-1 leading-relaxed">
-                          {stage.education}
-                        </p>
-                      )}
+                  <div key={stage.key} className="relative flex gap-4 pb-6 last:pb-0">
+                    {i < STAGES.length - 1 && (
+                      <div className={`absolute left-[11px] top-[28px] w-px h-[calc(100%-16px)] ${isDone ? 'bg-brand-success/40' : 'bg-brand-border'}`} />
+                    )}
+                    <div className="relative z-10 flex-shrink-0 mt-0.5">
+                      {isDone ? <CheckCircle size={22} className="text-brand-success" />
+                        : isActive ? <Loader2 size={22} className="animate-spin text-brand-accent" />
+                        : <Circle size={22} className="text-brand-text-tertiary" />}
                     </div>
-                    {isActive && !isPending && (
-                      <Loader2 size={14} className="ml-auto flex-shrink-0 animate-spin text-[#22c55e]" />
-                    )}
-                    {isDone && (
-                      <CheckCircle size={14} className="ml-auto flex-shrink-0 text-[#22c55e]" />
-                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${isDone ? 'text-brand-success' : isActive ? 'text-brand-text' : 'text-brand-text-tertiary'}`}>{stage.label}</p>
+                      {isActive && <p className="text-xs text-brand-text-secondary mt-1 leading-relaxed">{stage.education}</p>}
+                    </div>
                   </div>
                 );
               })}
             </div>
-
-            <p className="mt-6 text-xs text-center text-[#475569]">
-              You can close this tab — we&apos;ll finish in the background. Come back in ~20 min.
-            </p>
+            {/* Early findings */}
+            {findings?.preview_ready && (
+              <div className="mt-6 pt-6 border-t border-brand-border">
+                <p className="text-xs font-semibold uppercase tracking-widest text-brand-success mb-3">Early findings</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { value: findings.clusters_found, label: 'Topic clusters', color: 'text-brand-text' },
+                    { value: findings.cann_pairs_found, label: 'Overlap pairs', color: 'text-brand-warning' },
+                    { value: findings.thin_content_count, label: 'Thin content', color: 'text-severity-medium' },
+                  ].map((card) => (
+                    <div key={card.label} className="rounded-xl border border-brand-border bg-brand-surface p-4 text-center">
+                      <div className={`text-xl font-bold ${card.color}`}>{card.value}</div>
+                      <div className="text-xs text-brand-text-secondary mt-0.5">{card.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-brand-text-tertiary mt-2 text-center">From first {findings.posts_sampled} posts analyzed</p>
+              </div>
+            )}
+            <p className="mt-6 text-xs text-center text-brand-text-tertiary">{pipeline.canClose}</p>
           </div>
         )}
 
-        {/* Step: Done */}
+        {/* Step 3: Complete */}
         {step === 'done' && siteId && (
-          <div className="rounded-2xl bg-[#111827] border border-[#22c55e]/30 p-8 text-center">
-            <div className="text-5xl mb-4">🎉</div>
-            <h2 className="text-xl font-bold text-[#e2e8f0] mb-2">Analysis complete</h2>
-            <p className="text-sm text-[#64748b] mb-6">
-              {crawlStatus?.posts_processed
-                ? `Analyzed ${crawlStatus.posts_processed} posts. Here's what we found.`
-                : 'Your content ecosystem is ready.'}
+          <div className="rounded-xl bg-brand-surface border border-brand-success/30 p-8 text-center">
+            <div className="w-14 h-14 rounded-full bg-brand-success/10 flex items-center justify-center mx-auto mb-5">
+              <CheckCircle size={28} className="text-brand-success" />
+            </div>
+            <h2 className="text-xl font-bold text-brand-text mb-2">Your analysis is ready</h2>
+            <p className="text-sm text-brand-text-secondary mb-8">
+              {crawlStatus?.posts_processed ? `Analyzed ${crawlStatus.posts_processed} posts. Here\u2019s what we found.` : 'Your content ecosystem is ready to explore.'}
             </p>
-
             <div className="flex flex-col gap-3">
-              <button
-                onClick={() => router.push('/today')}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#3b82f6] text-white font-semibold py-3 text-sm hover:bg-[#2563eb] transition-colors"
-              >
-                View Dashboard <ArrowRight size={16} />
+              <button onClick={() => router.push('/today')} aria-label="Go to dashboard" className="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-accent text-white px-6 py-3 font-semibold text-sm hover:bg-brand-accent-hover transition-colors">
+                Go to Dashboard <ArrowRight size={16} />
               </button>
-              <button
-                onClick={() => router.push(`/report/${siteId}`)}
-                className="w-full flex items-center justify-center gap-2 rounded-xl border border-[#1e293b] text-[#94a3b8] py-3 text-sm hover:bg-[#1e293b] transition-colors"
-              >
-                View Shareable Report
+              <button onClick={() => router.push(`/report/${siteId}`)} aria-label="View report" className="w-full flex items-center justify-center gap-2 rounded-lg border border-brand-border text-brand-text-secondary py-3 text-sm hover:bg-brand-surface-hover transition-colors">
+                View Report
               </button>
             </div>
           </div>
         )}
 
-        {/* Step: Error */}
+        {/* Step 4: Error */}
         {step === 'error' && (
-          <div className="rounded-2xl bg-[#111827] border border-red-500/30 p-8 text-center">
-            <AlertCircle size={40} className="mx-auto mb-4 text-red-400" />
-            <h2 className="text-lg font-semibold text-[#e2e8f0] mb-2">Something went wrong</h2>
-            <p className="text-sm text-[#64748b] mb-6">{error}</p>
-            <button
-              onClick={() => { setStep('url'); setError(null); }}
-              className="px-6 py-2.5 rounded-xl bg-[#111827] border border-[#1e293b] text-sm text-[#94a3b8] hover:bg-[#1e293b] transition-colors"
-            >
+          <div className="rounded-xl bg-brand-surface border border-brand-critical/30 p-8 text-center">
+            <div className="w-14 h-14 rounded-full bg-brand-critical/10 flex items-center justify-center mx-auto mb-5">
+              <AlertCircle size={28} className="text-brand-critical" />
+            </div>
+            <h2 className="text-lg font-semibold text-brand-text mb-2">Something went wrong</h2>
+            <p className="text-sm text-brand-text-secondary mb-6">{error}</p>
+            <button onClick={() => { setStep('url'); setError(null); }} aria-label="Try again" className="px-6 py-3 rounded-lg border border-brand-border text-sm text-brand-text-secondary hover:bg-brand-surface-hover transition-colors">
               Try again
             </button>
           </div>

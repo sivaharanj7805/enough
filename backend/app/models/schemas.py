@@ -79,15 +79,39 @@ class PostResponse(BaseModel):
     cms_tags: list[str] | None
     word_count: int | None
     content_hash: str | None
+    # Pipeline-computed fields (surfaced per productplan.md gap analysis)
+    page_type: str | None = None
+    content_intent: str | None = None
+    readability_score: float | None = None
+    grade_level: float | None = None
+    pagerank_score: float | None = None
     created_at: datetime
     updated_at: datetime
 
 
 class PostDetailResponse(PostResponse):
     """Post with full metrics."""
+    composite_score: float | None = None
+    role: str | None = None
+    cluster_id: str | None = None
+    cluster_name: str | None = None
+    factor_scores: dict | None = None
+    ai_citability_score: float | None = None
     ga4_metrics: list["GA4MetricResponse"] = []
     gsc_metrics: list["GSCMetricResponse"] = []
     internal_links: list[InternalLinkSchema] = []
+    # AI signals breakdown — explains WHY the post scored what it scored
+    ai_signals: dict | None = None
+    # Content analysis fields from posts table
+    meta_description: str | None = None
+    meta_title: str | None = None
+    headings: list | None = None
+    # Computed content structure counts (derived from body_html / headings jsonb)
+    headings_count: int | None = None
+    h1_count: int | None = None
+    h2_count: int | None = None
+    h3_count: int | None = None
+    image_count: int | None = None
 
 
 class PostListResponse(BaseModel):
@@ -179,6 +203,9 @@ class PostHealthResponse(BaseModel):
     ranking_strength: float | None
     internal_link_score: float | None
     data_completeness: float | None = None  # 0.0-1.0, fraction of signals available
+    score_confidence: str | None = None  # "full", "partial", or "crawl_only"
+    x_pos: float | None = None  # UMAP 2D x-coordinate for ecosystem map
+    y_pos: float | None = None  # UMAP 2D y-coordinate for ecosystem map
 
 
 class ClusterResponse(BaseModel):
@@ -190,6 +217,8 @@ class ClusterResponse(BaseModel):
     ecosystem_state: str | None
     health_score: float | None
     post_count: int
+    center_x: float | None = None
+    center_y: float | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -207,6 +236,9 @@ class CannibalizationPairResponse(BaseModel):
     post_b: PostHealthResponse
     overlap_score: float
     severity: str
+    resolution: str | None = None
+    stronger_post_id: UUID | None = None
+    chunk_confirmed: bool | None = None
     overlapping_queries: list[str] | None
 
 

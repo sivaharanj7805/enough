@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-const STORAGE_KEY = 'enough-cookie-consent';
+const STORAGE_KEY = 'tended-cookie-consent';
 
 interface CookiePreferences {
   essential: boolean;

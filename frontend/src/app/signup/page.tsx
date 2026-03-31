@@ -62,7 +62,7 @@ function LeftPanel() {
   return (
     <div className="hidden lg:flex flex-col justify-between h-full p-12 bg-[#0d1526] border-r border-[#1e293b]">
       <div>
-        <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">ENOUGH</span>
+        <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">TENDED</span>
         <p className="text-xs text-[#475569] mt-1 tracking-wider uppercase">Content Ecosystem Intelligence</p>
       </div>
 
@@ -72,7 +72,7 @@ function LeftPanel() {
           <span className="text-[#3b82f6]">you don&apos;t know about yet.</span>
         </h2>
         <p className="text-[#64748b] text-sm leading-relaxed mb-8">
-          Enough crawls your entire content library, maps every cluster, detects every conflict,
+          Tended crawls your entire content library, maps every cluster, detects every conflict,
           and tells you the three things to fix this week.
         </p>
 
@@ -92,7 +92,7 @@ function LeftPanel() {
             every single post — a concrete fix their team could ship in a day.&rdquo;
           </p>
           <p className="text-xs text-[#475569] mt-2">
-            From a real Enough analysis · Jan 2026
+            From a real Tended analysis · Jan 2026
           </p>
         </div>
       </div>
@@ -113,6 +113,9 @@ export default function SignupPage() {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [generalError, setGeneralError] = useState('');
+
+  const supabaseConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder');
 
   useEffect(() => {
     if (token) router.replace('/onboarding');
@@ -177,10 +180,21 @@ export default function SignupPage() {
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         {/* Mobile logo */}
         <div className="lg:hidden text-center mb-10">
-          <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">ENOUGH</span>
+          <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">TENDED</span>
         </div>
 
         <div className="w-full max-w-sm">
+          {!supabaseConfigured && (
+            <div className="mb-6 flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 rounded-xl px-4 py-3 border border-amber-400/20">
+              <span className="flex-shrink-0 mt-0.5" aria-label="Warning">&#9888;</span>
+              <span>
+                Authentication requires Supabase configuration. Set NEXT_PUBLIC_SUPABASE_URL and
+                NEXT_PUBLIC_SUPABASE_ANON_KEY in frontend/.env.local, or enable demo mode with
+                NEXT_PUBLIC_DEMO_MODE=true.
+              </span>
+            </div>
+          )}
+
           {status === 'done' ? (
             <div className="text-center py-8 px-4 rounded-2xl bg-[#111827] border border-[#1e293b]">
               <div className="text-5xl mb-4">🎉</div>

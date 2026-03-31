@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simulate the full Enough intelligence pipeline with realistic blog data.
+"""Simulate the full Tended intelligence pipeline with realistic blog data.
 
 No external dependencies needed — runs entirely locally with synthetic data
 to demonstrate what the system produces at each stage.
@@ -272,7 +272,7 @@ def detect_problems(post, cluster_avg_wc, scores):
 
 def main():
     print("=" * 70)
-    print("  ENOUGH — Full Pipeline Simulation")
+    print("  TENDED — Full Pipeline Simulation")
     print("  Blog: TechStartupBlog.com (12 posts, 3 clusters)")
     print("=" * 70)
 

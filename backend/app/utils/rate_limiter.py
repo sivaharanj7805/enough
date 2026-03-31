@@ -91,3 +91,29 @@ class RateLimiter:
                 await asyncio.sleep(backoff)
 
         raise last_error or RuntimeError("Max retries exceeded")
+
+
+# ── Global per-domain rate limiter ──
+# Shared across all concurrent crawl jobs targeting the same domain.
+# Prevents 10 simultaneous crawls to sites on the same host from
+# sending 10x the intended request rate.
+
+_domain_limiters: dict[str, RateLimiter] = {}
+_domain_lock = asyncio.Lock()
+
+
+async def get_domain_limiter(
+    domain: str,
+    requests_per_second: float = 2.0,
+) -> RateLimiter:
+    """Get or create a shared rate limiter for a domain.
+
+    All crawlers targeting the same domain share one limiter,
+    so concurrent crawls don't multiply the request rate.
+    """
+    async with _domain_lock:
+        if domain not in _domain_limiters:
+            _domain_limiters[domain] = RateLimiter(
+                requests_per_second=requests_per_second,
+            )
+        return _domain_limiters[domain]

@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Central configuration for the Enough backend."""
+    """Central configuration for the Tended backend."""
 
     # Supabase
     supabase_url: str = ""
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Email (Resend)
     resend_api_key: str = ""
-    email_from: str = "Enough <reports@enough.app>"
+    email_from: str = "Tended <reports@tended.app>"
 
     # Prospect Discovery (optional)
     google_cse_key: str = ""

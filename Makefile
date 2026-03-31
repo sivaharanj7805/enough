@@ -41,8 +41,8 @@ format: ## Format all code
 	cd frontend && npx prettier --write src/
 
 build: ## Build production Docker images
-	docker build -t enough-backend:latest ./backend
-	docker build -t enough-frontend:latest ./frontend
+	docker build -t tended-backend:latest ./backend
+	docker build -t tended-frontend:latest ./frontend
 
 migrate: ## Run database migrations
 	cd backend && python migrate.py

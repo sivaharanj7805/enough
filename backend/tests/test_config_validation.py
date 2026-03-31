@@ -50,7 +50,7 @@ def test_validate_production_passes_with_valid_config():
         resend_api_key="re_abc123",
         openai_api_key="sk-abc123",
         anthropic_api_key="sk-ant-abc123",
-        frontend_url="https://enough.app",
+        frontend_url="https://tended.app",
     )
     # Should not raise
     validate_production(settings)
@@ -86,7 +86,7 @@ def test_validate_production_warns_on_cors_wildcard(caplog):
         resend_api_key="re_abc123",
         openai_api_key="sk-abc123",
         anthropic_api_key="sk-ant-abc123",
-        frontend_url="https://enough.app",
+        frontend_url="https://tended.app",
         cors_origins="*",
     )
     with caplog.at_level(logging.WARNING):

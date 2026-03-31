@@ -14,12 +14,16 @@
 | `migrations/` | 27 sequential .sql files tracked in `schema_migrations` |
 | `tests/` | pytest + asyncio. Coverage target: 70% |
 
-## Intelligence Pipeline
+## Intelligence Pipeline (see `PIPELINE.md` for full reference)
 
 ```
-Crawl → Normalize → Embed (OpenAI text-embedding-3-small, 1536-dim)
-     → Cluster (UMAP+HDBSCAN) → Health Score → Cannibalization
-     → Problem Detection → Recommendations (Claude) → Oracle (RAG)
+Step 1     Crawl + Normalize
+Steps 2-5  Enrichment (Embed → Readability → PageRank → Intent)
+Step 6     Clustering (UMAP+HDBSCAN) → 6b TF-IDF Labels → 6c AI Citability
+Step 7     Health Scoring
+Step 8     Cannibalization → 8b Chunk Confirm → 8c Role Patch
+Step 9     Problem Detection
+Step 10    Recommendations → 10b Claude Enrichment
 ```
 
 Embeddings stored in pgvector with HNSW index.

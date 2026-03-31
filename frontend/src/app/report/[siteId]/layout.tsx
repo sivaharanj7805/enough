@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
-const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://enough.app';
+const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://tended.app';
 const ANON_TOKEN = '11111111-1111-1111-1111-111111111111';
 
 interface AuditReportMeta {
@@ -37,7 +37,7 @@ export async function generateMetadata({
 
   if (!report) {
     return {
-      title: 'Content Audit Report — Enough',
+      title: 'Content Audit Report — Tended',
       description: 'AI-powered content intelligence audit.',
     };
   }
@@ -57,7 +57,7 @@ export async function generateMetadata({
       title,
       description,
       url: reportUrl,
-      siteName: 'Enough — Content Intelligence',
+      siteName: 'Tended — Content Intelligence',
       type: 'article',
       images: [
         {

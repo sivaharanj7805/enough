@@ -8,7 +8,9 @@ For deep AI-powered recommendations (rewrites, strategic analysis), see
 the Tier 2 enrichment in recommendations.py.
 """
 
+import json
 import logging
+from collections import Counter
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +20,17 @@ logger = logging.getLogger(__name__)
 
 
 # ── Templates by problem type ──
+
+def _format_staleness(months: float | int, fallback: str = "a long time") -> str:
+    """Format months_stale into human-readable staleness text."""
+    m = int(months) if months else 0
+    if m <= 0:
+        return fallback
+    if m >= 24:
+        years = m / 12
+        return f"{years:.1f} years" if years != int(years) else f"{int(years)} years"
+    return f"{m} months"
+
 
 _TEMPLATES: dict[str, dict[str, Any]] = {
     "thin_content": {
@@ -126,10 +139,10 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
     "decay_severe": {
         "recommendation_type": "update",
         "title_tpl": "Urgent: update decaying content: {title}",
-        "summary_tpl": (
-            "This post hasn't been updated in over 12 months and is losing rankings. "
-            "In 2026, stale content faces a double penalty: Google ranks it lower AND AI systems "
-            "stop citing it entirely. Posts older than 12 months are rarely cited by ChatGPT or Perplexity."
+        "summary_fn": lambda d: (
+            f"This post hasn't been updated in {_format_staleness(d.get('months_stale', 0), 'over 12 months')} "
+            "and is losing rankings. In 2026, stale content faces a double penalty: Google ranks it lower AND AI systems "
+            "stop citing it entirely."
         ),
         "actions_tpl": [
             "Update all statistics, data points, and examples to current year",
@@ -145,9 +158,9 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
     "decay_moderate": {
         "recommendation_type": "update",
         "title_tpl": "Refresh stale content: {title}",
-        "summary_tpl": (
-            "This post hasn't been updated in 6-12 months. AI citation risk: "
-            "AI systems actively replace older sources with fresher competitors. "
+        "summary_fn": lambda d: (
+            f"This post hasn't been updated in {_format_staleness(d.get('months_stale', 0), 'over 6 months')}. "
+            "AI citation risk: AI systems actively replace older sources with fresher competitors. "
             "Without an update, this content is becoming invisible to AI-generated answers."
         ),
         "actions_tpl": [
@@ -157,6 +170,34 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
             "Check that the opening still directly answers the primary query",
         ],
         "effort_hours": 1.0,
+        "priority_fn": lambda d: "medium",
+    },
+    "decay_mild": {
+        "recommendation_type": "refresh",
+        "title_tpl": "Consider refreshing older content: {title}",
+        "summary_fn": lambda d: (
+            f"This post hasn't been updated in {_format_staleness(d.get('months_stale', 0), 'over 18 months')}. "
+            "Periodic content refreshes maintain relevance and prevent gradual ranking decay."
+        ),
+        "actions_tpl": [
+            "Update the published/modified date after making substantive edits",
+            "Check for outdated references, broken links, or stale examples",
+            "Add a recent example, statistic, or data point",
+            "Verify all external links still work",
+        ],
+        "effort_hours": 0.5,
+        "priority_fn": lambda d: "low",
+    },
+    "seo_no_headings": {
+        "recommendation_type": "optimize",
+        "title_tpl": "Add heading structure: {title}",
+        "summary_tpl": "This post lacks H2+ heading structure. Headings improve scannability, SEO, and AI content extraction.",
+        "actions_tpl": [
+            "Add 3-5 descriptive H2 headings that summarize each section",
+            "Use H3s for subsections within longer H2 blocks",
+            "Include target keywords in at least one H2 heading",
+        ],
+        "effort_hours": 0.5,
         "priority_fn": lambda d: "medium",
     },
     # ── 2026 AI-era SEO templates ─────────────────────────────────────────────
@@ -258,13 +299,13 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         "summary_tpl": (
             "Only {question_header_ratio:.0%} of H2/H3 headers are question-format. "
             "AI systems match natural language prompts to question-format headers. "
-            "Target: at least 30% of headers should be questions."
+            "Top AI-cited content typically uses 25-35% question-format headers."
         ),
         "actions_tpl": [
             "Reformat H2 headers as questions that match how users prompt AI",
             "Example: change 'Benefits of X' to 'What are the benefits of X?'",
             "Example: change 'Implementation Guide' to 'How do you implement X?'",
-            "Keep some non-question headers for variety — target 30-50% questions",
+            "Keep some non-question headers for variety — aim for 25-35% questions",
             "Each question header should be followed by a direct 1-2 sentence answer",
         ],
         "effort_hours": 0.5,
@@ -323,7 +364,7 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         "effort_hours": 0.5,
         "priority_fn": lambda d: "high",
     },
-    "geo_no_freshness_date": {
+    "geo_no_updated_date": {
         "recommendation_type": "add_freshness_signal",
         "title_tpl": "Add visible update date: {title}",
         "summary_tpl": (
@@ -366,6 +407,7 @@ async def generate_fast_recommendations(
         JOIN posts p ON p.id = cp.post_id
         WHERE cp.site_id = $1
           AND (p.word_count IS NULL OR p.word_count >= 100)
+          AND COALESCE(p.page_type, 'blog') NOT IN ('landing', 'index')
         ORDER BY
             CASE cp.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
             cp.problem_type
@@ -398,7 +440,43 @@ async def generate_fast_recommendations(
             post_cluster_map[pc["post_id"]] = (cid, pc["cluster_label"], avg_wc)
 
     recs_to_insert = []
-    seen_post_types: set[tuple[UUID, str]] = set()  # Dedup: one rec per post per type
+    seen_post_types: dict[tuple, int] = {}  # Dedup: (post_id, ptype) → index; also used for title merge
+
+    # ── Count total posts and problem frequency for aggregation ──
+    total_posts_row = await db.fetchval(
+        "SELECT COUNT(*) FROM posts WHERE site_id = $1 AND (word_count IS NULL OR word_count >= 100)",
+        site_id,
+    )
+    total_posts = total_posts_row or 1
+
+    # Count unique posts per problem type (for aggregation threshold)
+    ptype_post_counts: Counter[str] = Counter()
+    _seen_ptype_posts: set[tuple[str, UUID]] = set()
+    for prob in problems:
+        _k = (prob["problem_type"], prob["post_id"])
+        if _k not in _seen_ptype_posts:
+            _seen_ptype_posts.add(_k)
+            ptype_post_counts[prob["problem_type"]] += 1
+
+    # Problem types affecting >30% of posts get aggregated:
+    # 1 site-level summary rec + per-post recs only for top 10 posts
+    _AGGREGATION_THRESHOLD = 0.30
+    _AGGREGATION_PER_POST_LIMIT = 10
+    aggregated_types: set[str] = set()
+    aggregated_counts: dict[str, int] = {}
+    aggregated_per_post_count: dict[str, int] = {}
+
+    for ptype, count in ptype_post_counts.items():
+        if count / total_posts > _AGGREGATION_THRESHOLD:
+            aggregated_types.add(ptype)
+            aggregated_counts[ptype] = count
+            aggregated_per_post_count[ptype] = 0
+
+    # Confidence sets (defined once outside loop)
+    _high_conf_types = {"thin_content", "seo_missing_meta", "orphan", "missing_schema",
+                         "seo_no_images", "seo_title_length", "seo_no_headings"}
+    _med_conf_types = {"readability_too_complex", "thin_below_cluster_avg",
+                       "improve_ai_citability", "poor_ai_structure"}
 
     for prob in problems:
         ptype = prob["problem_type"]
@@ -408,11 +486,18 @@ async def generate_fast_recommendations(
         key = (post_id, ptype)
         if key in seen_post_types:
             continue
-        seen_post_types.add(key)
+        seen_post_types[key] = -1  # Placeholder; title-level dedup stores actual index
 
         template = _TEMPLATES.get(ptype)
         if not template:
             continue
+
+        # For aggregated types, only emit per-post recs for top N posts
+        # (problems are already ordered by severity, so first N are most important)
+        if ptype in aggregated_types:
+            aggregated_per_post_count[ptype] += 1
+            if aggregated_per_post_count[ptype] > _AGGREGATION_PER_POST_LIMIT:
+                continue
 
         # Build context dict for template formatting
         details = prob["details"] if isinstance(prob["details"], dict) else {}
@@ -431,11 +516,16 @@ async def generate_fast_recommendations(
             "cluster_avg": cluster_avg,
             "title_length": len(prob["title"] or ""),
             "readability_score": prob["readability_score"] or 0,
+            # Decay staleness (from problem details)
+            "months_stale": details.get("months_stale", details.get("months_since_update", 0)),
             # AI-era fields (from problem details metadata)
             "citability_score": int(details.get("citability_score", 0)),
             "eeat_score": int(details.get("eeat_score", 0)),
             "schema_score": int(details.get("schema_score", 0)),
             "extraction_score": int(details.get("extraction_score", 0)),
+            # GEO fields (from problem details)
+            "question_header_ratio": float(details.get("question_header_ratio", 0)),
+            "data_density_per_200w": float(details.get("data_density_per_200w", 0)),
         }
 
         try:
@@ -450,21 +540,33 @@ async def generate_fast_recommendations(
             else:
                 actions = [a.format(**ctx) for a in template["actions_tpl"]]
             priority = template["priority_fn"](ctx)
-        except (KeyError, ValueError) as e:
+        except (KeyError, ValueError, TypeError) as e:
             logger.warning("Template error for %s on %s: %s", ptype, post_id, e)
             continue
 
-        # Confidence: high for objective issues (thin content, schema, orphan)
-        # medium for contextual recommendations, low for structural suggestions
-        _high_conf_types = {"thin_content", "seo_missing_meta", "orphan", "missing_schema",
-                             "seo_no_images", "seo_title_length"}
-        _med_conf_types = {"readability_too_complex", "thin_below_cluster_avg",
-                           "improve_ai_citability", "poor_ai_structure"}
         confidence = (
             "high" if ptype in _high_conf_types else
             "medium" if ptype in _med_conf_types else
             "low"
         )
+
+        # Title-level dedup: if two recs for the same post have identical titles
+        # (from different problem types), merge their actions into one rec instead
+        # of showing a duplicate. Takes max effort and combines action lists.
+        title_key = (post_id, title)
+        if title_key in seen_post_types:
+            # Find existing rec and merge actions
+            existing_idx = seen_post_types[title_key]
+            existing = recs_to_insert[existing_idx]
+            merged_actions = existing[9] + [a for a in actions if a not in existing[9]]
+            merged_effort = max(existing[5], template["effort_hours"])
+            recs_to_insert[existing_idx] = (
+                existing[0], existing[1], existing[2], existing[3],
+                existing[4], merged_effort, existing[6], existing[7],
+                existing[8], merged_actions, existing[10], existing[11],
+            )
+            continue
+        seen_post_types[title_key] = len(recs_to_insert)
 
         recs_to_insert.append((
             post_id,                            # post_id
@@ -481,10 +583,68 @@ async def generate_fast_recommendations(
             confidence,                         # confidence
         ))
 
+    # ── Site-level summary recs for aggregated problem types ──
+    # One summary rec per high-frequency type, attached to the first affected post
+    for ptype in aggregated_types:
+        template = _TEMPLATES.get(ptype)
+        if not template:
+            continue
+
+        count = aggregated_counts[ptype]
+        first_post = next(
+            (p for p in problems if p["problem_type"] == ptype),
+            None,
+        )
+        if not first_post:
+            continue
+
+        # Friendly description for the problem type
+        _type_labels = {
+            "seo_no_headings": "lack H2/H3 heading structure",
+            "seo_missing_meta": "are missing a meta description",
+            "decay_mild": "haven't been updated recently",
+            "seo_no_images": "have no images",
+            "seo_title_length": "have title length issues",
+        }
+        label = _type_labels.get(ptype, f"have the '{ptype}' issue")
+        shown = min(_AGGREGATION_PER_POST_LIMIT, count)
+
+        agg_ai_content = json.dumps({
+            "aggregated_problem_type": ptype,
+            "total_affected_posts": count,
+            "per_post_recs_shown": shown,
+        })
+
+        recs_to_insert.append((
+            first_post["post_id"],
+            site_id,
+            None,
+            template["recommendation_type"],
+            "medium",
+            template["effort_hours"] * 2,  # Bulk effort estimate
+            "high",
+            f"Site-wide: {count} of {total_posts} posts {label}",
+            (
+                f"{count} posts ({count * 100 // total_posts}% of your site) {label}. "
+                f"The top {shown} most impactful posts have individual recommendations below. "
+                f"For the remaining {count - shown}, apply the same fix pattern in bulk."
+            ),
+            [
+                f"Start with the {shown} individual recommendations for this issue",
+                "Use a batch workflow or CMS plugin to fix the remaining posts efficiently",
+                "Prioritize your highest-traffic pages first (check Google Analytics)",
+                f"Total affected: {count} posts — batch processing is more efficient than fixing one at a time",
+            ],
+            agg_ai_content,
+            "high",
+        ))
+
     # ── Cannibalization recommendations ──
+    # Use Step 8's pre-computed resolution, severity, and stronger_post_id
+    # instead of re-applying cosine-only thresholds (which produced 99% false positives)
     cann_pairs = await db.fetch("""
         SELECT cp.id, cp.post_a_id, cp.post_b_id, cp.cosine_similarity, cp.severity,
-               cp.cluster_id,
+               cp.cluster_id, cp.resolution, cp.stronger_post_id, cp.severity_score,
                pa.title as title_a, pa.url as url_a, pa.word_count as wc_a,
                pa.language as lang_a,
                pb.title as title_b, pb.url as url_b, pb.word_count as wc_b,
@@ -496,7 +656,7 @@ async def generate_fast_recommendations(
           AND (pa.word_count IS NULL OR pa.word_count >= 100)
           AND (pb.word_count IS NULL OR pb.word_count >= 100)
           AND (pa.language IS NULL OR pb.language IS NULL OR pa.language = pb.language)
-        ORDER BY cp.cosine_similarity DESC
+        ORDER BY cp.severity_score DESC NULLS LAST
     """, site_id)
 
     seen_cann: set[tuple[UUID, UUID]] = set()
@@ -506,71 +666,94 @@ async def generate_fast_recommendations(
             continue
         seen_cann.add(pair_key)
 
-        cos = pair["cosine_similarity"]
-        wc_a = pair["wc_a"] or 0
-        wc_b = pair["wc_b"] or 0
+        resolution = pair["resolution"] or "monitor"
+        severity = pair["severity"] or "medium"
+        cos = pair["cosine_similarity"] or 0.0
+        stronger_id = pair["stronger_post_id"]
 
-        if cos >= 0.99:
-            # Near-identical — redirect
-            keep = "A" if wc_a >= wc_b else "B"
-            redirect = "B" if keep == "A" else "A"
-            keep_url = pair[f"url_{keep.lower()}"]
-            redirect_url = pair[f"url_{redirect.lower()}"]
-            title = f"Redirect duplicate: {pair[f'title_{redirect.lower()}'][:50]}"
-            summary = f"These two posts are near-identical (cosine={cos:.3f}). Set up a 301 redirect from the weaker post to the stronger one."
+        # Skip 'monitor' pairs — low severity, not actionable
+        if resolution == "monitor":
+            continue
+
+        # Determine which post is stronger/weaker using Step 8's computation
+        if stronger_id == pair["post_b_id"]:
+            keep_title, keep_url = pair["title_b"], pair["url_b"]
+            weak_title, weak_url = pair["title_a"], pair["url_a"]
+        else:
+            keep_title, keep_url = pair["title_a"], pair["url_a"]
+            weak_title, weak_url = pair["title_b"], pair["url_b"]
+
+        # Map Step 8 resolution to recommendation
+        if resolution == "redirect":
+            rec_type = "merge"
+            title = f"Redirect duplicate: {weak_title[:50]}"
+            summary = (
+                f"Step 8 blended scoring flagged these as near-identical (cosine={cos:.3f}, "
+                f"severity={severity}). 301 redirect the weaker post to the stronger one."
+            )
             actions = [
-                f"301 redirect {redirect_url} → {keep_url}",
+                f"301 redirect {weak_url} → {keep_url}",
                 "Merge any unique content from the redirected post into the kept post",
                 "Update any internal links pointing to the old URL",
             ]
-            priority = "critical"
             effort = 0.5
-        elif cos >= 0.90:
-            # Very similar — merge
-            keep = "A" if wc_a >= wc_b else "B"
-            merge = "B" if keep == "A" else "A"
-            title = f"Merge overlapping content: {pair[f'title_{keep.lower()}'][:50]}"
-            summary = f"These posts overlap significantly (cosine={cos:.3f}). Merge unique sections from the shorter post into the longer one, then redirect."
+        elif resolution == "merge":
+            rec_type = "merge"
+            title = f"Merge overlapping content: {keep_title[:50]}"
+            summary = (
+                f"These posts cover the same subtopics (cosine={cos:.3f}, severity={severity}). "
+                f"Combine unique sections into the stronger post, then redirect."
+            )
             actions = [
                 "Compare both posts section by section",
-                f"Move unique paragraphs from '{pair[f'title_{merge.lower()}'][:40]}' into '{pair[f'title_{keep.lower()}'][:40]}'",
+                f"Move unique paragraphs from '{weak_title[:40]}' into '{keep_title[:40]}'",
                 "301 redirect the merged post to the consolidated one",
                 "Update internal links",
             ]
-            priority = "high"
             effort = 2.0
-        else:
-            # Moderate overlap — differentiate
+        else:  # differentiate
+            rec_type = "differentiate"
             title = f"Differentiate competing content: {pair['title_a'][:50]}"
-            summary = f"These posts have significant topic overlap (cosine={cos:.3f}). Differentiate by targeting distinct keywords and angles."
+            summary = (
+                f"These posts target similar keywords (cosine={cos:.3f}, severity={severity}). "
+                f"Refocus each on a distinct angle to eliminate competition."
+            )
             actions = [
                 "Identify the unique angle for each post",
                 "Adjust titles and H1s to target different keyword variants",
                 "Cross-link between the two posts with descriptive anchor text",
                 "Consider making one a 'beginner' guide and the other 'advanced'",
             ]
-            priority = "medium"
             effort = 1.5
 
-        # Store cluster_id + redirect info in ai_generated_content so the
-        # UI can deep-link to consolidation flow and show redirect downloads
-        import json as _json
-        cann_ai_content = _json.dumps({
+        # Map Step 8 severity to priority
+        _severity_to_priority = {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}
+        priority = _severity_to_priority.get(severity, "medium")
+
+        cann_ai_content = json.dumps({
             "cluster_id": str(pair["cluster_id"]) if pair["cluster_id"] else None,
             "post_a_url": pair["url_a"],
             "post_b_url": pair["url_b"],
             "cosine_similarity": round(cos, 3),
+            "resolution": resolution,
+            "severity_score": round(pair["severity_score"], 1) if pair["severity_score"] else None,
         })
 
+        # Confidence: high for redirect/merge (objective), medium for differentiate
+        confidence = "high" if resolution in ("redirect", "merge") else "medium"
+
         recs_to_insert.append((
-            pair["post_a_id"], site_id, None, "merge" if cos >= 0.90 else "differentiate",
-            priority, effort, "high" if cos >= 0.90 else "medium",
+            pair["post_a_id"], site_id, None, rec_type,
+            priority, effort, "high" if resolution in ("redirect", "merge") else "medium",
             title, summary, actions, cann_ai_content,
-            "high" if cos >= 0.85 else "medium",  # confidence
+            confidence,
         ))
 
     # ── Link suggestion recommendations — candidate-aware orphan recs ──
     # Use pgvector similarity to find the most relevant existing posts to link FROM
+    # Minimum similarity threshold: skip nonsensical suggestions (negative/near-zero cosine)
+    _MIN_ORPHAN_SIMILARITY = 0.20
+
     orphan_posts = await db.fetch("""
         SELECT p.id, p.title, p.url, pe.embedding
         FROM posts p
@@ -583,6 +766,7 @@ async def generate_fast_recommendations(
         LIMIT 20
     """, site_id)
 
+    quality_orphan_count = 0
     for orphan in orphan_posts:
         # Find 5 most similar posts that already have inbound links (good link sources)
         link_sources = await db.fetch("""
@@ -602,9 +786,16 @@ async def generate_fast_recommendations(
         if not link_sources:
             continue
 
+        # Filter out suggestions below minimum similarity threshold
+        good_sources = [s for s in link_sources if float(s["similarity"]) >= _MIN_ORPHAN_SIMILARITY]
+        if not good_sources:
+            continue
+
+        quality_orphan_count += 1
+
         source_list = [
-            f"• \"{s['title'][:55]}\" — use anchor text related to the orphan topic"
-            for s in link_sources[:3]
+            f"• \"{s['title'][:55]}\" (similarity: {float(s['similarity']):.2f}) — use anchor text related to the orphan topic"
+            for s in good_sources[:3]
         ]
         actions = [
             "This post has 0 inbound internal links — it won't be crawled or ranked effectively.",
@@ -613,10 +804,7 @@ async def generate_fast_recommendations(
             "Aim for anchor text that describes the target topic, not generic 'click here'.",
         ]
 
-        # Store specific link targets from RAG (pgvector similarity) in
-        # ai_generated_content so the UI can show exact posts + anchor text
-        import json as _json
-        link_targets_data = _json.dumps({
+        link_targets_data = json.dumps({
             "link_targets": [
                 {
                     "post_id": str(s["id"]),
@@ -625,7 +813,7 @@ async def generate_fast_recommendations(
                     "similarity": round(float(s["similarity"]), 2),
                     "suggested_anchor": orphan["title"].lower()[:60],
                 }
-                for s in link_sources[:5]
+                for s in good_sources[:5]
             ]
         })
 
@@ -636,9 +824,35 @@ async def generate_fast_recommendations(
                 orphan["id"], site_id, None, "interlink",
                 "high", 0.5, "medium",
                 f"Fix orphan: {orphan['title'][:60]}",
-                f"This post has no inbound internal links. Link to it from {len(link_sources)} related posts that cover similar topics.",
+                f"This post has no inbound internal links. Link to it from {len(good_sources)} related posts that cover similar topics.",
                 actions, link_targets_data,
                 "high",  # confidence — orphan detection is 100% objective
+            ))
+
+    # Quality gate: if <20% of orphans produced quality matches, the link graph
+    # is too sparse for per-post suggestions. Generate one site-level rec instead.
+    if orphan_posts and quality_orphan_count < len(orphan_posts) * 0.20:
+        # Remove any individual orphan recs we added (they're unreliable)
+        recs_to_insert = [r for r in recs_to_insert if r[3] != "interlink"]
+        # Get any post to attach the site-level rec to (first problem post or first orphan)
+        anchor_post_id = orphan_posts[0]["id"] if orphan_posts else (problems[0]["post_id"] if problems else None)
+        if anchor_post_id:
+            recs_to_insert.append((
+                anchor_post_id, site_id, None, "interlink",
+                "high", 2.0, "high",
+                f"Internal linking needs attention ({len(orphan_posts)} orphan pages)",
+                (
+                    f"{len(orphan_posts)} posts have no inbound internal links, but your link graph "
+                    f"is too sparse to suggest specific link sources (only {quality_orphan_count} had "
+                    f"semantically similar linked posts). Run a full-depth crawl to get per-post suggestions."
+                ),
+                [
+                    f"Run a full site crawl (current: capped at {len(orphan_posts)} orphans)",
+                    "After full crawl, re-run the pipeline for per-post link suggestions",
+                    "In the meantime, add links from your pillar/cornerstone content to orphan pages",
+                    "Use your site's navigation, category pages, and related-posts widgets",
+                ],
+                None, "high",
             ))
 
     # ── Batch insert ──
@@ -651,17 +865,19 @@ async def generate_fast_recommendations(
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
             ON CONFLICT DO NOTHING
         """, [
-            (*r[:9], __import__("json").dumps(r[9]) if r[9] else None, r[10],
+            (*r[:9], json.dumps(r[9]) if r[9] else None, r[10],
              r[11] if len(r) > 11 else "medium")
             for r in recs_to_insert
         ])
 
+    _cann_types = {"merge", "differentiate"}
+    n_problem = sum(1 for r in recs_to_insert if r[3] not in _cann_types and r[3] != "interlink")
+    n_cann = sum(1 for r in recs_to_insert if r[3] in _cann_types)
+    n_interlink = sum(1 for r in recs_to_insert if r[3] == "interlink")
     logger.info(
-        "Fast recommendations: %d generated for site %s (problems=%d, cann=%d, interlink=%d)",
-        len(recs_to_insert), site_id,
-        sum(1 for r in recs_to_insert if r[3] in ("expand", "optimize")),
-        sum(1 for r in recs_to_insert if r[3] in ("merge", "differentiate")),
-        sum(1 for r in recs_to_insert if r[3] == "interlink"),
+        "Fast recommendations: %d generated for site %s (problem=%d, cann=%d, interlink=%d%s)",
+        len(recs_to_insert), site_id, n_problem, n_cann, n_interlink,
+        f", aggregated={len(aggregated_types)} types" if aggregated_types else "",
     )
 
     return len(recs_to_insert)

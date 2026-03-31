@@ -1,3 +1,5 @@
+const isDev = process.env.NODE_ENV !== 'production';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -33,7 +35,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self'",
-              "connect-src 'self' https://*.supabase.co https://api.enough.app wss://*.supabase.co",
+              `connect-src 'self' https://*.supabase.co https://api.enough.app wss://*.supabase.co${isDev ? ' http://localhost:8000' : ''}`,
               "frame-ancestors 'none'",
             ].join('; '),
           },

@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Security auditor for the Enough codebase. Use when reviewing code changes, before merging, or when adding new API endpoints, database queries, or authentication logic.
+description: Security auditor for the Tended codebase. Use when reviewing code changes, before merging, or when adding new API endpoints, database queries, or authentication logic.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---

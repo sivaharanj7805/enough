@@ -33,7 +33,7 @@ async def main():
     stats = {"ok": 0, "img": 0, "err": 0, "skip": 0}
     t0 = time.time()
     
-    client = httpx.Client(timeout=30, headers={"User-Agent": "Enough/0.1"}, follow_redirects=True)
+    client = httpx.Client(timeout=30, headers={"User-Agent": "Tended/0.1"}, follow_redirects=True)
     
     for i, url in enumerate(urls):
         try:

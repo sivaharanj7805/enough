@@ -39,6 +39,8 @@ interface Invoice {
 interface UsageResponse {
   posts_analyzed: number;
   posts_limit: number;
+  sites_count?: number;
+  sites_limit?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -287,6 +289,22 @@ export default function BillingPage() {
             <p className="text-xs text-[#f97316] mt-2">
               You&apos;re approaching your plan limit. Consider upgrading for more capacity.
             </p>
+          )}
+          {/* Sites usage (GAP-14) */}
+          {usage.sites_count != null && usage.sites_limit != null && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-brand-text-muted">Sites</span>
+                <span className="text-sm text-brand-text-muted">
+                  {usage.sites_count} of {usage.sites_limit}
+                </span>
+              </div>
+              <ProgressBar
+                value={usage.sites_count}
+                max={usage.sites_limit}
+                color={usage.sites_count >= usage.sites_limit ? '#ef4444' : '#22c55e'}
+              />
+            </div>
           )}
         </Card>
       )}

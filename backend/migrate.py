@@ -116,7 +116,7 @@ async def show_status() -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Enough DB migration runner")
+    parser = argparse.ArgumentParser(description="Tended DB migration runner")
     parser.add_argument("--status", action="store_true", help="Show migration status")
     args = parser.parse_args()
 

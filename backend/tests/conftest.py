@@ -1,4 +1,4 @@
-"""Shared fixtures for the Enough backend test suite."""
+"""Shared fixtures for the Tended backend test suite."""
 
 import os
 import sys

@@ -5,39 +5,39 @@ import { SiteProvider } from '@/providers/SiteProvider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { CookieConsent } from '@/components/ui/CookieConsent';
 
-const APP_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://enough.app';
+const APP_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://tended.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
   title: {
-    default: 'Enough — Content Ecosystem Intelligence',
-    template: '%s — Enough',
+    default: 'Tended — Content Ecosystem Intelligence',
+    template: '%s — Tended',
   },
   description:
-    'Stop publishing more. Start publishing smarter. Enough analyses your content library, finds what\'s hurting you, and tells you exactly what to fix — in priority order.',
+    'Stop publishing more. Start publishing smarter. Tended analyses your content library, finds what\'s hurting you, and tells you exactly what to fix — in priority order.',
   keywords: ['content intelligence', 'SEO', 'content strategy', 'cannibalization', 'content audit'],
-  authors: [{ name: 'Enough' }],
-  creator: 'Enough',
+  authors: [{ name: 'Tended' }],
+  creator: 'Tended',
   openGraph: {
     type: 'website',
     locale: 'en_US',
     url: APP_URL,
-    siteName: 'Enough',
-    title: 'Enough — Content Ecosystem Intelligence',
-    description: 'Your blog has problems you don\'t know about yet. Enough finds them and tells you what to fix.',
+    siteName: 'Tended',
+    title: 'Tended — Content Ecosystem Intelligence',
+    description: 'Your blog has problems you don\'t know about yet. Tended finds them and tells you what to fix.',
     images: [
       {
         url: `${APP_URL}/og-default.png`,
         width: 1200,
         height: 630,
-        alt: 'Enough — Content Ecosystem Intelligence Platform',
+        alt: 'Tended — Content Ecosystem Intelligence Platform',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Enough — Content Ecosystem Intelligence',
-    description: 'Your blog has problems you don\'t know about yet. Enough finds them and tells you what to fix.',
+    title: 'Tended — Content Ecosystem Intelligence',
+    description: 'Your blog has problems you don\'t know about yet. Tended finds them and tells you what to fix.',
     images: [`${APP_URL}/og-default.png`],
   },
   robots: {

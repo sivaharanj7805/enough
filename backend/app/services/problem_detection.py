@@ -94,37 +94,110 @@ class ProblemDetector:
 
         counts: dict[str, int] = {}
 
-        # Decay detection requires GSC data (click/position trends)
+        # Each detector is wrapped in try/except so one crashing detector
+        # doesn't kill all subsequent ones. Partial results > no results.
+
+        # Decay detection: GSC-based signals + proxy signals (crawl-based).
+        # Proxy decay always runs — it's the crawl-only fallback.
+        counts["decay"] = 0
         if has_gsc:
-            counts["decay"] = await self._detect_content_decay(db, site_id)
-            # Proxy decay detection (works without GSC/GA4)
-            counts["decay"] += await self._detect_proxy_decay(db, site_id)
+            try:
+                counts["decay"] = await self._detect_content_decay(db, site_id)
+            except Exception:
+                logger.exception("GSC decay detection failed for site %s", site_id)
         else:
-            counts["decay"] = 0
-            logger.info("Skipping decay detection — no GSC data for site %s", site_id)
+            logger.info("Skipping GSC decay detection — no GSC data for site %s", site_id)
+
+        # Proxy decay: always runs (uses crawl dates + title patterns, no GSC needed)
+        try:
+            counts["decay"] += await self._detect_proxy_decay(db, site_id)
+        except Exception:
+            logger.exception("Proxy decay detection failed for site %s", site_id)
 
         # Thin content: absolute word count works without external data,
         # but bounce/engagement check needs GA4
-        counts["thin"] = await self._detect_thin_content(db, site_id, has_ga4=has_ga4)
+        try:
+            counts["thin"] = await self._detect_thin_content(db, site_id, has_ga4=has_ga4)
+        except Exception:
+            logger.exception("Thin content detection failed for site %s", site_id)
+            counts["thin"] = 0
+
+        # Quality gate: check internal link resolution rate before orphan/link checks.
+        # On capped crawls (e.g., 150 of 3000 URLs), most link targets don't exist
+        # in the dataset, inflating orphan/no-internal-links counts to near 100%.
+        # Skip those checks if resolution rate < 20%.
+        link_resolution_reliable = True
+        try:
+            total_links = await db.fetchval(
+                "SELECT COUNT(*) FROM internal_links WHERE site_id = $1", site_id,
+            )
+            resolved_links = await db.fetchval(
+                "SELECT COUNT(*) FROM internal_links WHERE site_id = $1 AND target_post_id IS NOT NULL",
+                site_id,
+            )
+            resolution_rate = resolved_links / max(total_links, 1)
+            if total_links > 0 and resolution_rate < 0.20:
+                link_resolution_reliable = False
+                logger.warning(
+                    "Internal link resolution rate is %.1f%% for site %s "
+                    "(%d/%d links resolved) — skipping orphan and seo_no_internal_links "
+                    "detection (data unreliable, likely capped crawl)",
+                    resolution_rate * 100, site_id, resolved_links, total_links,
+                )
+        except Exception:
+            logger.exception("Link resolution rate check failed for site %s — skipping link-based checks", site_id)
+            link_resolution_reliable = False
 
         # SEO issues: fully crawl-based, always runs
-        counts["seo"] = await self._detect_seo_issues(db, site_id)
+        # Pass link_resolution_reliable so seo_no_internal_links is skipped on capped crawls
+        try:
+            counts["seo"] = await self._detect_seo_issues(
+                db, site_id, skip_link_check=not link_resolution_reliable,
+            )
+        except Exception:
+            logger.exception("SEO issue detection failed for site %s", site_id)
+            counts["seo"] = 0
 
-        # Orphans: fully crawl-based, always runs
-        counts["orphan"] = await self._detect_orphans(db, site_id)
+        # Orphans: skip if link resolution is unreliable (capped crawl)
+        if link_resolution_reliable:
+            try:
+                counts["orphan"] = await self._detect_orphans(db, site_id)
+            except Exception:
+                logger.exception("Orphan detection failed for site %s", site_id)
+                counts["orphan"] = 0
+        else:
+            counts["orphan"] = 0
+            logger.info("Skipping orphan detection — link resolution unreliable for site %s", site_id)
 
         # Readability: fully crawl-based, always runs
-        counts["readability"] = await self._detect_readability_issues(db, site_id)
+        try:
+            counts["readability"] = await self._detect_readability_issues(db, site_id)
+        except Exception:
+            logger.exception("Readability detection failed for site %s", site_id)
+            counts["readability"] = 0
 
         # Velocity decline: needs publish dates (crawl-based)
-        counts["velocity"] = await self._detect_velocity_decline(db, site_id)
+        try:
+            counts["velocity"] = await self._detect_velocity_decline(db, site_id)
+        except Exception:
+            logger.exception("Velocity decline detection failed for site %s", site_id)
+            counts["velocity"] = 0
 
         # AI readiness: 2026 SEO signals — runs if ai_citability_score already computed
-        counts["ai_readiness"] = await self._detect_ai_readiness_issues(db, site_id)
+        try:
+            counts["ai_readiness"] = await self._detect_ai_readiness_issues(db, site_id)
+        except Exception:
+            logger.exception("AI readiness detection failed for site %s", site_id)
+            counts["ai_readiness"] = 0
 
-        # Group related problems — if a post has both thin_content AND thin_below_cluster_avg,
-        # mark them as related in details
-        await self._group_related_problems(db, site_id)
+        # Group related problems and suppress duplicates.
+        # When orphan + seo_no_internal_links co-occur, the latter is deleted.
+        # Subtract suppressed count from seo to keep counts accurate.
+        try:
+            suppressed = await self._group_related_problems(db, site_id)
+            counts["seo"] = max(0, counts.get("seo", 0) - suppressed)
+        except Exception:
+            logger.exception("Related problem grouping failed for site %s", site_id)
 
         total = sum(counts.values())
         logger.info(
@@ -194,13 +267,25 @@ class ProblemDetector:
         return count
 
     @staticmethod
-    async def _group_related_problems(db: asyncpg.Connection, site_id: UUID) -> None:
-        """Mark related problems on the same post with a shared group key."""
-        RELATED_GROUPS = [
-            {"types": {"thin_content", "thin_below_cluster_avg"}, "root": "thin_content"},
+    async def _group_related_problems(db: asyncpg.Connection, site_id: UUID) -> int:
+        """Deduplicate related problems on the same post.
+
+        When both problems in a SUPPRESS group exist on the same post,
+        the secondary problem is deleted entirely (orphan subsumes
+        seo_no_internal_links — same customer action: add internal links).
+
+        For MARK groups, the secondary problem is kept but annotated with
+        details.related_to pointing to the root problem.
+        """
+        # Groups where the secondary is suppressed (deleted) — same action for the user
+        SUPPRESS_GROUPS = [
             {"types": {"seo_no_internal_links", "orphan"}, "root": "orphan"},
         ]
-        # Get all problems grouped by post
+        # Groups where secondary is kept but marked as related
+        MARK_GROUPS = [
+            {"types": {"thin_content", "thin_below_cluster_avg"}, "root": "thin_content"},
+        ]
+
         problems = await db.fetch("""
             SELECT id, post_id, problem_type, details
             FROM content_problems WHERE site_id = $1
@@ -208,13 +293,23 @@ class ProblemDetector:
         """, site_id)
 
         from itertools import groupby
+        ids_to_delete: list = []
         for _post_id, post_probs in groupby(problems, key=lambda x: x["post_id"]):
             post_probs = list(post_probs)
             prob_types = {p["problem_type"] for p in post_probs}
-            for group in RELATED_GROUPS:
+
+            # Suppress groups: delete the secondary problem entirely
+            for group in SUPPRESS_GROUPS:
                 overlap = prob_types & group["types"]
                 if len(overlap) > 1:
-                    # Mark secondary problems as related
+                    for p in post_probs:
+                        if p["problem_type"] in overlap and p["problem_type"] != group["root"]:
+                            ids_to_delete.append(p["id"])
+
+            # Mark groups: annotate secondary with related_to
+            for group in MARK_GROUPS:
+                overlap = prob_types & group["types"]
+                if len(overlap) > 1:
                     for p in post_probs:
                         if p["problem_type"] in overlap and p["problem_type"] != group["root"]:
                             details = json.loads(p["details"]) if isinstance(p["details"], str) else (p["details"] or {})
@@ -223,6 +318,19 @@ class ProblemDetector:
                                 "UPDATE content_problems SET details = $1 WHERE id = $2",
                                 json.dumps(details), p["id"],
                             )
+
+        # Batch delete suppressed problems
+        if ids_to_delete:
+            await db.execute(
+                "DELETE FROM content_problems WHERE id = ANY($1::uuid[])",
+                ids_to_delete,
+            )
+            logger.info(
+                "Suppressed %d redundant problems (orphan subsumes seo_no_internal_links) for site %s",
+                len(ids_to_delete), site_id,
+            )
+
+        return len(ids_to_delete)
 
     # ═══════════════════════════════════════════════
     # 2.9: Content decay detection
@@ -404,34 +512,46 @@ class ProblemDetector:
         """Detect content decay without GSC/GA4 data.
 
         Uses proxy signals:
-        1. Posts > 18 months old without updates
-        2. Outdated year references in title (e.g. "2022 Guide" in 2026)
-        3. Time-sensitive content (has year in title) older than 12 months
+        1. Outdated year references in title (e.g. "2022 Guide" in 2026)
+        2. Time-sensitive content (has year in title) older than 12 months
+        3. General staleness — any post not updated in 18+ months
+
+        Skips posts that already have a decay problem (from GSC-based detection)
+        to avoid double-counting.
         """
         import re
         now = datetime.now(UTC)
-        eighteen_months_ago = now - timedelta(days=548)
+        eighteen_months_ago = now - timedelta(days=548)  # ~18 months
         found = 0
 
-        # Posts not updated in 18+ months
+        # Get post IDs already flagged with decay by GSC-based detection
+        # (which runs before proxy decay in detect_all)
+        already_decayed = await db.fetch(
+            "SELECT post_id FROM content_problems WHERE problem_type LIKE 'decay_%' AND site_id = $1",
+            site_id,
+        )
+        already_decayed_ids = {r["post_id"] for r in already_decayed}
+
+        # Posts not updated in 18+ months (excluding already-flagged)
         stale_posts = await db.fetch("""
             SELECT p.id, p.title, p.url, p.publish_date, p.modified_date
             FROM posts p
             WHERE p.site_id = $1
             AND COALESCE(p.modified_date, p.publish_date) < $2
-            AND p.id NOT IN (
-                SELECT post_id FROM content_problems WHERE problem_type LIKE 'decay_%' AND site_id = $1
-            )
         """, site_id, eighteen_months_ago)
 
         problems_batch: list[tuple[UUID, UUID, str, str, dict]] = []
         for post in stale_posts:
+            # Skip posts already flagged by GSC-based decay detection
+            if post["id"] in already_decayed_ids:
+                continue
+
             title = post["title"] or ""
-            # Check for outdated year references
-            year_match = re.search(r'20(1\d|2[0-4])', title)
+            # Signal 1: Outdated year references (any 4-digit year 2000-2099 that's 2+ years old)
+            year_match = re.search(r'((?:19|20)\d{2})', title)
             if year_match:
-                ref_year = int("20" + year_match.group(1))
-                if ref_year < now.year - 1:
+                ref_year = int(year_match.group(1))
+                if 1990 <= ref_year <= now.year and ref_year < now.year - 1:
                     problems_batch.append((
                         post["id"], site_id, "decay_severe", "high",
                         {"issue": f"Outdated year reference ({ref_year}) in title", "proxy": True},
@@ -439,11 +559,43 @@ class ProblemDetector:
                     found += 1
                     continue
 
-            # Very old posts (18+ months) that are time-sensitive
-            if any(kw in title.lower() for kw in ["best ", "top ", "review", "pricing", "compare", "vs "]):
+            # Signal 2: Time-sensitive content not updated in 18+ months
+            # Uses word boundaries to avoid false positives:
+            # "stop" should NOT match "top", "preview" should NOT match "review"
+            # "best" matches as standalone word (signals comparison/ranking content)
+            # "top" only matches before a digit (listicle: "top 10", "top 3")
+            if re.search(r'\bbest\b|\btop\s+\d|\breview\b|\bpricing\b|\bcompare\b|\bvs\b', title.lower()):
+                last_update_s2 = post["modified_date"] or post["publish_date"]
+                months_s2 = 0.0
+                if last_update_s2:
+                    if last_update_s2.tzinfo is None:
+                        last_update_s2 = last_update_s2.replace(tzinfo=UTC)
+                    months_s2 = (now - last_update_s2).days / 30.44
                 problems_batch.append((
                     post["id"], site_id, "decay_moderate", "medium",
-                    {"issue": "Time-sensitive content not updated in 18+ months", "proxy": True},
+                    {
+                        "issue": "Time-sensitive content not updated in 18+ months",
+                        "months_stale": round(months_s2, 1),
+                        "proxy": True,
+                    },
+                ))
+                found += 1
+                continue
+
+            # Signal 3: General staleness — any post not updated in 18+ months.
+            # Not flagged by Signals 1-2 above, but still very old content.
+            last_update = post["modified_date"] or post["publish_date"]
+            if last_update:
+                if last_update.tzinfo is None:
+                    last_update = last_update.replace(tzinfo=UTC)
+                months_stale = (now - last_update).days / 30.44
+                problems_batch.append((
+                    post["id"], site_id, "decay_mild", "medium",
+                    {
+                        "issue": f"Content not updated in {round(months_stale)} months",
+                        "months_stale": round(months_stale, 1),
+                        "proxy": True,
+                    },
                 ))
                 found += 1
 
@@ -477,6 +629,7 @@ class ProblemDetector:
                 GROUP BY target_post_id
             ) il ON il.target_post_id = p.id
             WHERE p.site_id = $1 AND p.word_count > 0
+              AND COALESCE(p.page_type, 'blog') NOT IN ('landing', 'index')
             """,
             site_id,
         )
@@ -486,8 +639,11 @@ class ProblemDetector:
             title = (r["title"] or "").lower()
             if any(kw in url or kw in title for kw in ["/compare", "/vs-", " vs ", "comparison"]):
                 threshold = 500  # Comparisons: OK to be shorter with tables
-            elif any(kw in url or kw in title for kw in ["how-to", "guide", "tutorial", "step-by-step"]):
-                threshold = 800  # Tutorials need depth
+            elif any(kw in url or kw in title for kw in [
+                "how-to", "guide", "tutorial", "step-by-step",
+                "ultimate", "complete", "definitive", "checklist",
+            ]):
+                threshold = 800  # Tutorials/guides need depth
             elif any(kw in url or kw in title for kw in ["/glossary", "what-is", "definition"]):
                 threshold = 200  # Definitions can be short
             else:
@@ -615,6 +771,7 @@ class ProblemDetector:
 
     async def _detect_seo_issues(
         self, db: asyncpg.Connection, site_id: UUID,
+        skip_link_check: bool = False,
     ) -> int:
         """Detect per-post SEO issues.
 
@@ -622,7 +779,7 @@ class ProblemDetector:
         1. Missing meta description
         2. Title too short (<30) or too long (>60)
         3. No H2+ headings
-        4. No internal links to/from the post
+        4. No internal links to/from the post (skipped if skip_link_check=True)
         5. No images (check body_html for <img>)
         """
         found = 0
@@ -634,6 +791,7 @@ class ProblemDetector:
                     WHERE il.source_post_id = p.id OR il.target_post_id = p.id) AS link_count
             FROM posts p
             WHERE p.site_id = $1
+              AND COALESCE(p.page_type, 'blog') NOT IN ('landing', 'index')
             """,
             site_id,
         )
@@ -689,8 +847,8 @@ class ProblemDetector:
                 ))
                 found += 1
 
-            # 4. No internal links
-            if r["link_count"] == 0:
+            # 4. No internal links (skipped on capped crawls where link resolution < 20%)
+            if not skip_link_check and r["link_count"] == 0:
                 problems_batch.append((
                     r["id"], site_id, "seo_no_internal_links", "high",
                     {"issue": "No internal links to or from this post"},
@@ -698,21 +856,28 @@ class ProblemDetector:
                 found += 1
 
             # 5. No images — check multiple image patterns (JS-rendered, lazy-loaded, etc.)
-            # Skip if body_html is trafilatura XML output (strips all media elements)
+            # body_html is normally raw HTML from <main>/<article> (str(BeautifulSoup)),
+            # which preserves <img> tags. In rare cases (manual import, alt code paths),
+            # it may be trafilatura XML (<doc...>) which strips all media — skip check.
             body_html = r["body_html"] or ""
             html_lower = body_html.lower()
             is_trafilatura_xml = html_lower.startswith("<doc") or "<doc " in html_lower[:100]
-            has_images = is_trafilatura_xml or any(tag in html_lower for tag in [
-                '<img', '<picture', '<figure', '<svg',
-                'data-src=', 'srcset=', 'background-image:',
-                'loading="lazy"', "loading='lazy'",
-            ])
-            if not has_images:
-                problems_batch.append((
-                    r["id"], site_id, "seo_no_images", "low",
-                    {"issue": "No images found in content"},
-                ))
-                found += 1
+            if is_trafilatura_xml:
+                # Can't detect images from trafilatura XML — skip (don't create false positive)
+                pass
+            else:
+                has_images = any(tag in html_lower for tag in [
+                    '<img', '<picture', '<figure', '<svg',
+                    'data-src=', 'srcset=', 'background-image:',
+                    'loading="lazy"', "loading='lazy'",
+                ])
+                if not has_images and len(body_html) > 200:
+                    # Only flag if body_html has substantial content (not just a stub)
+                    problems_batch.append((
+                        r["id"], site_id, "seo_no_images", "low",
+                        {"issue": "No images found in content"},
+                    ))
+                    found += 1
 
         await self._insert_problems_batch(db, problems_batch)
         return found
@@ -727,12 +892,15 @@ class ProblemDetector:
         """Detect orphan content — posts with zero inbound internal links.
 
         These are invisible to both users and search engines.
+        Excludes pages under 200 words (likely index/hub/tool pages, not content).
         """
         orphans = await db.fetch(
             """
             SELECT p.id, p.title
             FROM posts p
             WHERE p.site_id = $1
+              AND (p.word_count IS NULL OR p.word_count >= 200)
+              AND COALESCE(p.page_type, 'blog') NOT IN ('landing', 'index')
               AND NOT EXISTS (
                   SELECT 1 FROM internal_links il
                   WHERE il.target_post_id = p.id
@@ -794,21 +962,24 @@ class ProblemDetector:
             site_id, threshold,
         )
 
-        problems_batch = [
-            (r["id"], site_id, "readability_too_complex",
-             "high" if r["readability_score"] < 30 else "medium",
-             {
-                 "readability_score": round(r["readability_score"], 1),
-                 "grade_level": round(r["grade_level"], 1),
-                 "issue": (
-                     f"Flesch Reading Ease score is {round(r['readability_score'], 1)} "
-                     f"(grade level {round(r['grade_level'], 1)}). "
-                     f"63% of top-ranking content scores 60-80. "
-                     f"Simplify sentences and break up paragraphs."
-                 ),
-             })
-            for r in hard_to_read
-        ]
+        problems_batch = []
+        for r in hard_to_read:
+            grade = r["grade_level"]
+            flesch = round(r["readability_score"], 1)
+            grade_str = f" (grade level {round(grade, 1)})" if grade is not None else ""
+            problems_batch.append((
+                r["id"], site_id, "readability_too_complex",
+                "high" if r["readability_score"] < 30 else "medium",
+                {
+                    "readability_score": flesch,
+                    "grade_level": round(grade, 1) if grade is not None else None,
+                    "issue": (
+                        f"Flesch Reading Ease score is {flesch}{grade_str}. "
+                        f"63% of top-ranking content scores 60-80. "
+                        f"Simplify sentences and break up paragraphs."
+                    ),
+                },
+            ))
         await self._insert_problems_batch(db, problems_batch)
 
         return len(hard_to_read)
@@ -823,7 +994,8 @@ class ProblemDetector:
         """Detect if publishing velocity has dropped significantly.
 
         Creates a single site-level problem if current velocity
-        is < 50% of 90-day average.
+        is < 50% of 90-day average. Includes peak velocity period
+        for context (e.g., "peaked at 2.3 posts/week in 2019").
         """
         site = await db.fetchrow(
             """
@@ -851,13 +1023,35 @@ class ProblemDetector:
             return 0
 
         velocity = site["publishing_velocity"] or 0.0
+
+        # Compute peak velocity period (best 90-day window by year)
+        peak_info = ""
+        try:
+            yearly_counts = await db.fetch(
+                """
+                SELECT EXTRACT(YEAR FROM publish_date)::int AS yr,
+                       COUNT(*) AS cnt
+                FROM posts
+                WHERE site_id = $1 AND publish_date IS NOT NULL
+                GROUP BY yr ORDER BY cnt DESC LIMIT 1
+                """,
+                site_id,
+            )
+            if yearly_counts:
+                peak_year = yearly_counts[0]["yr"]
+                peak_count = yearly_counts[0]["cnt"]
+                peak_weekly = round(peak_count / 52, 1)
+                peak_info = f" Peak: {peak_weekly} posts/week in {peak_year} ({peak_count} posts)."
+        except Exception:
+            pass  # Non-fatal — peak info is supplementary
+
         await self._insert_problem(
             db, latest_post["id"], site_id, "velocity_decline", "medium",
             {
                 "current_velocity": round(velocity, 2),
                 "trend": "declining",
                 "issue": (
-                    f"Publishing velocity dropped to {round(velocity, 1)} posts/week. "
+                    f"Publishing velocity dropped to {round(velocity, 1)} posts/week.{peak_info} "
                     f"Research shows consistent publishing (3+/week) drives 3.5x more traffic. "
                     f"Slowed publishing correlates with 25-40% traffic decline within 60 days."
                 ),
@@ -867,6 +1061,7 @@ class ProblemDetector:
 
     # Problem type weights for severity scoring
     _PROBLEM_WEIGHTS: dict[str, float] = {
+        # Traditional SEO problems
         "seo_missing_meta": 0.9,
         "seo_no_internal_links": 0.8,
         "thin_content": 0.7,
@@ -876,10 +1071,26 @@ class ProblemDetector:
         "thin_below_cluster_avg": 0.5,
         "seo_title_length": 0.4,
         "seo_no_images": 0.3,
-        "content_decay": 0.9,
+        "decay_severe": 0.95,
+        "decay_moderate": 0.9,
+        "decay_mild": 0.7,
         "velocity_decline": 0.7,
         "intent_mismatch": 0.8,
         "serp_opportunity_missed": 0.6,
+        # AI readiness problems — product differentiator, weighted high
+        "missing_schema": 0.9,           # Cornerstone cold-outreach finding
+        "low_ai_citability": 0.85,       # Core product signal
+        "weak_eeat": 0.8,                # Critical for AI citation
+        "poor_ai_structure": 0.7,        # Impacts AI extraction
+        # GEO-specific problems
+        "geo_no_faq_section": 0.6,
+        "geo_no_data_tables": 0.5,
+        "geo_no_experience_markers": 0.5,
+        "geo_no_question_headers": 0.5,
+        "geo_low_data_density": 0.5,
+        "geo_no_answer_first": 0.6,
+        "geo_missing_faq_schema": 0.7,   # Schema-related, higher priority
+        "geo_no_updated_date": 0.5,
     }
 
     async def _insert_problem(

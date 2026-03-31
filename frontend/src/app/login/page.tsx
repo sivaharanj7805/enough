@@ -13,7 +13,7 @@ function LeftPanel() {
     <div className="hidden lg:flex flex-col justify-between h-full p-12 bg-[#0d1526] border-r border-[#1e293b]">
       {/* Logo */}
       <div>
-        <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">ENOUGH</span>
+        <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">TENDED</span>
         <p className="text-xs text-[#475569] mt-1 tracking-wider uppercase">Content Ecosystem Intelligence</p>
       </div>
 
@@ -24,7 +24,7 @@ function LeftPanel() {
           <span className="text-[#3b82f6]">Start publishing smarter.</span>
         </h2>
         <p className="text-[#64748b] text-base leading-relaxed">
-          Enough analyses your entire content library, finds what&apos;s working and what&apos;s hurting you,
+          Tended analyses your entire content library, finds what&apos;s working and what&apos;s hurting you,
           and tells you exactly what to fix — in priority order.
         </p>
 
@@ -61,6 +61,9 @@ export default function LoginPage() {
   const [mode, setMode] = useState<'magic' | 'password'>('magic');
   const [status, setStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
   const [error, setError] = useState('');
+
+  const supabaseConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder');
 
   const sessionExpired = searchParams.get('expired') === 'true';
 
@@ -115,7 +118,7 @@ export default function LoginPage() {
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         {/* Mobile logo */}
         <div className="lg:hidden text-center mb-10">
-          <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">ENOUGH</span>
+          <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">TENDED</span>
         </div>
 
         <div className="w-full max-w-sm">
@@ -125,6 +128,17 @@ export default function LoginPage() {
               Your content insights are waiting.
             </p>
           </div>
+
+          {!supabaseConfigured && (
+            <div className="mb-6 flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 rounded-xl px-4 py-3 border border-amber-400/20">
+              <span className="flex-shrink-0 mt-0.5" aria-label="Warning">&#9888;</span>
+              <span>
+                Authentication requires Supabase configuration. Set NEXT_PUBLIC_SUPABASE_URL and
+                NEXT_PUBLIC_SUPABASE_ANON_KEY in frontend/.env.local, or enable demo mode with
+                NEXT_PUBLIC_DEMO_MODE=true.
+              </span>
+            </div>
+          )}
 
           {sessionExpired && (
             <div className="mb-6 flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 rounded-xl px-4 py-3 border border-amber-400/20">

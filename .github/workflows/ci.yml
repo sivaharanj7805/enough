@@ -19,7 +19,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: enough_test
+          POSTGRES_DB: tended_test
         ports:
           - 5432:5432
         options: >-
@@ -29,7 +29,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/enough_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tended_test
       ENVIRONMENT: test
       SECRET_KEY: test-secret-key-not-for-production
       SUPABASE_URL: https://test.supabase.co
@@ -86,7 +86,7 @@ jobs:
 
       - name: Build
         env:
-          NEXT_PUBLIC_API_URL: https://api.enough.app
+          NEXT_PUBLIC_API_URL: https://api.tended.app
           NEXT_PUBLIC_SUPABASE_URL: https://test.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: test-key
         run: npm run build

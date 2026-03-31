@@ -27,7 +27,7 @@ export function StreakCard() {
   const { session } = useAuth();
   const token =
     session?.access_token ??
-    (typeof window !== 'undefined' ? localStorage.getItem('enough_access_token') : null);
+    (typeof window !== 'undefined' ? localStorage.getItem('tended_access_token') : null);
 
   const [streak, setStreak] = useState<StreakData | null>(null);
   const [loading, setLoading] = useState(true);

@@ -62,12 +62,27 @@ class EmbeddingPipeline:
             logger.info("Embeddings: all posts up-to-date for site %s", site_id)
             return 0
 
-        logger.info("Embeddings: %d posts need embedding for site %s", len(rows), site_id)
+        # Split posts into short (single-text, batchable) and long (multi-chunk)
+        short_rows = []
+        long_rows = []
+        for row in rows:
+            text = f"{row['title'] or ''}\n\n{row['body_text']}"
+            if len(text) <= TRUNCATE_CHARS:
+                short_rows.append(row)
+            else:
+                long_rows.append(row)
+
+        if long_rows:
+            logger.info(
+                "Embeddings: %d short posts (batchable) + %d long posts (chunked)",
+                len(short_rows), len(long_rows),
+            )
+
         total_generated = 0
 
-        # Process in batches
-        for i in range(0, len(rows), BATCH_SIZE):
-            batch = rows[i : i + BATCH_SIZE]
+        # ── Batch process short posts (single text each, 100 per API call) ──
+        for i in range(0, len(short_rows), BATCH_SIZE):
+            batch = short_rows[i : i + BATCH_SIZE]
             texts = [self._prepare_text(row["title"], row["body_text"]) for row in batch]
 
             await self.rate_limiter.wait()
@@ -80,7 +95,6 @@ class EmbeddingPipeline:
                 )
             except Exception as e:
                 logger.error("OpenAI embedding API error: %s", e)
-                # Try individual texts in case one is problematic
                 for _j, row in enumerate(batch):
                     await self._generate_single(db, row)
                     total_generated += 1
@@ -111,8 +125,47 @@ class EmbeddingPipeline:
 
             logger.info(
                 "Embeddings: processed batch %d-%d (%d total)",
-                i + 1, min(i + BATCH_SIZE, len(rows)), total_generated,
+                i + 1, min(i + BATCH_SIZE, len(short_rows)), total_generated,
             )
+
+        # ── Process long posts individually with chunked mean-pooling ──
+        for row in long_rows:
+            chunks = self._prepare_text_chunked(row["title"], row["body_text"])
+            try:
+                chunk_vectors: list[list[float]] = []
+                for chunk in chunks:
+                    await self.rate_limiter.wait()
+                    response = await self.client.embeddings.create(
+                        model=MODEL,
+                        input=[chunk],
+                        dimensions=DIMENSIONS,
+                    )
+                    chunk_vectors.append(response.data[0].embedding)
+
+                # Mean-pool all chunk vectors into one post embedding
+                vector = self._mean_vector(chunk_vectors)
+
+                await db.execute(
+                    """
+                    INSERT INTO post_embeddings (post_id, embedding, model, content_hash)
+                    VALUES ($1, $2::vector, $3, $4)
+                    ON CONFLICT (post_id) DO UPDATE SET
+                        embedding = EXCLUDED.embedding,
+                        content_hash = EXCLUDED.content_hash,
+                        updated_at = NOW()
+                    """,
+                    row["id"],
+                    _vector_to_pgvector(vector),
+                    MODEL,
+                    row["content_hash"],
+                )
+                total_generated += 1
+                logger.info(
+                    "Embeddings: chunked %d chunks for long post %s",
+                    len(chunks), row["id"],
+                )
+            except Exception as e:
+                logger.error("Failed to generate chunked embedding for post %s: %s", row["id"], e)
 
         logger.info(
             "Embeddings: generated %d embeddings for site %s",
@@ -160,3 +213,52 @@ class EmbeddingPipeline:
         if len(text) > TRUNCATE_CHARS:
             text = text[:TRUNCATE_CHARS]
         return text.strip()
+
+    def _prepare_text_chunked(self, title: str | None, body: str) -> list[str]:
+        """Split long texts into TRUNCATE_CHARS chunks for mean-pooled embedding.
+
+        For posts under the limit, returns a single-element list (same as _prepare_text).
+        For posts over the limit, splits into overlapping chunks with title prepended
+        to each chunk so every chunk captures the topic context.
+
+        Returns list of text chunks to embed separately (then average the vectors).
+        """
+        text = f"{title}\n\n{body}" if title else body
+        if len(text) <= TRUNCATE_CHARS:
+            return [text.strip()]
+
+        # Split into chunks with 500-char overlap for context continuity
+        overlap = 500
+        title_prefix = f"{title}\n\n" if title else ""
+        # Reserve space for title in each chunk
+        chunk_size = TRUNCATE_CHARS - len(title_prefix)
+        chunks: list[str] = []
+        start = len(title_prefix)  # Skip past title in first chunk
+        full_text = text
+
+        # First chunk includes the original title+body start
+        chunks.append(full_text[:TRUNCATE_CHARS].strip())
+
+        # Subsequent chunks: title + body segment
+        start = TRUNCATE_CHARS - overlap
+        while start < len(full_text):
+            chunk_body = full_text[start:start + chunk_size]
+            if len(chunk_body.strip()) < 200:
+                break  # Don't embed tiny tail chunks
+            chunks.append(f"{title_prefix}{chunk_body}".strip())
+            start += chunk_size - overlap
+
+        return chunks
+
+    @staticmethod
+    def _mean_vector(vectors: list[list[float]]) -> list[float]:
+        """Average multiple embedding vectors into one."""
+        if len(vectors) == 1:
+            return vectors[0]
+        dims = len(vectors[0])
+        mean = [0.0] * dims
+        for vec in vectors:
+            for i in range(dims):
+                mean[i] += vec[i]
+        n = len(vectors)
+        return [v / n for v in mean]

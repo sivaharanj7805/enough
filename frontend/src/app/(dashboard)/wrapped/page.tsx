@@ -59,7 +59,7 @@ export default function WrappedPage() {
   const { session } = useAuth();
   const token =
     session?.access_token ??
-    (typeof window !== 'undefined' ? localStorage.getItem('enough_access_token') : null);
+    (typeof window !== 'undefined' ? localStorage.getItem('tended_access_token') : null);
 
   const [wrapped, setWrapped] = useState<WrappedData | null>(null);
   const [loading, setLoading] = useState(true);

@@ -26,7 +26,12 @@ CHUNK_OVERLAP_THRESHOLD = 0.88  # Chunk-level similarity above this = confirmed 
 
 
 def split_into_chunks(body_html: str, title: str) -> list[str]:
-    """Split post into H2/H3 sections. Returns list of text chunks."""
+    """Split post into H2/H3 sections. Returns list of text chunks.
+
+    Includes a sanity check: if the page has < 300 words but produces > 5
+    chunks, it's likely a homepage or index page with blog roll H2s — fall
+    back to a single chunk to avoid junk comparisons.
+    """
     if not body_html:
         return [title] if title else []
 
@@ -34,15 +39,27 @@ def split_into_chunks(body_html: str, title: str) -> list[str]:
     clean = re.sub(r"<script[^>]*>.*?</script>", "", body_html, flags=re.DOTALL | re.IGNORECASE)
     clean = re.sub(r"<style[^>]*>.*?</style>", "", clean, flags=re.DOTALL | re.IGNORECASE)
 
+    # Compute word count from stripped text for sanity check
+    full_text = re.sub(r"<[^>]+>", " ", clean)
+    full_text = re.sub(r"\s+", " ", full_text).strip()
+    word_count = len(full_text.split())
+
     # Find H2/H3 boundaries
     heading_pattern = re.compile(r"<h[23][^>]*>(.*?)</h[23]>", re.IGNORECASE | re.DOTALL)
     headings = [(m.start(), re.sub(r"<[^>]+>", "", m.group(1)).strip()) for m in heading_pattern.finditer(clean)]
 
     if not headings:
         # No headings — treat whole post as one chunk
-        text = re.sub(r"<[^>]+>", " ", clean)
-        text = re.sub(r"\s+", " ", text).strip()
-        return [f"{title}: {text[:800]}"] if text else [title]
+        return [f"{title}: {full_text[:800]}"] if full_text else [title]
+
+    # Sanity check: short page with many headings = homepage/index with blog roll
+    # Fall back to single chunk to avoid 12+ junk chunks from listing H2s
+    if word_count < 300 and len(headings) > 5:
+        logger.debug(
+            "Sanity check: %d words but %d headings — falling back to single chunk for '%s'",
+            word_count, len(headings), title[:50],
+        )
+        return [f"{title}: {full_text[:800]}"] if full_text else [title]
 
     chunks = []
     # First chunk: intro (content before first heading)
@@ -101,6 +118,22 @@ async def confirm_chunk_overlap(
         )
     except Exception as e:
         logger.warning("Column add: %s", e)
+
+    # Check if the site has body_html data (skip_body mode detection)
+    body_count = await db.fetchval(
+        """
+        SELECT COUNT(*) FROM posts p
+        WHERE p.site_id = $1 AND p.body_html IS NOT NULL AND LENGTH(p.body_html) > 100
+        """,
+        site_id,
+    )
+    if not body_count or body_count == 0:
+        logger.warning(
+            "Site %s has no body_html data — skipping chunk confirmation "
+            "(likely crawled with skip_body=True)",
+            site_id,
+        )
+        return {"confirmed": 0, "denied": 0, "skipped": 0, "message": "No body_html — skip_body mode detected"}
 
     client = openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 

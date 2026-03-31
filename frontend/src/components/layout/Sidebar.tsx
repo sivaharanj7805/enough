@@ -6,13 +6,10 @@ import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
 import {
   Home,
-  Map,
   Network,
   FileText,
   Zap,
-  AlertTriangle,
   GitCompare,
-  Merge,
   Sparkles,
   BarChart3,
   Plug,
@@ -21,6 +18,7 @@ import {
   X,
   Compass,
   ChevronLeft,
+  Hammer,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -45,7 +43,6 @@ const NAV: NavEntry[] = [
   {
     header: 'Explore',
     items: [
-      { href: '/landscape', label: 'Landscape', icon: Map },
       { href: '/clusters', label: 'Clusters', icon: Network },
       { href: '/posts', label: 'Posts', icon: FileText },
     ],
@@ -54,13 +51,12 @@ const NAV: NavEntry[] = [
     header: 'Actions',
     items: [
       { href: '/actions', label: 'Recommendations', icon: Zap },
-      { href: '/issues', label: 'Issues', icon: AlertTriangle },
+      { href: '/patcher', label: 'Patcher', icon: Hammer },
+      { href: '/pioneer', label: 'Pioneer', icon: Compass },
       { href: '/cannibalization', label: 'Cannibalization', icon: GitCompare },
-      { href: '/consolidation', label: 'Consolidation', icon: Merge },
     ],
   },
   { href: '/oracle', label: 'Oracle', icon: Sparkles },
-  { href: '/briefs', label: 'Briefs', icon: FileText },
   { href: '/overview', label: 'Analytics', icon: BarChart3 },
   {
     header: 'Settings',
@@ -75,7 +71,7 @@ const NAV: NavEntry[] = [
 
 const MOBILE_NAV: NavItem[] = [
   { href: '/today', label: 'Today', icon: Home },
-  { href: '/landscape', label: 'Explore', icon: Compass },
+  { href: '/clusters', label: 'Explore', icon: Compass },
   { href: '/actions', label: 'Actions', icon: Zap },
   { href: '/oracle', label: 'Oracle', icon: Sparkles },
 ];
@@ -105,8 +101,10 @@ function DesktopSidebar() {
       <Link
         key={item.href}
         href={item.href}
+        title={collapsed ? item.label : undefined}
         className={clsx(
-          'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150',
+          'group relative flex items-center rounded-md py-2 text-sm font-medium transition-colors duration-150',
+          collapsed ? 'justify-center px-0' : 'gap-3 px-3',
           indented && !collapsed && 'pl-6',
           active
             ? 'text-white'
@@ -118,7 +116,7 @@ function DesktopSidebar() {
           <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r bg-[#3B82F6]" />
         )}
         <item.icon size={20} className="flex-shrink-0" />
-        {!collapsed && <span>{item.label}</span>}
+        {!collapsed && <span className="text-xs leading-snug">{item.label}</span>}
       </Link>
     );
   };
@@ -126,20 +124,20 @@ function DesktopSidebar() {
   return (
     <aside
       className={clsx(
-        'hidden md:flex flex-col bg-[#0F1117] transition-all duration-200',
+        'hidden md:flex flex-col bg-[#0F1117] overflow-hidden transition-[width] duration-200',
         width,
       )}
     >
       {/* Top: Logo + collapse */}
-      <div className="flex h-14 items-center justify-between px-4">
-        {!collapsed ? (
+      <div className={clsx('flex h-14 items-center', collapsed ? 'justify-center px-0' : 'justify-between px-4')}>
+        {!collapsed && (
           <Link
             href="/today"
             className="text-lg font-bold tracking-widest text-white"
           >
-            ENOUGH
+            TENDED
           </Link>
-        ) : null}
+        )}
         <button
           onClick={() => setCollapsed((c) => !c)}
           className="rounded-md p-1.5 text-[#9CA3AF] hover:bg-[#1E1F2B] hover:text-white transition-colors duration-150"
@@ -170,8 +168,8 @@ function DesktopSidebar() {
       </nav>
 
       {/* User area */}
-      <div className="border-t border-[#23262F] p-3">
-        <div className="flex items-center gap-3">
+      <div className={clsx('border-t border-[#23262F]', collapsed ? 'p-2' : 'p-3')}>
+        <div className={clsx('flex items-center', collapsed ? 'justify-center' : 'gap-3')}>
           {/* Avatar placeholder */}
           <div className="h-8 w-8 flex-shrink-0 rounded-full bg-[#23262F] flex items-center justify-center text-xs font-medium text-[#9CA3AF]">
             {user?.email?.[0]?.toUpperCase() ?? '?'}

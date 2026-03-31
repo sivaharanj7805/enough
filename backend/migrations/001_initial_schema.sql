@@ -1,4 +1,4 @@
--- Enough: Content Ecosystem Intelligence Platform
+-- Tended: Content Ecosystem Intelligence Platform
 -- Phase 1 Initial Schema
 -- Requires: pgvector extension
 

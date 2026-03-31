@@ -1,4 +1,4 @@
-# Enough — Content Ecosystem Intelligence Platform
+# Tended — Content Ecosystem Intelligence Platform
 
 A backend system that ingests content from any CMS (WordPress, sitemap-based), connects analytics (GA4, Google Search Console), generates semantic embeddings, and provides a unified API for content intelligence.
 

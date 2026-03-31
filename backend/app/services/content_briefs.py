@@ -223,7 +223,7 @@ class ContentBriefGenerator:
                     "CRITICAL — GEO Structure Requirements (2026 AI Readiness):\n"
                     "Every brief MUST include these for AI citability:\n"
                     "- First 200 words: directly answer the primary query (TL;DR first)\n"
-                    "- H2 headers: phrase at least 30% as questions matching AI prompts\n"
+                    "- H2 headers: phrase 25-35% as questions matching AI prompts\n"
                     "- Data density: include at least 1 specific statistic per 200 words\n"
                     "- FAQ section: add 3-5 Q&A pairs covering related searches\n"
                     "- Schema: specify Article + FAQPage JSON-LD in the brief\n"
@@ -265,7 +265,7 @@ Respond in this exact JSON format:
     "answer_first_paragraph": "Suggested TL;DR opening (direct answer in first 200 words)",
     "data_density_target": "1 data point per 200 words minimum",
     "schema_types": ["Article", "FAQPage"],
-    "question_headers_target": "30%+ of H2s should be question-format"
+    "question_headers_target": "25-35% of H2s should be question-format"
   }},
   "internal_links_suggested": [
     {{"post_title": "Existing Post Title", "anchor_text": "suggested anchor", "direction": "to|from"}}

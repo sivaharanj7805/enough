@@ -1,4 +1,4 @@
-"""Security middleware for the Enough backend.
+"""Security middleware for the Tended backend.
 
 Provides:
 - Security headers (HSTS, X-Frame-Options, CSP, etc.)

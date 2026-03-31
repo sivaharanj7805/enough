@@ -57,7 +57,7 @@ async def main():
 
         async with httpx.AsyncClient(
             timeout=30.0,
-            headers={"User-Agent": "Enough/0.1 (Content Intelligence Bot)"},
+            headers={"User-Agent": "Tended/0.1 (Content Intelligence Bot)"},
             follow_redirects=True,
         ) as client:
             for i, post in enumerate(posts):

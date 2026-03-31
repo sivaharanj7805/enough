@@ -75,16 +75,25 @@ _INTENT_GROUPS = {
     "learning": {"guide", "how", "tutorial", "strategies", "tips", "techniques",
                  "ways", "steps", "explained", "introduction", "basics",
                  "beginners", "learn", "definitive", "complete", "ultimate",
-                 "simple", "comprehensive", "checklist", "course"},
+                 "simple", "comprehensive", "checklist", "course", "lessons",
+                 "mistakes", "secrets", "principles", "rules", "formula"},
     "browsing": {"examples", "templates", "inspiration", "ideas", "samples",
-                 "list", "collection", "roundup"},
+                 "list", "collection", "roundup", "showcase", "gallery"},
     "evaluation": {"review", "comparison", "versus", "alternative", "alternatives",
                    "pricing", "pros", "cons", "worth"},
     "research": {"statistics", "stats", "report", "study", "data", "survey",
                  "analyzed", "analysis", "research", "findings", "benchmark",
-                 "trends", "state"},
+                 "trends", "state", "results", "insights"},
     "shopping": {"tools", "software", "resources", "platforms", "services",
-                 "products", "apps", "programs", "deals"},
+                 "products", "apps", "programs", "deals", "picks", "recommendations"},
+    "case_study": {"case", "success", "story", "interview", "behind", "journey",
+                   "experience", "profile", "spotlight"},
+    "opinion": {"why", "think", "believe", "opinion", "wrong", "myth", "myths",
+                "truth", "dead", "overrated", "underrated", "controversial",
+                "unpopular", "debate", "rant", "problem"},
+    "reference": {"glossary", "dictionary", "definitions", "terminology", "cheat",
+                  "sheet", "reference", "index", "directory", "hub", "wiki",
+                  "database", "library", "catalog"},
 }
 
 # Review template H2 keywords
@@ -217,17 +226,92 @@ def _extract_title_entity(title: str) -> str | None:
             "", remainder,
         )
         if len(remainder) >= 3:
-            return remainder
+            # Cap at first 4 meaningful words to avoid sentence-length entities
+            words = remainder.split()
+            return " ".join(words[:4]) if len(words) > 4 else remainder
 
-    # Pattern 5: "N Best/Top X..." — extract X
-    m = re.match(r"^\d+\s+(?:best|top|key|essential|proven|incredible|awesome)\s+(.+?)(?:\s+(?:in|for)\s+\d{4})?$", t)
+    # Pattern 5: "N Best/Top/Most Important X..." — extract X
+    m = re.match(r"^\d+\s+(?:best|top|key|essential|proven|incredible|awesome|most\s+important)\s+(.+?)(?:\s+(?:in|for)\s+\d{4})?$", t)
     if m:
         entity = m.group(1).strip()
         # Strip trailing format words
         entity = re.sub(r"\s+(?:to\s+try|you\s+should|for\s+.+)$", "", entity)
         return entity if len(entity) >= 3 else None
 
-    return None
+    # Pattern 6: "Title: Subtitle" without format marker — topic is everything before colon
+    m = re.match(r"^([^:]{4,30}):\s+.+", t)
+    if m:
+        entity = m.group(1).strip()
+        entity = re.sub(r"^(the|a|an)\s+", "", entity)
+        # Only return if it's not just a single common word
+        entity_words = [w for w in entity.split() if len(w) >= 3]
+        if len(entity_words) >= 1 and entity not in {"how", "what", "why", "the"}:
+            return entity
+
+    # Pattern 7 (fallback): No format pattern matched. Extract meaningful words
+    # from the title as a rough entity. Strips leading articles, trailing year/site name,
+    # question markers, and common filler.
+    #
+    # Quality gate: only return if the result contains at least one "topic word" — a noun
+    # or domain term someone might actually search for. Filters out garbage like
+    # "end adsense know feel" or "whom tips tips thee" (creative phrasing fragments).
+    fallback = re.sub(r"\s+[-–|]\s+.+$", "", t)  # Strip trailing " - Site Name" (requires spaces around separator)
+    fallback = re.sub(r"\?+$", "", fallback).strip()  # Strip trailing ?
+    fallback = re.sub(r"^(the|a|an|why|when|where|who)\s+", "", fallback)
+    fallback = re.sub(r"\s+(?:in|for|of)\s+\d{4}$", "", fallback)  # Strip year
+
+    # Verbs/adverbs/filler that appear in creative titles but aren't searchable entities.
+    # ONLY verbs, adverbs, and filler — NOT adjectives or nouns that could be B2B topics.
+    # Words like "strategic", "development", "approach" are legitimate topic words.
+    _fallback_noise = {
+        # Verbs
+        "has", "have", "had", "was", "were", "will", "would", "could", "should",
+        "been", "being", "does", "did", "got", "get", "let", "don",
+        "know", "feel", "tell", "find", "make", "take", "give", "come",
+        "keep", "think", "want", "need", "look", "like", "love", "hate",
+        "say", "says", "said", "told", "read", "try", "use", "put",
+        "become", "became", "attract", "mean", "means", "meant",
+        "start", "stop", "run", "set", "show", "help", "turn",
+        # Adverbs/filler
+        "just", "really", "actually", "about", "here", "there",
+        "ever", "never", "still", "also", "too", "very",
+        "once", "twice", "much", "more", "less", "enough",
+        # Pronouns/archaic
+        "whom", "thee", "thou",
+        # Adjectives/quantifiers that are pure filler (not topic-relevant)
+        "right", "wrong", "true", "first", "last", "next",
+        "most", "some", "every", "each", "many", "few", "whole", "both",
+        "fine", "dead",
+        # Structure/format words that indicate article type, not topic
+        "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "step", "steps", "approach", "process", "method", "methods",
+        "way", "ways", "thing", "things", "reason", "reasons",
+        "secret", "secrets", "lesson", "lessons", "rule", "rules",
+        "trick", "tricks", "hack", "hacks", "works", "worked",
+    }
+    fallback_words = [
+        w for w in re.findall(r"[a-z]{3,}", fallback)
+        if w not in _SLUG_STOPS and w not in _fallback_noise
+    ]
+    if len(fallback_words) < 2:
+        return None
+
+    # Quality gate: at least one word must be a plausible topic/noun, not just
+    # verbs/adjectives. Check against known SEO/content domain terms or require
+    # a word that's 5+ chars (longer words are more likely nouns/proper terms).
+    has_topic_word = any(
+        len(w) >= 5 or w in {
+            "seo", "blog", "link", "page", "site", "web", "ads", "ppc",
+            "copy", "lead", "sale", "rank", "data", "code", "api", "app",
+            "tool", "plan", "test", "user", "team", "roi", "crm", "cms",
+            "cta", "ux", "ai", "b2b", "saas", "ecommerce",
+        }
+        for w in fallback_words
+    )
+    if not has_topic_word:
+        return None
+
+    return " ".join(fallback_words[:3])  # Cap at 3 words — shorter = fewer false overlaps
 
 
 def _extract_title_keywords(title: str) -> set[str]:
@@ -289,6 +373,39 @@ def _is_review_template(headings: list) -> bool:
     return len(h_keywords & _REVIEW_H2S) >= 3
 
 
+def _title_topic_overlap(title_a: str, title_b: str) -> float:
+    """Compute topic-word Jaccard between two titles, ignoring format markers.
+
+    Strips format words (guide, tips, review, etc.) and stop words,
+    then computes Jaccard on the remaining topic words.
+    "17 SEO Tips" vs "Google RankBrain Guide" → topics {"seo","tips","rankings"} vs {"google","rankbrain"} → 0.0
+    "Meta Tags" vs "HTML Tags for SEO" → topics {"meta","tags"} vs {"html","tags","seo"} → 0.25
+    """
+    format_noise = _SLUG_FORMAT_WORDS | {"most", "important", "here", "what", "learned",
+                                          "need", "know", "really", "actually", "things",
+                                          "much", "does", "cost", "work", "better", "good",
+                                          "ways", "steps", "methods", "techniques", "used",
+                                          "simple", "easy", "quick", "fast", "using",
+                                          "tried", "tested", "worth", "results", "case",
+                                          "million", "billion", "analyzed", "data"}
+
+    def _topic_words(title: str) -> set[str]:
+        t = re.sub(r"\s*[-–|:].{0,30}$", "", title.lower())  # strip trailing suffix
+        t = re.sub(r"^\d+\s+", "", t)  # strip leading numbers
+        words = set(re.findall(r"[a-z]{3,}", t))
+        return words - _SLUG_STOPS - format_noise
+
+    topics_a = _topic_words(title_a)
+    topics_b = _topic_words(title_b)
+
+    if not topics_a or not topics_b:
+        return 0.3  # Can't determine — lean conservative
+
+    union = topics_a | topics_b
+    intersection = topics_a & topics_b
+    return len(intersection) / len(union) if union else 0.0
+
+
 def compute_blended_cannibalization_score(
     post_a: dict, post_b: dict,
     headings_a: list, headings_b: list,
@@ -336,14 +453,37 @@ def compute_blended_cannibalization_score(
     entity_b = _extract_title_entity(title_b)
 
     # Entity match score: 1.0 if same entity, 0.0 if different named entities,
-    # 0.5 if no entity detected (can't tell)
+    # 0.5 if no entity detected (can't tell).
+    # For multi-word fallback entities (Pattern 7), use word overlap instead of
+    # exact match — "coercive copywriting techniques" and "copywriting 101" share
+    # "copywriting" and should be treated as related, not different entities.
     entities_are_different = False
     if entity_a and entity_b:
         if entity_a == entity_b:
             entity_match = 1.0
         else:
-            entity_match = 0.0
-            entities_are_different = True
+            # Check word overlap for multi-word entities (fallback extractions)
+            words_a = set(entity_a.split())
+            words_b = set(entity_b.split())
+            if len(words_a) >= 2 or len(words_b) >= 2:
+                # At least one is a multi-word fallback entity — use Jaccard
+                intersection = words_a & words_b
+                union = words_a | words_b
+                word_overlap = len(intersection) / len(union) if union else 0.0
+                if word_overlap >= 0.2:
+                    # Meaningful word overlap — treat as related entities (partial match).
+                    # 0.2 = sharing 1 word out of 5, e.g., "copywriting" in
+                    # "coercive copywriting techniques" vs "copywriting 101"
+                    entity_match = word_overlap
+                else:
+                    # Low word overlap — genuinely different entities
+                    entity_match = 0.0
+                    entities_are_different = True
+            else:
+                # Both are single-word entities (clean Pattern 1-6 matches)
+                # e.g., "serpstat" vs "ahrefs" — definitely different
+                entity_match = 0.0
+                entities_are_different = True
     elif entity_a or entity_b:
         # One has an entity, the other doesn't — probably different content types
         entity_match = 0.2
@@ -383,12 +523,18 @@ def compute_blended_cannibalization_score(
         if _is_review_template(headings_a) and _is_review_template(headings_b):
             h2_jaccard = 0.0
 
+    # ── Signal 5: Title topic word overlap (strips format words) ──
+    title_topic = _title_topic_overlap(title_a, title_b)
+
     # ── Blended score ──
+    # Cosine alone is insufficient — two "Definitive Guide" posts about different topics
+    # score 0.85+ cosine but 0.0 title topic overlap. The title topic signal catches this.
     blended = (
-        0.25 * cosine_component
-        + 0.25 * slug_overlap
-        + 0.30 * entity_intent_score
-        + 0.20 * h2_jaccard
+        0.15 * cosine_component       # Broad topical overlap (baseline)
+        + 0.20 * slug_overlap          # Same inferred target keyword
+        + 0.25 * entity_intent_score   # Same entity + same search purpose
+        + 0.20 * title_topic           # Title topic words actually overlap
+        + 0.20 * h2_jaccard            # Cover the same specific subtopics
     )
 
     # ── Severity tier ──
@@ -490,6 +636,7 @@ class CannibalizationDetector:
     async def detect_for_site(
         self, db: asyncpg.Connection, site_id: UUID,
         max_pairs: int = 500,
+        on_progress: "Callable[[str], None] | None" = None,
     ) -> int:
         """Run cannibalization detection across all clusters for a site.
 
@@ -497,10 +644,12 @@ class CannibalizationDetector:
         thresholds stored in the sites table. Limits output to max_pairs
         most severe pairs for actionability.
 
+        on_progress: optional callback for progress updates (e.g., "Scanning cluster 5/40")
+
         Returns the number of cannibalization pairs found.
         """
         try:
-            return await self._detect_for_site_impl(db, site_id, max_pairs)
+            return await self._detect_for_site_impl(db, site_id, max_pairs, on_progress=on_progress)
         except Exception as e:
             logger.error("Cannibalization detection failed for site %s: %s", site_id, e, exc_info=True)
             raise
@@ -508,6 +657,7 @@ class CannibalizationDetector:
     async def _detect_for_site_impl(
         self, db: asyncpg.Connection, site_id: UUID,
         max_pairs: int = 500,
+        on_progress: "Callable[[str], None] | None" = None,
     ) -> int:
         logger.info("Starting cannibalization detection for site %s", site_id)
 
@@ -524,21 +674,9 @@ class CannibalizationDetector:
             for d in dupes[:5]:
                 logger.info("  Duplicate: %s ↔ %s", d["url1"][:50], d["url2"][:50])
 
-        # Load site-specific calibrated thresholds (or calibrate now)
-        site_meta = await db.fetchval(
-            "SELECT metadata FROM sites WHERE id = $1", site_id,
-        )
-        if site_meta and isinstance(site_meta, dict) and "cosine_threshold_flag" in site_meta:
-            thresholds = {
-                "flag": site_meta["cosine_threshold_flag"],
-                "high": site_meta["cosine_threshold_high"],
-                "critical": site_meta["cosine_threshold_critical"],
-            }
-            logger.info(
-                "Using calibrated thresholds for site %s: %s", site_id, thresholds,
-            )
-        else:
-            thresholds = await self.calibrate_thresholds(db, site_id)
+        # Always recalibrate thresholds from current embeddings (~8ms, negligible).
+        # Cached thresholds become stale after content changes or embedding model upgrades.
+        thresholds = await self.calibrate_thresholds(db, site_id)
 
         # Only scan leaf clusters (no children) to avoid redundant pairwise work
         # on parent clusters whose posts are already covered by child clusters
@@ -563,20 +701,33 @@ class CannibalizationDetector:
         )
 
         total_pairs = 0
-        for cluster_row in clusters:
-            if cluster_row["post_count"] < 2:
-                continue
+        scannable_clusters = [c for c in clusters if c["post_count"] >= 2]
+        for idx, cluster_row in enumerate(scannable_clusters, 1):
+            if on_progress:
+                on_progress(f"Scanning cluster {idx}/{len(scannable_clusters)} for cannibalization")
             pairs = await self._detect_in_cluster(
                 db, cluster_row["id"], site_id, thresholds=thresholds,
             )
             total_pairs += pairs
+
+        # Cross-cluster detection: find high-similarity pairs across different clusters
+        # using global HNSW scan. Catches pairs at cluster boundaries that within-cluster
+        # scanning misses (e.g., "SEO tips" in cluster A vs "SEO strategies" in cluster B).
+        if on_progress:
+            on_progress("Scanning cross-cluster pairs")
+        cross_pairs = await self._detect_cross_cluster(
+            db, site_id, thresholds=thresholds,
+        )
+        total_pairs += cross_pairs
 
         # Scale max_pairs with site size (500 minimum, up to 1500 for large sites)
         total_posts = sum(r["post_count"] for r in clusters if r.get("post_count"))
         if max_pairs == 500:  # default, not user-overridden
             max_pairs = max(500, min(total_posts * 3, 1500))
 
-        # Prune to max_pairs — keep only the most severe
+        # Prune to max_pairs — keep only the most severe (by blended severity_score,
+        # not raw cosine — a pair with high slug/title overlap but moderate cosine
+        # is more actionable than a pair with high cosine but zero keyword overlap)
         if total_pairs > max_pairs:
             await db.execute("""
                 DELETE FROM cannibalization_pairs
@@ -584,7 +735,7 @@ class CannibalizationDetector:
                     SELECT cp.id FROM cannibalization_pairs cp
                     JOIN posts p ON cp.post_a_id = p.id
                     WHERE p.site_id = $1
-                    ORDER BY cp.cosine_similarity DESC
+                    ORDER BY cp.severity_score DESC NULLS LAST
                     LIMIT $2
                 )
                 AND post_a_id IN (SELECT id FROM posts WHERE site_id = $1)
@@ -626,6 +777,7 @@ class CannibalizationDetector:
             JOIN posts p ON p.id = pc.post_id
             LEFT JOIN post_embeddings pe ON pe.post_id = p.id
             WHERE pc.cluster_id = $1
+              AND COALESCE(p.page_type, 'blog') NOT IN ('landing', 'index')
             ORDER BY p.id
             """,
             cluster_id,
@@ -809,7 +961,15 @@ class CannibalizationDetector:
                     cosine_sim, n_shared,
                     t_flag=t_flag, t_high=t_high, t_critical=t_critical,
                 )
-                overlap_score = max(blended_score, 0.5)  # Floor at 0.5 when GSC confirms
+                # Floor overlap_score at 0.5 when GSC confirms cannibalization.
+                # Rationale: GSC shared queries are ground truth — if Google ranks both
+                # posts for 3+ identical queries, they're cannibalizing regardless of what
+                # the blended score says. The 0.5 floor ensures these pairs always appear
+                # as "medium" severity or higher in the blended tier system (>0.35 = medium,
+                # >0.55 = high), even if slug/entity/H2 signals are weak. Without this
+                # floor, a pair sharing 5 GSC queries but with creative titles and different
+                # URL structures could score 0.20 blended and be incorrectly filtered out.
+                overlap_score = max(blended_score, 0.5)
             else:
                 # No GSC data — use the blended score as the sole arbiter
                 blended_score, blended_tier = compute_blended_cannibalization_score(
@@ -822,20 +982,44 @@ class CannibalizationDetector:
                 overlap_score = blended_score
 
             # ── Determine stronger post ──
+            # Normalize both signals to [0,1] so traffic doesn't completely dominate.
+            # 70% traffic (rank-based percentile), 30% health score.
+            # In crawl-only mode (no traffic), falls back to health score alone.
             health_a = health_map.get(post_a["id"], {"score": 0, "traffic": 0})
             health_b = health_map.get(post_b["id"], {"score": 0, "traffic": 0})
 
-            strength_a = health_a["score"] + health_a["traffic"] * 10
-            strength_b = health_b["score"] + health_b["traffic"] * 10
+            traffic_a = health_a["traffic"]
+            traffic_b = health_b["traffic"]
+            has_traffic = traffic_a > 0 or traffic_b > 0
+
+            if has_traffic:
+                # Compute max traffic across all posts in health_map for normalization
+                all_traffic = [h["traffic"] for h in health_map.values() if h["traffic"] > 0]
+                max_traffic = max(all_traffic) if all_traffic else 1.0
+                traffic_pct_a = traffic_a / max_traffic
+                traffic_pct_b = traffic_b / max_traffic
+                strength_a = (health_a["score"] / 100.0) * 0.3 + traffic_pct_a * 0.7
+                strength_b = (health_b["score"] / 100.0) * 0.3 + traffic_pct_b * 0.7
+            else:
+                # Crawl-only: strength = health score alone
+                strength_a = health_a["score"]
+                strength_b = health_b["score"]
+
             stronger_id = post_a["id"] if strength_a >= strength_b else post_b["id"]
 
             # Numeric severity score (0-100)
             severity_score = min(100.0, blended_score * 100)
 
-            # Resolution recommendation based on blended tier
+            # Resolution recommendation using blended score signals
+            _slug_a = _extract_slug_core(post_a.get("url", ""))
+            _slug_b = _extract_slug_core(post_b.get("url", ""))
+            _slug_ov = len(_slug_a & _slug_b) / len(_slug_a | _slug_b) if (_slug_a | _slug_b) else 0.0
+            _h2_jac = _h2_subtopic_jaccard(h_a, h_b)
+            _title_tp = _title_topic_overlap(post_a.get("title", ""), post_b.get("title", ""))
             resolution = self._recommend_resolution(
                 cosine_sim, severity,
                 post_a.get("content_intent"), post_b.get("content_intent"),
+                slug_overlap=_slug_ov, h2_jaccard=_h2_jac, title_topic=_title_tp,
             )
 
             # ── Insert pair ──
@@ -863,18 +1047,230 @@ class CannibalizationDetector:
 
         return pairs_found
 
+    async def _detect_cross_cluster(
+        self, db: asyncpg.Connection, site_id: UUID,
+        thresholds: dict[str, float] | None = None,
+    ) -> int:
+        """Detect cannibalization across different clusters using global HNSW scan.
+
+        For each post, finds top 5 nearest neighbors across ALL posts (not just same
+        cluster). For pairs in different clusters with cosine >= high threshold, evaluates
+        the blended score and inserts if it passes. Adds O(5n) HNSW lookups.
+
+        Returns the number of cross-cluster pairs found.
+        """
+        t_high = thresholds["high"] if thresholds else COSINE_THRESHOLD_HIGH
+
+        # Fetch all posts with embeddings and their cluster assignments
+        posts = await db.fetch(
+            """
+            SELECT p.id, p.title, p.url, p.word_count,
+                   p.content_hash, p.content_intent, p.language, p.headings,
+                   pc.cluster_id
+            FROM posts p
+            JOIN post_clusters pc ON pc.post_id = p.id
+            JOIN post_embeddings pe ON pe.post_id = p.id
+            WHERE p.site_id = $1
+              AND COALESCE(p.page_type, 'blog') NOT IN ('landing', 'index')
+            ORDER BY p.id
+            """,
+            site_id,
+        )
+
+        if len(posts) < 2:
+            return 0
+
+        # Build lookup maps
+        post_by_id = {p["id"]: p for p in posts}
+        cluster_by_post = {p["id"]: p["cluster_id"] for p in posts}
+        all_post_ids = [p["id"] for p in posts]
+
+        # Get health scores for stronger post determination
+        health_rows = await db.fetch(
+            """
+            SELECT post_id, composite_score, traffic_contribution
+            FROM post_health_scores
+            WHERE post_id = ANY($1::uuid[])
+            """,
+            all_post_ids,
+        )
+        health_map = {
+            r["post_id"]: {
+                "score": r["composite_score"] or 0.0,
+                "traffic": r["traffic_contribution"] or 0.0,
+            }
+            for r in health_rows
+        }
+
+        # Existing pairs (avoid duplicates with per-cluster results)
+        existing_pairs = set()
+        existing_rows = await db.fetch(
+            """
+            SELECT post_a_id, post_b_id FROM cannibalization_pairs cp
+            JOIN posts p ON cp.post_a_id = p.id
+            WHERE p.site_id = $1
+            """,
+            site_id,
+        )
+        for r in existing_rows:
+            existing_pairs.add(tuple(sorted([r["post_a_id"], r["post_b_id"]])))
+
+        # Global HNSW scan: for each post, find top 5 nearest neighbors across ALL posts
+        cross_candidates: dict[tuple[UUID, UUID], float] = {}
+        for post in posts:
+            neighbors = await db.fetch(
+                """
+                SELECT pe2.post_id,
+                       1 - (pe1.embedding <=> pe2.embedding) AS similarity
+                FROM post_embeddings pe1, post_embeddings pe2
+                WHERE pe1.post_id = $1
+                  AND pe2.post_id != $1
+                  AND pe2.post_id = ANY($2::uuid[])
+                ORDER BY pe1.embedding <=> pe2.embedding
+                LIMIT 5
+                """,
+                post["id"], all_post_ids,
+            )
+            for n in neighbors:
+                neighbor_id = n["post_id"]
+                sim = float(n["similarity"])
+                # Only interested in cross-cluster pairs above the high threshold
+                if sim < t_high:
+                    continue
+                if cluster_by_post.get(post["id"]) == cluster_by_post.get(neighbor_id):
+                    continue  # Same cluster — already handled by per-cluster detection
+                pair_key = tuple(sorted([post["id"], neighbor_id]))
+                if pair_key in existing_pairs:
+                    continue  # Already detected in per-cluster scan
+                cross_candidates[pair_key] = max(
+                    cross_candidates.get(pair_key, 0), sim,
+                )
+
+        if not cross_candidates:
+            return 0
+
+        logger.info(
+            "Cross-cluster HNSW scan: %d candidate pairs from %d posts",
+            len(cross_candidates), len(posts),
+        )
+
+        pairs_found = 0
+        for pair_key, cosine_sim in cross_candidates.items():
+            pid_a, pid_b = pair_key
+            post_a = post_by_id[pid_a]
+            post_b = post_by_id[pid_b]
+
+            # Skip duplicate content
+            hash_a = post_a.get("content_hash")
+            hash_b = post_b.get("content_hash")
+            if hash_a and hash_b and hash_a == hash_b:
+                continue
+
+            # Skip cross-language
+            lang_a = post_a.get("language")
+            lang_b = post_b.get("language")
+            if lang_a and lang_b and lang_a != lang_b:
+                continue
+
+            # Compute blended score
+            h_a = post_a.get("headings") or []
+            h_b = post_b.get("headings") or []
+            blended_score, blended_tier = compute_blended_cannibalization_score(
+                post_a, post_b, h_a, h_b, cosine_sim,
+            )
+
+            # Filter low-tier
+            if blended_tier == "low":
+                continue
+
+            severity = blended_tier
+            overlap_score = blended_score
+
+            # Stronger post (normalized: 70% traffic percentile, 30% health)
+            health_a = health_map.get(post_a["id"], {"score": 0, "traffic": 0})
+            health_b = health_map.get(post_b["id"], {"score": 0, "traffic": 0})
+            traffic_a = health_a["traffic"]
+            traffic_b = health_b["traffic"]
+            has_traffic = traffic_a > 0 or traffic_b > 0
+            if has_traffic:
+                all_traffic = [h["traffic"] for h in health_map.values() if h["traffic"] > 0]
+                max_traffic = max(all_traffic) if all_traffic else 1.0
+                strength_a = (health_a["score"] / 100.0) * 0.3 + (traffic_a / max_traffic) * 0.7
+                strength_b = (health_b["score"] / 100.0) * 0.3 + (traffic_b / max_traffic) * 0.7
+            else:
+                strength_a = health_a["score"]
+                strength_b = health_b["score"]
+            stronger_id = post_a["id"] if strength_a >= strength_b else post_b["id"]
+
+            severity_score = min(100.0, blended_score * 100)
+            _slug_a = _extract_slug_core(post_a.get("url", ""))
+            _slug_b = _extract_slug_core(post_b.get("url", ""))
+            _slug_ov = len(_slug_a & _slug_b) / len(_slug_a | _slug_b) if (_slug_a | _slug_b) else 0.0
+            _h2_jac = _h2_subtopic_jaccard(h_a, h_b)
+            _title_tp = _title_topic_overlap(post_a.get("title", ""), post_b.get("title", ""))
+            resolution = self._recommend_resolution(
+                cosine_sim, severity,
+                post_a.get("content_intent"), post_b.get("content_intent"),
+                slug_overlap=_slug_ov, h2_jaccard=_h2_jac, title_topic=_title_tp,
+            )
+
+            # Use post_a's cluster_id for the pair (cluster_id is NOT NULL)
+            cluster_id = cluster_by_post[pid_a]
+
+            await db.execute(
+                """
+                INSERT INTO cannibalization_pairs
+                    (cluster_id, post_a_id, post_b_id, overlap_score, severity,
+                     overlapping_queries, cosine_similarity, stronger_post_id,
+                     severity_score, resolution)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                """,
+                cluster_id,
+                post_a["id"],
+                post_b["id"],
+                overlap_score,
+                severity,
+                None,  # No GSC queries for cross-cluster
+                cosine_sim,
+                stronger_id,
+                severity_score,
+                resolution,
+            )
+            pairs_found += 1
+
+        if pairs_found:
+            logger.info(
+                "Cross-cluster detection found %d additional pairs for site %s",
+                pairs_found, site_id,
+            )
+        return pairs_found
+
     @staticmethod
     def _recommend_resolution(
         cosine_sim: float,
         severity: str,
         intent_a: str | None = None,
         intent_b: str | None = None,
+        *,
+        slug_overlap: float = 0.0,
+        h2_jaccard: float = 0.0,
+        title_topic: float = 0.0,
     ) -> str:
-        """Recommend a resolution action for a cannibalization pair."""
+        """Recommend a resolution action for a cannibalization pair.
+
+        Uses both raw cosine and blended score signals for more nuanced
+        recommendations. Signal-aware rules take priority over generic ones.
+        """
         if cosine_sim >= 0.95:
             return "redirect"  # Near-identical → 301 redirect shorter to longer
+        if h2_jaccard > 0.7:
+            return "merge"  # Same subtopics covered → combine into stronger
+        if slug_overlap > 0.6:
+            return "differentiate"  # Same target keyword but different content → refocus
         if intent_a and intent_b and intent_a != intent_b:
             return "differentiate"  # Different intents → refocus each on its intent
+        if title_topic > 0.8 and cosine_sim < 0.7:
+            return "differentiate"  # Same topic, different depth → refocus angles
         if severity == "critical" or cosine_sim >= 0.85:
             return "merge"  # High overlap, same intent → merge into stronger
         return "monitor"  # Moderate overlap → add internal link, monitor

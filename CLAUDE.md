@@ -1,4 +1,4 @@
-# Enough — Content Ecosystem Intelligence Platform
+# Tended — Content Ecosystem Intelligence Platform
 
 Solo-founder SaaS. Monorepo: Python/FastAPI backend + Next.js 14 frontend + PostgreSQL/pgvector.
 
@@ -44,6 +44,25 @@ backend/migrations → 27 sequential .sql files, tracked in schema_migrations
 ```
 
 All API routes under `/v1`. Backend mounts 12 routers in `main.py`. For full details see `ARCHITECTURE.md`. For ecosystem visuals see `ECOSYSTEM-BIBLE.md`.
+
+### Intelligence Pipeline (canonical numbering — see `PIPELINE.md`)
+
+```
+Step 1     Crawl + Normalize
+Steps 2-5  Enrichment (Embeddings, Readability, PageRank, Intent)
+Step 6     Clustering (UMAP + HDBSCAN)
+ ├ 6b      TF-IDF Cluster Labels
+ └ 6c      AI Citability Scoring
+Step 7     Health Scoring
+Step 8     Cannibalization Detection
+ ├ 8b      Chunk Confirmation (optional)
+ └ 8c      Role Patch
+Step 9     Problem Detection
+Step 10    Recommendations
+ └ 10b     Claude Enrichment (optional)
+```
+
+Pipeline docs: `PIPELINE-STEP{N}-*.md`. Test results: `STEP{N}-TEST-RESULTS.md`. Test scripts: `backend/scripts/test_step{n}_e2e.py`. All use this numbering. Do not use the old "spec numbering" (Steps 1-7).
 
 ## Coding Standards
 

@@ -35,7 +35,7 @@ export default function UnsubscribePage() {
             <h1 className="text-2xl font-semibold mb-3 text-[#e2e8f0]">Unsubscribe</h1>
             <p className="text-[#64748b] text-sm leading-relaxed mb-6">
               Are you sure you want to unsubscribe <strong>{email}</strong> from
-              Enough emails?
+              Tended emails?
             </p>
             <button
               onClick={handleUnsubscribe}
@@ -53,10 +53,10 @@ export default function UnsubscribePage() {
             <div className="text-5xl mb-4">&#10003;</div>
             <h1 className="text-2xl font-semibold mb-3 text-[#e2e8f0]">You&apos;ve been unsubscribed</h1>
             <p className="text-[#64748b] text-sm leading-relaxed">
-              You won&apos;t receive any more emails from Enough. If this was a mistake,
+              You won&apos;t receive any more emails from Tended. If this was a mistake,
               just submit a new audit at{' '}
-              <a href="https://enough.app" className="text-green-600 underline">
-                enough.app
+              <a href="https://tended.app" className="text-green-600 underline">
+                tended.app
               </a>.
             </p>
           </>

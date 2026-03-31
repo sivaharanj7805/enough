@@ -1,4 +1,4 @@
-# Enough — Ecosystem Bible
+# Tended — Ecosystem Bible
 ## Every Element. What It Means. Why It Matters.
 
 ---
@@ -205,9 +205,9 @@ Purely aesthetic but makes your landscape feel alive and screenshots unique.
 5. **It's YOUR base** — personal ownership, pride
 6. **Social proof** — clan wars, leaderboards, showing off
 
-## How Enough Mirrors This
+## How Tended Mirrors This
 
-| CoC Element | Enough Equivalent | Implementation |
+| CoC Element | Tended Equivalent | Implementation |
 |-------------|-------------------|----------------|
 | **Your base** | Your ecosystem landscape | Unique to every user, reflects THEIR content |
 | **Buildings** | Trees (blog posts) | Each post is a "building" you can upgrade |
@@ -227,7 +227,7 @@ Purely aesthetic but makes your landscape feel alive and screenshots unique.
 ## The Daily Loop
 
 ```
-Morning: Open Enough
+Morning: Open Tended
   → See: "☀️ Your API forest grew overnight (+120 visits)"
   → See: "⛈️ Storm warning: competitor published 'OAuth Guide'"  
   → See: "🗡️ Quest available: Consolidate Getting Started swamp"
@@ -251,7 +251,7 @@ Weekly: Content Wrapped arrives
 **Clash of Clans never tells you "congratulations, you're done."**
 There is ALWAYS a next upgrade, a next defense, a next attack.
 
-Enough should work the same way:
+Tended should work the same way:
 - Finished consolidation? → "New quest: add links to your rebuilt pillar"
 - Hit 80 health? → "Quest: reach 90 for the Crown achievement"
 - All clusters healthy? → "New: competitor overlay unlocked — compare your base"

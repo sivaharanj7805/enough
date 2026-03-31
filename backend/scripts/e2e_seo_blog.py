@@ -216,10 +216,17 @@ async def run_e2e():
         results['clustering'] = {'status': 'OK', 'clusters': n_clusters, 'time': f'{elapsed:.1f}s'}
         logger.info(f"Clustering: {n_clusters} clusters in {elapsed:.1f}s")
 
-        # Label clusters with TF-IDF (fast, no Claude)
-        from app.services.fast_cluster_labels import label_clusters_fast
+        # Label clusters: TF-IDF first (instant), then Claude backfill (quality)
+        from app.services.fast_cluster_labels import label_clusters_fast, backfill_claude_labels
         await label_clusters_fast(conn, site_id)
-        logger.info("Cluster labels applied (TF-IDF)")
+        logger.info("TF-IDF labels applied (fallback)")
+
+        # Claude relabeling — produces "Email Marketing" instead of "Email & Traffic"
+        try:
+            claude_labeled = await backfill_claude_labels(conn, site_id)
+            logger.info(f"Claude labels applied ({claude_labeled} clusters relabeled)")
+        except Exception as e:
+            logger.warning(f"Claude labeling failed (TF-IDF labels remain): {e}")
 
         clusters = await conn.fetch("""
             SELECT c.id, c.label, c.description,

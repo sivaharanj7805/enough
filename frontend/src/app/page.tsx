@@ -39,7 +39,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Do I need to cancel my existing SEO tool?',
-    a: "No. Enough complements tools like Ahrefs, SEMrush, and Surfer. We focus specifically on content ecosystem health \u2014 the cannibalization, decay, and structural problems they don\u2019t catch.",
+    a: "No. Tended complements tools like Ahrefs, SEMrush, and Surfer. We focus specifically on content ecosystem health \u2014 the cannibalization, decay, and structural problems they don\u2019t catch.",
   },
   {
     q: "What if it\u2019s not worth it?",
@@ -51,7 +51,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What is AI Readiness and why does it matter?',
-    a: "Google AI Overviews now appear on ~50% of searches and cut organic CTR by 34%. Enough scores every post on 4 AI dimensions: citability, E-E-A-T, schema markup, and extraction structure. We tell you exactly which posts AI systems skip and what to change so ChatGPT, Perplexity, and Google AI Overviews cite your content.",
+    a: "Google AI Overviews now appear on ~50% of searches and cut organic CTR by 34%. Tended scores every post on 4 AI dimensions: citability, E-E-A-T, schema markup, and extraction structure. We tell you exactly which posts AI systems skip and what to change so ChatGPT, Perplexity, and Google AI Overviews cite your content.",
   },
 ];
 
@@ -166,7 +166,7 @@ function LandingPage() {
             <span className="text-[#3B82F6]"> &mdash; in your inbox in 25 minutes. Free.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-[14px] leading-relaxed text-[#9BA1AD]">
-            Google AI Overviews cut organic CTR by 34%. Enough finds the cannibalization, decay, and dead weight your SEO tool misses &mdash; plus your AI Readiness score showing why ChatGPT doesn&apos;t cite you.
+            Google AI Overviews cut organic CTR by 34%. Tended finds the cannibalization, decay, and dead weight your SEO tool misses &mdash; plus your AI Readiness score showing why ChatGPT doesn&apos;t cite you.
           </p>
           <p className="mx-auto mt-3 max-w-2xl text-[13px] font-medium text-[#E8EAED]">
             Actual meta descriptions to copy. Specific posts to merge. Redirect maps ready to implement.
@@ -207,7 +207,7 @@ function LandingPage() {
                 Check your inbox in 20-25 minutes.
               </p>
               <p className="mt-2 text-[13px] text-[#9BA1AD]">
-                Add <span className="font-medium text-[#E8EAED]">hello@enough.app</span> to your contacts so the report doesn&apos;t go to spam.
+                Add <span className="font-medium text-[#E8EAED]">hello@tended.app</span> to your contacts so the report doesn&apos;t go to spam.
               </p>
             </div>
           ) : (
@@ -397,7 +397,7 @@ function LandingPage() {
           <div className="mt-16 rounded-xl border border-[#23262F] overflow-hidden shadow-2xl shadow-[#3B82F6]/5">
             <img
               src="/ecosystem-preview.png"
-              alt="Enough ecosystem landscape — interactive visualization of your content clusters, health scores, and cannibalization patterns"
+              alt="Tended ecosystem landscape — interactive visualization of your content clusters, health scores, and cannibalization patterns"
               className="w-full"
               loading="lazy"
             />
@@ -567,7 +567,7 @@ function LandingPage() {
       <footer className="border-t border-[#23262F] py-8 px-6">
         <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="text-[12px] text-[#9BA1AD]">
-            &copy; 2026 Enough. All rights reserved.
+            &copy; 2026 Tended. All rights reserved.
           </span>
           <div className="flex items-center gap-6 text-[12px] text-[#9BA1AD]">
             <Link href="/terms" className="hover:text-[#E8EAED] transition-colors">
@@ -576,7 +576,7 @@ function LandingPage() {
             <Link href="/privacy" className="hover:text-[#E8EAED] transition-colors">
               Privacy
             </Link>
-            <a href="mailto:hello@enough.app" className="hover:text-[#E8EAED] transition-colors">
+            <a href="mailto:hello@tended.app" className="hover:text-[#E8EAED] transition-colors">
               Contact
             </a>
           </div>

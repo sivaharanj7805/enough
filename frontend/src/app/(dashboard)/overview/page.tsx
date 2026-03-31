@@ -1,69 +1,25 @@
 'use client';
 
 import { useMemo } from 'react';
+import Link from 'next/link';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Area, AreaChart, RadarChart,
-  PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  Cell, LineChart, Line,
 } from 'recharts';
 import {
-  BarChart3, TrendingUp, Link2, FileText, ArrowUpRight,
-  Calendar, Layers, AlertCircle,
+  BarChart3, TrendingUp, FileText, Layers, AlertTriangle,
+  ArrowUpRight, Activity, ShieldAlert,
 } from 'lucide-react';
 import { useSite } from '@/lib/hooks/useSite';
-import { useSiteHealth, usePosts, useClusters } from '@/lib/hooks/useApi';
-import type { Site, Post, SiteHealth, Cluster } from '@/lib/types';
+import {
+  useSiteHealth, usePosts, useClusters, useCannibalizationPairs,
+  useProblems, useAIScores, useHealthHistory,
+} from '@/lib/hooks/useApi';
+import type { Post, SiteHealth, Cluster, ContentProblem } from '@/lib/types';
 
-// ─── Helpers ────────────────────────────────────────
+// ── Chart config ────────────────────────────────────
 
-function SkeletonCard({ className = '' }: { className?: string }) {
-  return (
-    <div className={`animate-pulse rounded-xl bg-[#111827] border border-[#1e293b] p-5 ${className}`}>
-      <div className="h-4 w-24 bg-[#1e293b] rounded mb-4" />
-      <div className="h-40 bg-[#1e293b] rounded" />
-    </div>
-  );
-}
-
-function StatCard({ label, value, icon: Icon }: { label: string; value: string | number; icon: React.ElementType }) {
-  return (
-    <div className="rounded-xl bg-[#111827] border border-[#1e293b] p-5">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-[#64748b] uppercase tracking-wider">{label}</span>
-        <Icon size={14} className="text-[#64748b]" />
-      </div>
-      <p className="text-2xl font-bold text-[#e2e8f0]">{value}</p>
-    </div>
-  );
-}
-
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl bg-[#111827] border border-[#1e293b] p-5">
-      <h3 className="text-sm font-semibold text-[#e2e8f0] mb-4">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-function IntegrationCTA({
-  title, description, icon: Icon,
-}: { title: string; description: string; icon: React.ElementType }) {
-  return (
-    <div className="rounded-xl bg-[#111827] border border-dashed border-[#334155] p-6 flex flex-col items-center text-center gap-3">
-      <div className="w-10 h-10 rounded-full bg-[#3B82F6]/10 flex items-center justify-center">
-        <Icon size={18} className="text-[#3B82F6]" />
-      </div>
-      <h3 className="text-sm font-semibold text-[#e2e8f0]">{title}</h3>
-      <p className="text-xs text-[#64748b] max-w-xs">{description}</p>
-      <button className="mt-1 text-xs font-medium text-[#3B82F6] hover:text-[#60A5FA] transition-colors flex items-center gap-1">
-        Connect <ArrowUpRight size={12} />
-      </button>
-    </div>
-  );
-}
-
-const CHART_COLORS = {
+const COLORS = {
   blue: '#3B82F6',
   green: '#22C55E',
   amber: '#F59E0B',
@@ -74,355 +30,157 @@ const CHART_COLORS = {
 
 const TOOLTIP_STYLE = {
   contentStyle: {
-    backgroundColor: '#1e293b',
-    border: '1px solid #334155',
+    backgroundColor: '#13151B',
+    border: '1px solid #23262F',
     borderRadius: 8,
     fontSize: 12,
-    color: '#e2e8f0',
+    color: '#E8EAED',
   },
-  labelStyle: { color: '#94a3b8' },
+  labelStyle: { color: '#9BA1AD' },
 };
 
-// ─── Connected Analytics View ───────────────────────
+const AXIS_TICK = { fontSize: 10, fill: '#9BA1AD' };
 
-function ConnectedAnalytics({ site, posts, health, clusters }: {
-  site: Site; posts: Post[]; health: SiteHealth | undefined; clusters: Cluster[] | undefined;
+// ── Shared components ───────────────────────────────
+
+function SkeletonBlock({ className = '' }: { className?: string }) {
+  return (
+    <div className={`animate-pulse rounded-xl bg-brand-surface border border-brand-border p-5 ${className}`}>
+      <div className="h-3 w-20 bg-brand-border rounded mb-4" />
+      <div className="h-8 w-24 bg-brand-border rounded" />
+    </div>
+  );
+}
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-lg font-semibold text-brand-text">{children}</h2>;
+}
+
+function StatCard({
+  label, value, icon: Icon, color,
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ElementType;
+  color?: string;
 }) {
-  // Traffic trend — placeholder until GA4 data is connected
-  const trafficTrend = useMemo(() => {
-    const days: { date: string; pageviews: number }[] = [];
-    const now = Date.now();
-    for (let i = 89; i >= 0; i--) {
-      const d = new Date(now - i * 86400000);
-      const label = `${d.getMonth() + 1}/${d.getDate()}`;
-      // Show a flat baseline — real data requires GA4 connection
-      days.push({ date: label, pageviews: 0 });
-    }
-    return days;
-  }, []);
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-brand-text-muted uppercase tracking-wider">{label}</span>
+        <Icon size={14} className="text-brand-text-muted" />
+      </div>
+      <p className={`text-2xl font-bold ${color ?? 'text-brand-text'}`}>{value}</p>
+    </Card>
+  );
+}
 
-  // Top posts by word count as proxy for "pageviews" sort
-  const topPosts = useMemo(() => {
-    return [...posts]
-      .sort((a, b) => (b.word_count ?? 0) - (a.word_count ?? 0))
-      .slice(0, 10);
-  }, [posts]);
+function EmptyStateCard({
+  icon: Icon, title, description, href,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  href?: string;
+}) {
+  return (
+    <Card className="!border-dashed flex flex-col items-center text-center gap-3 py-8">
+      <div className="w-10 h-10 rounded-full bg-brand-accent/10 flex items-center justify-center">
+        <Icon size={18} className="text-brand-accent" />
+      </div>
+      <h3 className="text-sm font-semibold text-brand-text">{title}</h3>
+      <p className="text-xs text-brand-text-muted max-w-xs">{description}</p>
+      {href && (
+        <Link
+          href={href}
+          className="mt-1 text-xs font-medium text-brand-accent hover:text-brand-accent-hover transition-colors flex items-center gap-1"
+        >
+          Go to Settings <ArrowUpRight size={12} />
+        </Link>
+      )}
+    </Card>
+  );
+}
 
-  // Post health distribution — based on actual health score bands
-  const healthDist = useMemo(() => {
+function scoreColor(score: number): string {
+  if (score >= 60) return 'text-brand-success';
+  if (score >= 40) return 'text-brand-warning';
+  return 'text-brand-critical';
+}
+
+function barFill(score: number): string {
+  if (score >= 60) return COLORS.green;
+  if (score >= 40) return COLORS.amber;
+  return COLORS.red;
+}
+
+// ── Data derivation hooks ───────────────────────────
+
+function useHealthFactors(health: SiteHealth | undefined) {
+  return useMemo(() => {
     if (!health) return [];
     return [
-      { band: 'Active (60+)', count: health.active_posts },
-      { band: 'Passive (30-59)', count: health.passive_posts },
-      { band: 'Cannibalistic', count: health.cannibalistic_posts },
-      { band: 'Dead (<30)', count: health.dead_posts },
+      { factor: 'Overall Health', value: Math.round(health.content_health_score ?? 0), max: 100 },
+      { factor: 'Efficiency', value: Math.min(100, Math.round(health.content_efficiency_ratio ?? 0)), max: 100 },
+      { factor: 'Active Ratio', value: health.total_posts > 0 ? Math.round((health.active_posts / health.total_posts) * 100) : 0, max: 100 },
+      { factor: 'Data Coverage', value: Math.round((health.data_completeness ?? 0) * 100), max: 100 },
+      { factor: 'Date Coverage', value: Math.round((health.modified_date_coverage ?? 0) * 100), max: 100 },
+      { factor: 'AI Enriched', value: health.total_posts > 0 ? Math.min(100, Math.round((health.ai_enriched_count / health.total_posts) * 100)) : 0, max: 100 },
     ];
   }, [health]);
+}
 
-  // CTR trend — placeholder until GSC data is connected
-  const ctrTrend = useMemo(() => {
-    const days: { date: string; ctr: number }[] = [];
-    const now = Date.now();
-    for (let i = 89; i >= 0; i--) {
-      const d = new Date(now - i * 86400000);
-      const label = `${d.getMonth() + 1}/${d.getDate()}`;
-      days.push({ date: label, ctr: 0 });
-    }
-    return days;
-  }, []);
+function useContentRoles(health: SiteHealth | undefined) {
+  return useMemo(() => {
+    if (!health || health.total_posts === 0) return [];
+    return [
+      { role: 'Active', count: health.active_posts, fill: COLORS.green },
+      { role: 'Passive', count: health.passive_posts, fill: COLORS.amber },
+      { role: 'Cannibalistic', count: health.cannibalistic_posts, fill: COLORS.red },
+      { role: 'Dead Weight', count: health.dead_posts, fill: COLORS.purple },
+    ];
+  }, [health]);
+}
 
-  // Publishing velocity (monthly)
-  const velocity = useMemo(() => {
-    const months: Record<string, number> = {};
-    posts.forEach(p => {
-      const d = p.publish_date || p.created_at;
-      if (d) {
-        const key = d.slice(0, 7); // YYYY-MM
-        months[key] = (months[key] || 0) + 1;
-      }
-    });
-    return Object.entries(months)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-12)
-      .map(([month, count]) => ({ month, count }));
-  }, [posts]);
-
-  // Cluster performance
-  const clusterPerf = useMemo(() => {
+function useTopClusters(clusters: Cluster[] | undefined) {
+  return useMemo(() => {
     if (!clusters) return [];
     return clusters
       .filter(c => c.label)
       .sort((a, b) => b.post_count - a.post_count)
       .slice(0, 8)
       .map(c => ({
-        label: (c.label ?? 'Unnamed').slice(0, 20),
+        label: c.label ?? 'Unnamed',
         posts: c.post_count,
-        score: c.health_score ?? 0,
-      }));
-  }, [clusters]);
-
-  return (
-    <>
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Posts" value={posts.length} icon={FileText} />
-        <StatCard label="Health Score" value={health ? `${Math.round(health.content_health_score)}%` : '--'} icon={TrendingUp} />
-        <StatCard label="Clusters" value={clusters?.length ?? '--'} icon={Layers} />
-        <StatCard label="Active Posts" value={health?.active_posts ?? '--'} icon={BarChart3} />
-      </div>
-
-      {/* Traffic trend */}
-      <ChartCard title="Total Traffic Trend (90 days)">
-        {trafficTrend.every(d => d.pageviews === 0) ? (
-          <div className="h-64 flex items-center justify-center text-[#64748b] text-sm">
-            Connect Google Analytics to see real traffic data
-          </div>
-        ) : (
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trafficTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 10, fill: '#64748b' }}
-                tickLine={false}
-                interval={13}
-              />
-              <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-              <Tooltip {...TOOLTIP_STYLE} />
-              <defs>
-                <linearGradient id="trafficFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={CHART_COLORS.blue} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <Area
-                type="monotone"
-                dataKey="pageviews"
-                stroke={CHART_COLORS.blue}
-                fill="url(#trafficFill)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        )}
-      </ChartCard>
-
-      {/* Two-column row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-        {/* Top posts table */}
-        <ChartCard title="Top Performing Posts">
-          <div className="overflow-x-auto max-h-64 overflow-y-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="text-[#64748b] border-b border-[#1e293b]">
-                  <th className="pb-2 font-medium">Title</th>
-                  <th className="pb-2 font-medium text-right">Words</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topPosts.map(p => (
-                  <tr key={p.id} className="border-b border-[#1e293b]/50 hover:bg-[#1e293b]/30">
-                    <td className="py-2 text-[#e2e8f0] truncate max-w-[240px]">{p.title}</td>
-                    <td className="py-2 text-[#94a3b8] text-right">{p.word_count?.toLocaleString() ?? '--'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ChartCard>
-
-        {/* Post health distribution */}
-        {healthDist.length > 0 && (
-        <ChartCard title="Post Health Distribution">
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={healthDist}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="band" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {healthDist.map((entry, index) => {
-                    const colors = [CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.red, CHART_COLORS.purple];
-                    return <Cell key={index} fill={colors[index]} />;
-                  })}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-        )}
-
-        {/* CTR trend */}
-        <ChartCard title="CTR Trend">
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={ctrTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} interval={13} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} unit="%" />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Line type="monotone" dataKey="ctr" stroke={CHART_COLORS.green} strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* Content velocity */}
-        <ChartCard title="Content Velocity">
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={velocity}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" fill={CHART_COLORS.purple} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* Cluster performance */}
-      {clusterPerf.length > 0 && (
-        <div className="mt-4">
-          <ChartCard title="Cluster Performance">
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={clusterPerf} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
-                  <YAxis
-                    type="category"
-                    dataKey="label"
-                    tick={{ fontSize: 10, fill: '#64748b' }}
-                    tickLine={false}
-                    width={120}
-                  />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Bar dataKey="posts" fill={CHART_COLORS.cyan} radius={[0, 4, 4, 0]} name="Posts" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </ChartCard>
-        </div>
-      )}
-    </>
-  );
-}
-
-// ─── Crawl-Only Fallback View ───────────────────────
-
-function CrawlOnlyAnalytics({ posts, health, clusters }: {
-  posts: Post[]; health: SiteHealth | undefined; clusters: Cluster[] | undefined;
-}) {
-  // Health score breakdown (6 factors)
-  const healthFactors = useMemo(() => {
-    if (!health) return [];
-    return [
-      { factor: 'Content Health', value: Math.round(health.content_health_score ?? 0) },
-      { factor: 'Efficiency', value: Math.round((health.content_efficiency_ratio ?? 0) * 100) },
-      { factor: 'Active Ratio', value: health.total_posts > 0 ? Math.round((health.active_posts / health.total_posts) * 100) : 0 },
-      { factor: 'Data Coverage', value: Math.round((health.data_completeness ?? 0) * 100) },
-      { factor: 'Date Coverage', value: Math.round((health.modified_date_coverage ?? 0) * 100) },
-      { factor: 'AI Enriched', value: Math.round((health.ai_enriched_count ?? 0) * 100) },
-    ];
-  }, [health]);
-
-  // Content age distribution
-  const ageDistribution = useMemo(() => {
-    const buckets: Record<string, number> = {
-      '< 1 month': 0, '1-3 months': 0, '3-6 months': 0,
-      '6-12 months': 0, '1-2 years': 0, '2+ years': 0,
-    };
-    const now = Date.now();
-    posts.forEach(p => {
-      const d = p.publish_date || p.created_at;
-      if (!d) return;
-      const ageMs = now - new Date(d).getTime();
-      const ageDays = ageMs / 86400000;
-      if (ageDays < 30) buckets['< 1 month']++;
-      else if (ageDays < 90) buckets['1-3 months']++;
-      else if (ageDays < 180) buckets['3-6 months']++;
-      else if (ageDays < 365) buckets['6-12 months']++;
-      else if (ageDays < 730) buckets['1-2 years']++;
-      else buckets['2+ years']++;
-    });
-    return Object.entries(buckets).map(([age, count]) => ({ age, count }));
-  }, [posts]);
-
-  // Internal link stats
-  const linkStats = useMemo(() => {
-    const withLinks = posts.filter(p => p.cms_categories.length > 0 || p.cms_tags.length > 0).length;
-    return {
-      totalPosts: posts.length,
-      withTags: withLinks,
-      avgCategories: posts.length > 0
-        ? (posts.reduce((s, p) => s + p.cms_categories.length, 0) / posts.length).toFixed(1)
-        : '0',
-    };
-  }, [posts]);
-
-  // Word count distribution (content depth)
-  const readabilityDist = useMemo(() => {
-    const buckets: Record<string, number> = {
-      '< 500': 0, '500-1000': 0, '1000-2000': 0,
-      '2000-3000': 0, '3000+': 0,
-    };
-    posts.forEach(p => {
-      const wc = p.word_count ?? 0;
-      if (wc < 500) buckets['< 500']++;
-      else if (wc < 1000) buckets['500-1000']++;
-      else if (wc < 2000) buckets['1000-2000']++;
-      else if (wc < 3000) buckets['2000-3000']++;
-      else buckets['3000+']++;
-    });
-    return Object.entries(buckets).map(([range, count]) => ({ range, count }));
-  }, [posts]);
-
-  // Health score distribution — shows how posts are spread across quality bands
-  const healthScoreDist = useMemo(() => {
-    if (!health) return [];
-    return [
-      { band: 'Active (60+)', count: health.active_posts, fill: CHART_COLORS.green },
-      { band: 'Passive (30-59)', count: health.passive_posts, fill: CHART_COLORS.amber },
-      { band: 'Cannibalistic', count: health.cannibalistic_posts, fill: CHART_COLORS.red },
-      { band: 'Dead (<30)', count: health.dead_posts, fill: CHART_COLORS.purple },
-    ];
-  }, [health]);
-
-  // Cluster size distribution
-  const clusterSizes = useMemo(() => {
-    if (!clusters) return [];
-    return clusters
-      .filter(c => c.label)
-      .sort((a, b) => b.post_count - a.post_count)
-      .slice(0, 10)
-      .map(c => ({
-        label: (c.label ?? 'Unnamed').slice(0, 18),
-        posts: c.post_count,
-        score: c.health_score ?? 0,
-      }));
-  }, [clusters]);
-
-  // Cluster health comparison (score by cluster)
-  const clusterHealth = useMemo(() => {
-    if (!clusters) return [];
-    return clusters
-      .filter(c => c.label && c.health_score != null)
-      .sort((a, b) => (b.health_score ?? 0) - (a.health_score ?? 0))
-      .slice(0, 10)
-      .map(c => ({
-        label: (c.label ?? 'Unnamed').slice(0, 18),
         score: Math.round(c.health_score ?? 0),
       }));
   }, [clusters]);
+}
 
-  // Publishing velocity
-  const velocity = useMemo(() => {
+function useProblemSummary(problems: ContentProblem[] | undefined) {
+  return useMemo(() => {
+    if (!problems || problems.length === 0) return [];
+    const counts: Record<string, number> = {};
+    problems.forEach(p => {
+      counts[p.problem_type] = (counts[p.problem_type] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 8)
+      .map(([type, count]) => ({ type, count }));
+  }, [problems]);
+}
+
+function usePublishingVelocity(posts: Post[]) {
+  return useMemo(() => {
     const months: Record<string, number> = {};
     posts.forEach(p => {
       const d = p.publish_date || p.created_at;
@@ -436,216 +194,9 @@ function CrawlOnlyAnalytics({ posts, health, clusters }: {
       .slice(-12)
       .map(([month, count]) => ({ month, count }));
   }, [posts]);
-
-  // Content depth stats
-  const depthStats = useMemo(() => {
-    if (posts.length === 0) return { avg: 0, median: 0, total: 0 };
-    const wordCounts = posts.map(p => p.word_count ?? 0).sort((a, b) => a - b);
-    const total = wordCounts.reduce((s, w) => s + w, 0);
-    const mid = Math.floor(wordCounts.length / 2);
-    return {
-      avg: Math.round(total / wordCounts.length),
-      median: wordCounts.length % 2 === 0 ? Math.round((wordCounts[mid - 1] + wordCounts[mid]) / 2) : wordCounts[mid],
-      total,
-    };
-  }, [posts]);
-
-  return (
-    <>
-      {/* Integration CTAs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <IntegrationCTA
-          title="Connect Google Search Console"
-          description="Unlock ranking data, impressions, CTR trends, and keyword-level performance for all your content."
-          icon={TrendingUp}
-        />
-        <IntegrationCTA
-          title="Connect Google Analytics"
-          description="See pageviews, sessions, engagement metrics, and traffic trends across your entire content ecosystem."
-          icon={BarChart3}
-        />
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Posts" value={posts.length} icon={FileText} />
-        <StatCard label="Health Score" value={health ? `${Math.round(health.content_health_score)}%` : '--'} icon={TrendingUp} />
-        <StatCard label="Clusters" value={clusters?.length ?? '--'} icon={Layers} />
-        <StatCard label="Avg Word Count" value={depthStats.avg.toLocaleString()} icon={FileText} />
-      </div>
-
-      {/* Additional stat row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Active Posts" value={health?.active_posts ?? '--'} icon={TrendingUp} />
-        <StatCard label="Dead Weight" value={health?.dead_posts ?? '--'} icon={AlertCircle} />
-        <StatCard label="Tagged Posts" value={linkStats.withTags} icon={Link2} />
-        <StatCard label="Total Words" value={depthStats.total.toLocaleString()} icon={Calendar} />
-      </div>
-
-      {/* Health score radar */}
-      {healthFactors.length > 0 && (
-        <ChartCard title="Health Score Breakdown">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={healthFactors}>
-                <PolarGrid stroke="#1e293b" />
-                <PolarAngleAxis dataKey="factor" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                <PolarRadiusAxis tick={{ fontSize: 9, fill: '#64748b' }} domain={[0, 100]} />
-                <Radar
-                  name="Score"
-                  dataKey="value"
-                  stroke={CHART_COLORS.blue}
-                  fill={CHART_COLORS.blue}
-                  fillOpacity={0.2}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-        {/* Health score distribution — post quality bands */}
-        {healthScoreDist.length > 0 && (
-          <ChartCard title="Post Health Distribution">
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={healthScoreDist}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="band" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {healthScoreDist.map((entry, index) => (
-                      <Cell key={index} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </ChartCard>
-        )}
-
-        {/* Content age distribution */}
-        <ChartCard title="Content Age Distribution">
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={ageDistribution}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="age" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" fill={CHART_COLORS.amber} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* Word count distribution */}
-        <ChartCard title="Content Depth Distribution">
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={readabilityDist}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="range" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* Internal link stats cards */}
-        <ChartCard title="Content Structure Stats">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
-              <span className="text-xs text-[#94a3b8]">Avg Word Count</span>
-              <span className="text-lg font-bold text-[#e2e8f0]">{depthStats.avg.toLocaleString()}</span>
-            </div>
-            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
-              <span className="text-xs text-[#94a3b8]">Median Word Count</span>
-              <span className="text-lg font-bold text-[#e2e8f0]">{depthStats.median.toLocaleString()}</span>
-            </div>
-            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
-              <span className="text-xs text-[#94a3b8]">Posts with Tags/Categories</span>
-              <span className="text-lg font-bold text-[#e2e8f0]">{linkStats.withTags}</span>
-            </div>
-            <div className="rounded-lg bg-[#0a0f1a] p-4 flex items-center justify-between">
-              <span className="text-xs text-[#94a3b8]">Avg Categories per Post</span>
-              <span className="text-lg font-bold text-[#e2e8f0]">{linkStats.avgCategories}</span>
-            </div>
-          </div>
-        </ChartCard>
-
-        {/* Cluster health comparison */}
-        {clusterHealth.length > 0 && (
-          <ChartCard title="Cluster Health Scores">
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={clusterHealth} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} domain={[0, 100]} />
-                  <YAxis
-                    type="category"
-                    dataKey="label"
-                    tick={{ fontSize: 10, fill: '#64748b' }}
-                    tickLine={false}
-                    width={120}
-                  />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Bar dataKey="score" radius={[0, 4, 4, 0]} name="Health Score">
-                    {clusterHealth.map((entry, index) => (
-                      <Cell key={index} fill={entry.score >= 60 ? CHART_COLORS.green : entry.score >= 40 ? CHART_COLORS.amber : CHART_COLORS.red} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </ChartCard>
-        )}
-
-        {/* Cluster size distribution */}
-        {clusterSizes.length > 0 && (
-          <ChartCard title="Cluster Size Distribution">
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={clusterSizes}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Bar dataKey="posts" fill={CHART_COLORS.cyan} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </ChartCard>
-        )}
-      </div>
-
-      {/* Publishing velocity */}
-      {velocity.length > 0 && (
-        <div className="mt-4">
-          <ChartCard title="Publishing Velocity">
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={velocity}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Line type="monotone" dataKey="count" stroke={CHART_COLORS.purple} strokeWidth={2} dot={{ fill: CHART_COLORS.purple, r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </ChartCard>
-        </div>
-      )}
-    </>
-  );
 }
 
-// ─── Main Page ──────────────────────────────────────
+// ── Main Page ───────────────────────────────────────
 
 export default function OverviewPage() {
   const { currentSite } = useSite();
@@ -654,94 +205,318 @@ export default function OverviewPage() {
   const { data: health, isLoading: healthLoading } = useSiteHealth(siteId);
   const { data: postsData, isLoading: postsLoading } = usePosts(siteId, 200);
   const { data: clusters, isLoading: clustersLoading } = useClusters(siteId);
+  const { data: cannibPairs } = useCannibalizationPairs(siteId);
+  const { data: aiScores } = useAIScores(siteId);
+  const { data: problems } = useProblems(siteId);
+  const { data: healthHistory } = useHealthHistory(siteId);
 
   const posts = postsData?.posts ?? [];
   const isLoading = healthLoading || postsLoading || clustersLoading;
 
-  const hasGSC = !!currentSite?.gsc_site_url;
-  const hasGA4 = !!currentSite?.ga4_property_id;
-  const hasIntegrations = hasGSC || hasGA4;
+  const healthFactors = useHealthFactors(health);
+  const contentRoles = useContentRoles(health);
+  const topClusters = useTopClusters(clusters ?? undefined);
+  const problemSummary = useProblemSummary(problems ?? undefined);
+  const velocity = usePublishingVelocity(posts);
 
-  // Empty state — no site selected
+  const hasGA4 = !!currentSite?.ga4_property_id;
+
+  // ── No site selected ──
   if (!currentSite) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-12rem)] gap-4 text-center">
-        <AlertCircle size={36} className="text-[#64748b]" />
-        <h2 className="text-lg font-semibold text-[#e2e8f0]">No site selected</h2>
-        <p className="text-sm text-[#64748b]">Select a site from the sidebar to view analytics.</p>
+        <BarChart3 size={36} className="text-brand-text-muted" />
+        <h2 className="text-lg font-semibold text-brand-text">No site selected</h2>
+        <p className="text-sm text-brand-text-muted">Select a site from the sidebar to view analytics.</p>
       </div>
     );
   }
 
-  // Skeleton loading
+  // ── Loading skeleton ──
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-6">
-          <div className="h-6 w-40 bg-[#1e293b] rounded animate-pulse mb-2" />
-          <div className="h-4 w-64 bg-[#1e293b] rounded animate-pulse" />
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div>
+          <div className="h-6 w-32 bg-brand-border rounded animate-pulse mb-2" />
+          <div className="h-4 w-48 bg-brand-border rounded animate-pulse" />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="animate-pulse rounded-xl bg-[#111827] border border-[#1e293b] p-5">
-              <div className="h-3 w-16 bg-[#1e293b] rounded mb-3" />
-              <div className="h-8 w-20 bg-[#1e293b] rounded" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonBlock key={i} />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-xl bg-brand-surface border border-brand-border p-5">
+              <div className="h-3 w-24 bg-brand-border rounded mb-4" />
+              <div className="h-40 bg-brand-border rounded" />
             </div>
           ))}
         </div>
-        <SkeletonCard className="mb-4" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
       </div>
     );
   }
 
-  // Empty state — no posts
+  // ── Empty state ──
   if (posts.length === 0 && !health) {
     return (
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-xl font-bold text-[#e2e8f0]">Analytics Overview</h1>
-          <p className="text-sm text-[#64748b] mt-1">{currentSite.domain}</p>
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-xl font-bold text-brand-text">Overview</h1>
+          <p className="text-sm text-brand-text-muted mt-1">{currentSite.domain}</p>
         </div>
         <div className="flex flex-col items-center justify-center h-[calc(100vh-16rem)] gap-4 text-center">
-          <BarChart3 size={36} className="text-[#64748b]" />
-          <h2 className="text-lg font-semibold text-[#e2e8f0]">Connect your data sources to see analytics</h2>
-          <p className="text-sm text-[#64748b] max-w-md">
-            Crawl your site or connect Google Search Console and Google Analytics to unlock detailed content analytics.
+          <BarChart3 size={36} className="text-brand-text-muted" />
+          <h2 className="text-lg font-semibold text-brand-text">No data yet</h2>
+          <p className="text-sm text-brand-text-muted max-w-md">
+            Crawl your site to unlock content analytics. Connect Google Analytics for traffic data.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 w-full max-w-xl">
-            <IntegrationCTA
-              title="Connect Google Search Console"
-              description="Unlock ranking data, impressions, CTR trends, and keyword-level performance."
-              icon={TrendingUp}
-            />
-            <IntegrationCTA
-              title="Connect Google Analytics"
-              description="See pageviews, sessions, engagement metrics, and traffic trends."
-              icon={BarChart3}
-            />
-          </div>
         </div>
       </div>
     );
   }
 
+  const healthScore = health ? Math.round(health.content_health_score) : null;
+  const efficiency = health ? Math.min(100, Math.round(health.content_efficiency_ratio ?? 0)) : null;
+
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-[#e2e8f0]">Analytics Overview</h1>
-        <p className="text-sm text-[#64748b] mt-1">{currentSite.domain}</p>
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* ── Page header ── */}
+      <div>
+        <h1 className="text-xl font-bold text-brand-text">Overview</h1>
+        <p className="text-sm text-brand-text-muted mt-1">{currentSite.domain}</p>
       </div>
 
-      {hasIntegrations ? (
-        <ConnectedAnalytics site={currentSite} posts={posts} health={health} clusters={clusters ?? undefined} />
-      ) : (
-        <CrawlOnlyAnalytics posts={posts} health={health} clusters={clusters ?? undefined} />
+      {/* ── Top stat cards ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard
+          label="Health Score"
+          value={healthScore != null ? `${healthScore}%` : '--'}
+          icon={Activity}
+          color={healthScore != null ? scoreColor(healthScore) : undefined}
+        />
+        <StatCard label="Total Posts" value={posts.length} icon={FileText} />
+        <StatCard
+          label="Content Efficiency"
+          value={efficiency != null ? `${efficiency}%` : '--'}
+          icon={TrendingUp}
+        />
+        <StatCard
+          label="Cannibalization Pairs"
+          value={cannibPairs?.length ?? '--'}
+          icon={ShieldAlert}
+        />
+      </div>
+
+      {/* ── Health breakdown ── */}
+      {healthFactors.length > 0 && (
+        <Card>
+          <SectionTitle>Health Breakdown</SectionTitle>
+          <div className="mt-4 space-y-3">
+            {healthFactors.map(f => (
+              <div key={f.factor} className="flex items-center gap-3">
+                <span className="text-xs text-brand-text-muted w-28 shrink-0">{f.factor}</span>
+                <div className="flex-1 h-2 bg-brand-border rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(100, f.value)}%`,
+                      backgroundColor: barFill(f.value),
+                    }}
+                  />
+                </div>
+                <span className={`text-xs font-semibold w-10 text-right ${scoreColor(f.value)}`}>
+                  {f.value}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Two-column: Content distribution + Cluster performance ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Content distribution */}
+        {contentRoles.length > 0 && (
+          <Card>
+            <SectionTitle>Content Distribution</SectionTitle>
+            <div className="mt-4 h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={contentRoles}>
+                  <XAxis dataKey="role" tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                  <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Posts">
+                    {contentRoles.map((entry, i) => (
+                      <Cell key={i} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {health && (
+              <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                {contentRoles.map(r => (
+                  <div key={r.role}>
+                    <p className="text-lg font-bold text-brand-text">{r.count}</p>
+                    <p className="text-[10px] text-brand-text-muted uppercase tracking-wider">{r.role}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Cluster performance */}
+        {topClusters.length > 0 ? (
+          <Card>
+            <SectionTitle>Cluster Performance</SectionTitle>
+            <div className="mt-4 overflow-y-auto max-h-80">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-brand-text-muted border-b border-brand-border">
+                    <th className="pb-2 text-left font-medium">Cluster</th>
+                    <th className="pb-2 text-right font-medium">Posts</th>
+                    <th className="pb-2 text-right font-medium">Health</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topClusters.map(c => (
+                    <tr key={c.label} className="border-b border-brand-border/50 hover:bg-brand-surface-hover transition-colors">
+                      <td className="py-2.5 text-brand-text break-words">{c.label}</td>
+                      <td className="py-2.5 text-brand-text-secondary text-right">{c.posts}</td>
+                      <td className={`py-2.5 text-right font-semibold ${scoreColor(c.score)}`}>
+                        {c.score}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ) : (
+          <Card className="flex items-center justify-center">
+            <div className="text-center py-6">
+              <Layers size={24} className="mx-auto text-brand-text-muted mb-2" />
+              <p className="text-sm text-brand-text-muted">No clusters detected yet</p>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* ── Traffic data / GA4 empty state ── */}
+      {!hasGA4 && (
+        <EmptyStateCard
+          icon={BarChart3}
+          title="Connect Google Analytics for traffic data"
+          description="See pageviews, sessions, engagement metrics, and traffic trends across your content."
+          href="/settings"
+        />
+      )}
+
+      {/* ── Two-column: Problem summary + Publishing velocity ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Problem summary */}
+        {problemSummary.length > 0 ? (
+          <Card>
+            <SectionTitle>Issues Detected</SectionTitle>
+            <div className="mt-4 space-y-2.5">
+              {problemSummary.map(p => (
+                <div key={p.type} className="flex items-center gap-3">
+                  <AlertTriangle size={12} className="text-brand-warning shrink-0" />
+                  <span className="text-sm text-brand-text capitalize flex-1 truncate">
+                    {p.type.replace(/_/g, ' ')}
+                  </span>
+                  <span className="text-sm font-semibold text-brand-text tabular-nums">{p.count}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        ) : (
+          <Card className="flex items-center justify-center">
+            <div className="text-center py-6">
+              <AlertTriangle size={24} className="mx-auto text-brand-text-muted mb-2" />
+              <p className="text-sm text-brand-text-muted">No problems detected</p>
+            </div>
+          </Card>
+        )}
+
+        {/* Publishing velocity */}
+        {velocity.length > 0 ? (
+          <Card>
+            <SectionTitle>Publishing Velocity</SectionTitle>
+            <div className="mt-4 h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={velocity}>
+                  <XAxis dataKey="month" tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                  <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Bar dataKey="count" fill={COLORS.purple} radius={[4, 4, 0, 0]} name="Posts" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        ) : (
+          <Card className="flex items-center justify-center">
+            <div className="text-center py-6">
+              <FileText size={24} className="mx-auto text-brand-text-muted mb-2" />
+              <p className="text-sm text-brand-text-muted">No publish date data available</p>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* ── AI Readiness ── */}
+      {aiScores && aiScores.total_scored > 0 && (
+        <Card>
+          <SectionTitle>AI Readiness</SectionTitle>
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+            {([
+              { label: 'Citability', value: aiScores.avg_citability },
+              { label: 'E-E-A-T', value: aiScores.avg_eeat },
+              { label: 'Schema', value: aiScores.avg_schema },
+              { label: 'Extraction', value: aiScores.avg_extraction },
+            ] as const).map(({ label, value }) => {
+              const v = Math.round(value ?? 0);
+              return (
+                <div key={label} className="text-center rounded-lg bg-brand-bg p-4">
+                  <p className={`text-2xl font-bold ${scoreColor(v)}`}>{v}</p>
+                  <p className="text-xs text-brand-text-muted mt-1">{label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Health history ── */}
+      {healthHistory && healthHistory.length > 1 && (
+        <Card>
+          <SectionTitle>Health Score Over Time</SectionTitle>
+          <div className="mt-4 h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={[...healthHistory]
+                  .sort((a, b) => new Date(a.analyzed_at ?? 0).getTime() - new Date(b.analyzed_at ?? 0).getTime())
+                  .map(h => ({
+                    date: h.analyzed_at
+                      ? new Date(h.analyzed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : '?',
+                    score: Math.round(h.score),
+                  }))}
+              >
+                <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                <YAxis domain={[0, 100]} tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                <Tooltip {...TOOLTIP_STYLE} />
+                <Line
+                  type="monotone"
+                  dataKey="score"
+                  stroke={COLORS.blue}
+                  strokeWidth={2}
+                  dot={{ fill: COLORS.blue, r: 3 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
       )}
     </div>
   );

@@ -110,13 +110,23 @@ def filter_nav_links(
 
 def filter_sitewide_headings(
     all_posts_headings: dict[str, list[dict[str, str]]],
-    threshold: float = 0.8,
+    h1_threshold: float = 0.8,
+    h2_plus_threshold: float = 0.9,
 ) -> dict[str, list[dict[str, str]]]:
-    """Remove headings that appear on almost every page (site header/footer).
+    """Remove headings that appear on almost every page (template chrome).
+
+    Two-tier thresholds:
+    - H1 at 80%: catches site name headings (common in header/nav).
+    - H2-H6 at 90%: catches template headings like "Reader Interactions",
+      "You might also like", "Leave a Reply" that leak from comment sections
+      or widgets. The stricter threshold avoids filtering legitimate repeated
+      article sections like "Summary" or "Conclusion" which typically appear
+      on 30-60% of posts, not 90%+.
 
     Args:
         all_posts_headings: mapping of post_url → list of heading dicts
-        threshold: if a heading text appears in ≥ this fraction of posts, remove it
+        h1_threshold: fraction for H1 headings (default 0.8)
+        h2_plus_threshold: fraction for H2-H6 headings (default 0.9)
 
     Returns:
         Filtered mapping with sitewide headings removed.
@@ -128,37 +138,37 @@ def filter_sitewide_headings(
     if total_posts < 3:
         return all_posts_headings
 
-    # Count heading occurrences
-    heading_counts: Counter[str] = Counter()
+    # Count heading occurrences by level
+    counts_by_level: dict[str, Counter[str]] = {}
     for headings in all_posts_headings.values():
-        seen = set()
+        seen: set[tuple[str, str]] = set()
         for h in headings:
             text = h.get("text", "").strip().lower()
-            if text and text not in seen:
-                heading_counts[text] += 1
-                seen.add(text)
+            level = str(h.get("level", "h2"))
+            if text and (level, text) not in seen:
+                if level not in counts_by_level:
+                    counts_by_level[level] = Counter()
+                counts_by_level[level][text] += 1
+                seen.add((level, text))
 
-    # Only filter H1-level sitewide headings (site name, nav items)
-    # H2+ headings that repeat are likely legitimate section patterns
-    h1_counts: Counter[str] = Counter()
-    for headings in all_posts_headings.values():
-        seen = set()
-        for h in headings:
-            text = h.get("text", "").strip().lower()
-            level = str(h.get("level", "")).replace("h", "")
-            if text and text not in seen and level == "1":
-                h1_counts[text] += 1
-                seen.add(text)
-
+    # Build the set of sitewide headings to remove
     sitewide: set[str] = set()
-    for text, count in h1_counts.items():
-        if count / total_posts >= threshold:
+
+    # H1: 80% threshold
+    for text, count in counts_by_level.get("h1", {}).items():
+        if count / total_posts >= h1_threshold:
             sitewide.add(text)
+
+    # H2-H6: 90% threshold (stricter to protect legitimate repeated sections)
+    for level in ("h2", "h3", "h4", "h5", "h6"):
+        for text, count in counts_by_level.get(level, {}).items():
+            if count / total_posts >= h2_plus_threshold:
+                sitewide.add(text)
 
     if sitewide:
         logger.info(
-            "Detected %d sitewide headings (in ≥%.0f%% of posts): %s",
-            len(sitewide), threshold * 100,
+            "Detected %d sitewide headings (H1≥%.0f%%, H2+≥%.0f%% of %d posts): %s",
+            len(sitewide), h1_threshold * 100, h2_plus_threshold * 100, total_posts,
             ", ".join(f'"{h}"' for h in list(sitewide)[:5]),
         )
 
@@ -193,6 +203,11 @@ class NormalizedPost:
     internal_links: list[InternalLink] = field(default_factory=list)
     cms_categories: list[str] = field(default_factory=list)
     cms_tags: list[str] = field(default_factory=list)
+    # E-E-A-T metadata extracted from full page HTML during crawl.
+    # body_html only contains the article content area, but E-E-A-T signals
+    # (author byline, meta tags, schema, about links) live in the page chrome.
+    # These are extracted at crawl time and stored as JSONB for Step 2 scoring.
+    eeat_signals: dict = field(default_factory=dict)
     word_count: int = 0
     content_hash: str = ""
     headings: list[dict[str, str]] = field(default_factory=list)
@@ -205,14 +220,18 @@ class NormalizedPost:
         if not self.word_count and self.body_text:
             self.word_count = len(self.body_text.split())
         if not self.content_hash and self.body_text:
-            self.content_hash = hashlib.sha256(
-                self.body_text.encode("utf-8")
-            ).hexdigest()
+            self.content_hash = compute_content_hash(self.body_text)
 
 
 def compute_content_hash(text: str) -> str:
-    """SHA256 hash of content for change detection."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    """SHA256 hash of content for change detection.
+
+    Normalizes whitespace before hashing so that minor extraction differences
+    (e.g. trafilatura version upgrade producing slightly different spacing)
+    don't trigger unnecessary re-embedding of unchanged content.
+    """
+    normalized = " ".join(text.split())  # collapse all whitespace to single spaces
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 async def save_normalized_posts(
@@ -223,8 +242,38 @@ async def save_normalized_posts(
     """Upsert normalized posts and their internal links into the database.
 
     Returns the number of posts saved.
+
+    Note: All page types (blog, product, documentation, landing, glossary, index)
+    are stored. Downstream steps (health scoring, problem detection, recommendations)
+    should filter by page_type when appropriate — e.g. exclude "landing" and "index"
+    pages from content-quality analysis, as these are structural pages (homepages,
+    category pages) that don't benefit from blog-oriented advice like "add H2 headings."
     """
     saved = 0
+
+    # ── Check subscription post limit ──
+    try:
+        from app.services.stripe_service import StripeService
+        service = StripeService()
+        site_row = await db.fetchrow("SELECT user_id FROM sites WHERE id = $1", site_id)
+        if site_row and site_row["user_id"]:
+            user_id = str(site_row["user_id"])
+            limits = await service._get_tier_limits(db, user_id)
+            post_limit = limits.get("posts", 0)
+            if post_limit > 0:
+                existing_count = await db.fetchval(
+                    "SELECT COUNT(*) FROM posts p JOIN sites s ON p.site_id = s.id WHERE s.user_id = $1",
+                    user_id,
+                )
+                remaining = max(0, post_limit - (existing_count or 0))
+                if remaining < len(posts):
+                    logger.warning(
+                        "Post limit: user %s has %d/%d posts, truncating crawl to %d",
+                        user_id, existing_count, post_limit, remaining,
+                    )
+                    posts = posts[:remaining]
+    except Exception as e:
+        logger.warning("Post limit check failed (proceeding without limit): %s", e)
 
     # Deduplicate by normalized URL (handles www, trailing slash, http/https)
     seen_urls: set[str] = set()
@@ -258,21 +307,23 @@ async def save_normalized_posts(
         post.internal_links = filtered_links.get(post.url, post.internal_links)
         post.headings = filtered_headings.get(post.url, post.headings)
 
-    # ── Persist ──
+    # ── Persist posts ──
+    # Upsert each post individually (need RETURNING id for link mapping).
+    url_to_id: dict[str, str] = {}
     for post in deduped_posts:
         try:
-            # Serialize headings to JSON
             headings_json = json.dumps(post.headings) if post.headings else None
+            eeat_json = json.dumps(post.eeat_signals) if post.eeat_signals else "{}"
 
-            # Upsert the post
             row = await db.fetchrow(
                 """
                 INSERT INTO posts (
                     site_id, url, slug, title, body_text, body_html,
                     publish_date, modified_date, content_hash,
                     cms_categories, cms_tags, word_count,
-                    headings, meta_description, http_status, language, page_type
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                    headings, meta_description, http_status, language, page_type,
+                    eeat_metadata
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
                 ON CONFLICT (site_id, url) DO UPDATE SET
                     title = EXCLUDED.title,
                     body_text = EXCLUDED.body_text,
@@ -287,6 +338,7 @@ async def save_normalized_posts(
                     http_status = EXCLUDED.http_status,
                     language = EXCLUDED.language,
                     page_type = EXCLUDED.page_type,
+                    eeat_metadata = EXCLUDED.eeat_metadata,
                     updated_at = NOW()
                 RETURNING id
                 """,
@@ -297,35 +349,43 @@ async def save_normalized_posts(
                 post.cms_categories, post.cms_tags,
                 post.word_count,
                 headings_json, post.meta_description, post.http_status,
-                post.language, post.page_type,
+                post.language, post.page_type, eeat_json,
             )
-
-            post_id = row["id"]
-
-            # Clear existing internal links for this post and re-insert
-            await db.execute(
-                "DELETE FROM internal_links WHERE source_post_id = $1",
-                post_id,
-            )
-
-            if post.internal_links:
-                link_records = [
-                    (site_id, post_id, normalize_url(link.target_url), link.anchor_text)
-                    for link in post.internal_links
-                ]
-                await db.executemany(
-                    """
-                    INSERT INTO internal_links (site_id, source_post_id, target_url, anchor_text)
-                    VALUES ($1, $2, $3, $4)
-                    """,
-                    link_records,
-                )
-
+            url_to_id[post.url] = row["id"]
             saved += 1
 
         except Exception as e:
             logger.error("Failed to save post %s: %s", post.url, e)
             continue
+
+    # ── Batch internal links ──
+    # Delete all existing internal links for this site's posts in one query,
+    # then bulk-insert all new links. This is O(2) queries instead of O(2N).
+    if url_to_id:
+        post_ids = list(url_to_id.values())
+        await db.execute(
+            "DELETE FROM internal_links WHERE source_post_id = ANY($1::uuid[])",
+            post_ids,
+        )
+
+        all_link_records: list[tuple] = []
+        for post in deduped_posts:
+            post_id = url_to_id.get(post.url)
+            if not post_id or not post.internal_links:
+                continue
+            for link in post.internal_links:
+                all_link_records.append(
+                    (site_id, post_id, normalize_url(link.target_url), link.anchor_text)
+                )
+
+        if all_link_records:
+            await db.executemany(
+                """
+                INSERT INTO internal_links (site_id, source_post_id, target_url, anchor_text)
+                VALUES ($1, $2, $3, $4)
+                """,
+                all_link_records,
+            )
 
     # Resolve internal link target_post_ids
     await _resolve_link_targets(db, site_id)
@@ -337,11 +397,14 @@ async def save_normalized_posts(
 async def _resolve_link_targets(db: asyncpg.Connection, site_id: UUID) -> None:
     """Match internal_links.target_url to posts.url and set target_post_id.
 
-    Uses exact match first, then falls back to normalized match
-    (strip trailing slashes, www prefix, query params) to avoid
-    false orphan detection from minor URL differences.
+    Both target_url and post.url are already run through normalize_url()
+    before storage (www stripped, trailing slashes removed, query params cleaned,
+    scheme normalized to https). So a single exact-match pass is sufficient.
+
+    Links that remain with target_post_id = NULL point to non-content URLs
+    (login pages, image galleries, external-looking internal pages) that
+    didn't survive the crawl's content gates (50-char minimum + 100-word minimum).
     """
-    # Pass 1: exact match
     await db.execute(
         """
         UPDATE internal_links il
@@ -351,22 +414,6 @@ async def _resolve_link_targets(db: asyncpg.Connection, site_id: UUID) -> None:
           AND p.site_id = $1
           AND il.target_url = p.url
           AND il.target_post_id IS NULL
-        """,
-        site_id,
-    )
-    # Pass 2: normalized match — strip trailing slash, www, query string, fragment
-    await db.execute(
-        """
-        UPDATE internal_links il
-        SET target_post_id = p.id
-        FROM posts p
-        WHERE il.site_id = $1
-          AND p.site_id = $1
-          AND il.target_post_id IS NULL
-          AND RTRIM(REPLACE(REPLACE(SPLIT_PART(SPLIT_PART(il.target_url, '?', 1), '#', 1),
-                  'https://www.', 'https://'), 'http://www.', 'http://'), '/')
-            = RTRIM(REPLACE(REPLACE(SPLIT_PART(SPLIT_PART(p.url, '?', 1), '#', 1),
-                  'https://www.', 'https://'), 'http://www.', 'http://'), '/')
         """,
         site_id,
     )

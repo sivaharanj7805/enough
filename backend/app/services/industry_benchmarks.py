@@ -49,7 +49,9 @@ INDUSTRY_HINTS: dict[str, list[str]] = {
     "media": ["news", "journalism", "editorial", "magazine", "publisher", "content studio",
               "newsletter", "subscriber"],
     "agency": ["agency", "client", "freelance", "consulting", "marketing agency",
-               "digital agency", "retainer"],
+               "digital agency", "retainer", "seo", "content marketing",
+               "copywriting", "digital marketing", "email marketing",
+               "blogging", "content strategy"],
 }
 
 

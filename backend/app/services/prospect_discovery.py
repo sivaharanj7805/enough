@@ -126,7 +126,7 @@ async def find_contact_email(domain: str) -> str | None:
     async with httpx.AsyncClient(
         timeout=10.0,
         follow_redirects=True,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; Enough/1.0)"},
+        headers={"User-Agent": "Mozilla/5.0 (compatible; Tended/1.0)"},
     ) as client:
         for url in pages_to_check:
             try:
@@ -183,10 +183,10 @@ async def run_prospect_audit(
         # Update prospect with site_id
         await db.execute("UPDATE prospects SET site_id = $1 WHERE id = $2", site_id, prospect_id)
 
-        # Run the full pipeline
+        # Run the full pipeline — skip chunk confirmation ($0.50) for cold outreach
         from app.routers.ingestion import _run_full_pipeline
         site = await db.fetchrow("SELECT * FROM sites WHERE id = $1", site_id)
-        await _run_full_pipeline(site_id, dict(site))
+        await _run_full_pipeline(site_id, dict(site), skip_chunk_confirmation=True)
 
         # Get the health score
         avg_health = await db.fetchval(

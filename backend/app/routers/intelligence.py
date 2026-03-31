@@ -302,9 +302,8 @@ async def _run_full_pipeline(site_id: UUID) -> None:
         # requiring user to click "Get AI Analysis" manually
         try:
             from app.services.on_demand_enrichment import auto_enrich_top_recs
-            async with pool.acquire() as conn:
-                enriched = await auto_enrich_top_recs(conn, site_id, limit=10)
-                logger.info("Pipeline step 5b complete: %d recs auto-enriched", enriched)
+            enriched = await auto_enrich_top_recs(pool, site_id, limit=10)
+            logger.info("Pipeline step 5b complete: %d recs auto-enriched", enriched)
         except Exception as e:
             logger.warning("Auto-enrichment failed (non-fatal): %s", e)
 
@@ -344,6 +343,28 @@ async def trigger_clustering(
     return TaskTriggerResponse(message="Clustering started", site_id=site_id)
 
 
+@router.post("/{site_id}/intelligence/cluster-labels", response_model=TaskTriggerResponse)
+async def trigger_claude_cluster_labels(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Relabel clusters using Claude for higher-quality topic labels.
+
+    Upgrades TF-IDF labels (e.g. "SEO and Marketing") to specific Claude labels
+    (e.g. "Link Building Strategies"). Cost: ~$0.02 per site.
+    """
+    await _verify_site(site_id, user_id, db)
+
+    from app.services.fast_cluster_labels import backfill_claude_labels
+
+    labeled = await backfill_claude_labels(db, site_id)
+    return TaskTriggerResponse(
+        message=f"Claude cluster labeling complete: {labeled} clusters relabeled",
+        site_id=site_id,
+    )
+
+
 @router.get("/{site_id}/intelligence/clusters", response_model=list[ClusterResponse])
 async def list_clusters(
     site_id: UUID,
@@ -354,13 +375,22 @@ async def list_clusters(
     await _verify_site(site_id, user_id, db)
     rows = await db.fetch(
         """
-        SELECT * FROM clusters
-        WHERE site_id = $1
-        AND id NOT IN (
+        SELECT c.*,
+               sub.center_x,
+               sub.center_y
+        FROM clusters c
+        LEFT JOIN LATERAL (
+            SELECT AVG(p.x_pos) AS center_x, AVG(p.y_pos) AS center_y
+            FROM post_clusters pc
+            JOIN posts p ON p.id = pc.post_id
+            WHERE pc.cluster_id = c.id
+        ) sub ON true
+        WHERE c.site_id = $1
+        AND c.id NOT IN (
             SELECT parent_cluster_id FROM clusters
             WHERE parent_cluster_id IS NOT NULL AND site_id = $1
         )
-        ORDER BY post_count DESC
+        ORDER BY c.post_count DESC
         """,
         site_id,
     )
@@ -390,7 +420,9 @@ async def get_cluster_detail(
         """
         SELECT p.id AS post_id, p.title, p.url,
                ph.composite_score, ph.role, ph.trend,
-               ph.traffic_contribution, ph.ranking_strength, ph.internal_link_score
+               ph.traffic_contribution, ph.ranking_strength, ph.internal_link_score,
+               ph.score_confidence,
+               p.x_pos, p.y_pos
         FROM post_clusters pc
         JOIN posts p ON p.id = pc.post_id
         LEFT JOIN post_health_scores ph ON ph.post_id = p.id
@@ -444,6 +476,7 @@ async def list_cannibalization(
     rows = await db.fetch(
         f"""
         SELECT cp.id, cp.cluster_id, cp.overlap_score, cp.severity,
+               cp.resolution, cp.stronger_post_id, cp.chunk_overlap_confirmed,
                cp.overlapping_queries,
                cp.post_a_id, pa.title AS title_a, pa.url AS url_a,
                pha.composite_score AS score_a, pha.role AS role_a,
@@ -485,6 +518,9 @@ async def list_cannibalization(
             ),
             overlap_score=r["overlap_score"],
             severity=r["severity"],
+            resolution=r.get("resolution"),
+            stronger_post_id=r.get("stronger_post_id"),
+            chunk_confirmed=r.get("chunk_overlap_confirmed"),
             overlapping_queries=r["overlapping_queries"],
         ))
     return results
@@ -894,10 +930,16 @@ async def list_problems(
     db: Annotated[asyncpg.Connection, Depends(get_db)],
     problem_type: str | None = None,
     severity: str | None = None,
+    sort_by: str | None = None,
     limit: int = 200,
     offset: int = 0,
 ):
-    """List all detected content problems for a site."""
+    """List all detected content problems for a site.
+
+    sort_by options:
+      - "severity" (default): ORDER BY severity category (critical > high > medium > low)
+      - "weight": ORDER BY severity_score from weight table (highest impact first)
+    """
     await _verify_site(site_id, user_id, db)
 
     query = """
@@ -916,7 +958,11 @@ async def list_problems(
         params.append(severity)
         idx += 1
 
-    query += " ORDER BY CASE cp.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
+    if sort_by == "weight":
+        # Sort by severity_score in details JSON (set by _PROBLEM_WEIGHTS during detection)
+        query += " ORDER BY COALESCE((cp.details->>'severity_score')::int, 50) DESC"
+    else:
+        query += " ORDER BY CASE cp.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
     query += f" LIMIT ${idx} OFFSET ${idx + 1}"
     params.extend([min(limit, 500), offset])
 

@@ -407,14 +407,18 @@ Respond in this exact JSON format:
         self, db: asyncpg.Connection, site_id: UUID, problem: asyncpg.Record,
     ) -> bool:
         """Lightweight cannibalization recommendation (batch mode)."""
-        json.loads(problem["details"]) if problem["details"] else {}
+        details = json.loads(problem["details"]) if problem["details"] else {}
+        ai_content = json.dumps({
+            "source": "batch_cannibalization",
+            "problem_details": details,
+        })
         await db.execute(
             """
             INSERT INTO recommendations
                 (post_id, site_id, problem_id, recommendation_type, priority,
                  estimated_effort_hours, estimated_impact, title, summary,
-                 specific_actions)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 specific_actions, ai_generated_content)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             """,
             problem["post_id"], site_id, problem["id"], "merge",
             problem["severity"],
@@ -422,6 +426,7 @@ Respond in this exact JSON format:
             f"Resolve cannibalization: {problem['title']}",
             "This post is competing with another post for the same queries. Click for detailed merge recommendation.",
             json.dumps(["Click 'Get Recommendation' for AI-generated merge plan"]),
+            ai_content,
         )
         return True
 
@@ -1127,36 +1132,49 @@ Respond in JSON:
 
         Uses temperature=0.2 by default for factual/analytical tasks.
         Lower temperature reduces hallucination and improves consistency.
+        Retries once on transient failures with 2s backoff.
         """
-        await self.rate_limiter.wait()
-        try:
-            response = await self.anthropic.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=2048,
-                temperature=temperature,
-                system=(
-                    "You are an SEO content strategist analyzing a specific blog. "
-                    "You give specific, actionable recommendations grounded in the "
-                    "data provided. When BLOG CONTEXT is provided, use it to reference "
-                    "the user's own top-performing content as benchmarks. Be specific: "
-                    "name sections to add, word count targets based on what works in "
-                    "their cluster, and internal links to include with anchor text. "
-                    "Never fabricate data, statistics, or facts. "
-                    "Always include a 'confidence' field (0.0-1.0) indicating how "
-                    "confident you are in this recommendation based on the data available. "
-                    "Include a 'confidence_note' ONLY if there is a recommendation-specific "
-                    "caveat (e.g. 'content may have changed since crawl', 'topic overlap is "
-                    "borderline'). Do NOT repeat generic data availability caveats like "
-                    "'without GSC data' or 'without traffic data' — the system already "
-                    "accounts for missing data sources at the site level."
-                ),
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = response.content[0].text.strip()
-            return self._parse_json(raw)
-        except Exception as e:
-            logger.error("Claude API call failed: %s", e)
-            return {"error": str(e), "confidence": 0.0}
+        import asyncio as _asyncio
+
+        system_prompt = (
+            "You are an SEO content strategist analyzing a specific blog. "
+            "You give specific, actionable recommendations grounded in the "
+            "data provided. When BLOG CONTEXT is provided, use it to reference "
+            "the user's own top-performing content as benchmarks. Be specific: "
+            "name sections to add, word count targets based on what works in "
+            "their cluster, and internal links to include with anchor text. "
+            "Never fabricate data, statistics, or facts. "
+            "Always include a 'confidence' field (0.0-1.0) indicating how "
+            "confident you are in this recommendation based on the data available. "
+            "Include a 'confidence_note' ONLY if there is a recommendation-specific "
+            "caveat (e.g. 'content may have changed since crawl', 'topic overlap is "
+            "borderline'). Do NOT repeat generic data availability caveats like "
+            "'without GSC data' or 'without traffic data' — the system already "
+            "accounts for missing data sources at the site level."
+        )
+
+        last_error: Exception | None = None
+        for attempt in range(2):  # 1 initial + 1 retry
+            await self.rate_limiter.wait()
+            try:
+                response = await self.anthropic.messages.create(
+                    model=CLAUDE_MODEL,
+                    max_tokens=2048,
+                    temperature=temperature,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = response.content[0].text.strip()
+                return self._parse_json(raw)
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    logger.warning("Claude API call failed (attempt 1/2), retrying in 2s: %s", e)
+                    await _asyncio.sleep(2)
+                else:
+                    logger.error("Claude API call failed after retry: %s", e)
+
+        return {"error": str(last_error), "confidence": 0.0}
 
     @staticmethod
     def _parse_json(raw: str) -> dict:

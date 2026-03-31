@@ -126,19 +126,52 @@ class ReadabilityScorer:
             site_id,
         )
 
+        # Site-level language cache: detect language on first 5 posts, and if
+        # >= 4/5 agree, assume the whole site is that language. Avoids calling
+        # langdetect per-post (~15ms each → 2.5s for 145 posts).
+        site_lang: str | None = None
+        try:
+            from langdetect import detect as detect_lang
+            sample_size = min(5, len(posts))
+            if sample_size > 0:
+                lang_votes: list[str] = []
+                for sample_post in posts[:sample_size]:
+                    try:
+                        lang_votes.append(detect_lang(sample_post["body_text"][:1000]))
+                    except Exception:
+                        lang_votes.append("en")  # Default to English on detection failure
+                from collections import Counter
+                most_common_lang, most_common_count = Counter(lang_votes).most_common(1)[0]
+                if most_common_count >= max(1, sample_size - 1):
+                    site_lang = most_common_lang
+                    logger.info(
+                        "Site language detected as '%s' (%d/%d sample posts) — using cache",
+                        site_lang, most_common_count, sample_size,
+                    )
+        except ImportError:
+            logger.debug("langdetect not installed — scoring all posts")
+        except Exception as e:
+            logger.debug("Site-level language detection failed: %s", e)
+
         scored = 0
         for post in posts:
             text = post["body_text"]
 
-            # Language detection — Flesch-Kincaid only valid for English
-            try:
-                from langdetect import detect as detect_lang
-                lang = detect_lang(text[:1000])
-                if lang != "en":
-                    logger.debug("Skipping non-English post (detected: %s): %s", lang, post["id"])
+            # Language check — Flesch-Kincaid only valid for English
+            if site_lang is not None:
+                # Use cached site language (avoids per-post langdetect calls)
+                if site_lang != "en":
                     continue
-            except Exception:
-                logger.debug("Language detection failed, defaulting to score: %s", post["id"])
+            else:
+                # No site-level cache — detect per-post (fallback)
+                try:
+                    from langdetect import detect as detect_lang
+                    lang = detect_lang(text[:1000])
+                    if lang != "en":
+                        logger.debug("Skipping non-English post (detected: %s): %s", lang, post["id"])
+                        continue
+                except Exception:
+                    logger.debug("Language detection failed, defaulting to score: %s", post["id"])
 
             fre = compute_flesch_reading_ease(text)
             grade = compute_grade_level(text)

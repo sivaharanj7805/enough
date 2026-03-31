@@ -41,7 +41,7 @@ class TestHealthEndpoint:
         data = response.json()
         assert data["status"] == "ok"
         assert data["database"] == "connected"
-        assert data["service"] == "enough-backend"
+        assert data["service"] == "tended-backend"
 
     def test_health_not_under_v1(self):
         """Health endpoint should NOT be behind /v1/ prefix."""

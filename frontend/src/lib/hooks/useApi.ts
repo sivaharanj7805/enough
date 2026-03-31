@@ -99,6 +99,28 @@ export function usePostDetail(siteId: string | null, postId: string | null) {
   );
 }
 
+/** Bulk post health scores, roles, and cluster assignments for the Posts list page. */
+export interface PostHealthBulk {
+  post_id: string;
+  title: string | null;
+  url: string | null;
+  word_count: number | null;
+  publish_date: string | null;
+  composite_score: number | null;
+  role: string | null;
+  trend: string | null;
+  score_confidence: string | null;
+  ai_citability_score: number | null;
+  cluster_id: string | null;
+  cluster_label: string | null;
+}
+
+export function usePostsHealth(siteId: string | null) {
+  return useSWRFetch<PostHealthBulk[]>(
+    siteId ? `/sites/${siteId}/posts/health` : null
+  );
+}
+
 // ─── Problems ────────────────────────────────────
 
 export function useProblems(siteId: string | null, problemType?: string, severity?: string) {

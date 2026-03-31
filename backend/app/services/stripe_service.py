@@ -385,18 +385,18 @@ class StripeService:
                 {
                     "from": settings.email_from,
                     "to": [email],
-                    "subject": "Your Enough subscription has been cancelled",
+                    "subject": "Your Tended subscription has been cancelled",
                     "html": """
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Tended</h1>
   </div>
   <h2 style="font-size:18px;">We're sorry to see you go</h2>
-  <p>Your Enough subscription has been cancelled. Your data will remain available for 30 days.</p>
-  <p>If this was a mistake, you can resubscribe anytime at <a href="https://enough.app" style="color:#16a34a;">enough.app/pricing</a>.</p>
+  <p>Your Tended subscription has been cancelled. Your data will remain available for 30 days.</p>
+  <p>If this was a mistake, you can resubscribe anytime at <a href="https://tended.app" style="color:#16a34a;">tended.app/pricing</a>.</p>
   <p style="color:#94a3b8;font-size:13px;">Your content ecosystem won't monitor itself — we'll be here when you're ready to come back.</p>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    Enough — Publish Less. Grow More.
+    Tended — Publish Less. Grow More.
   </div>
 </div>""",
                 },
@@ -421,21 +421,21 @@ class StripeService:
                 {
                     "from": settings.email_from,
                     "to": [email],
-                    "subject": "Action needed: payment failed for your Enough subscription",
+                    "subject": "Action needed: payment failed for your Tended subscription",
                     "html": f"""
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Tended</h1>
   </div>
   <h2 style="font-size:18px;color:#f97316;">Payment Failed</h2>
   <p>We were unable to process your latest payment. Your account remains active until <strong>{deadline_str}</strong> (7-day grace period).</p>
   <p>Please update your payment method to avoid losing access:</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app/settings/billing" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Update Payment Method &rarr;</a>
+    <a href="https://tended.app/settings/billing" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Update Payment Method &rarr;</a>
   </div>
   <p style="color:#94a3b8;font-size:13px;">If your payment isn't updated by {deadline_str}, your account will be downgraded.</p>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    Enough — Publish Less. Grow More.
+    Tended — Publish Less. Grow More.
   </div>
 </div>""",
                 },
@@ -551,17 +551,17 @@ class StripeService:
                     "html": """
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Tended</h1>
   </div>
   <h2 style="font-size:18px;">It's been a week.</h2>
   <p>Since you cancelled, your blog's content ecosystem has been running unmonitored. New cannibalization pairs could be forming. Orphan posts are accumulating. Your competitors aren't waiting.</p>
   <p>Your health score, recommendations, and ecosystem map are still available — just pick up where you left off.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+    <a href="https://tended.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
-    &bull; Enough — Publish Less. Grow More.
+    <a href="https://tended.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    &bull; Tended — Publish Less. Grow More.
   </div>
 </div>""",
                 },
@@ -586,11 +586,11 @@ class StripeService:
                     "html": """
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Tended</h1>
   </div>
   <h2 style="font-size:18px;">A lot can change in a month.</h2>
   <p>Google's algorithms have updated. Your competitors have published new content. Rankings have shifted. Content decay doesn't pause when you stop monitoring.</p>
-  <p>Without Enough, you're flying blind:</p>
+  <p>Without Tended, you're flying blind:</p>
   <ul>
     <li>No cannibalization alerts when new posts start competing</li>
     <li>No decay detection when rankings slip</li>
@@ -599,11 +599,11 @@ class StripeService:
   </ul>
   <p>Come back and see what's changed.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+    <a href="https://tended.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
-    &bull; Enough
+    <a href="https://tended.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    &bull; Tended
   </div>
 </div>""",
                 },
@@ -624,25 +624,25 @@ class StripeService:
                 {
                     "from": settings.email_from,
                     "to": [email],
-                    "subject": "Final offer: 30% off Enough for 3 months",
+                    "subject": "Final offer: 30% off Tended for 3 months",
                     "html": """
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;border:1px solid #e5e7eb;padding:32px;border-radius:12px;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Tended</h1>
   </div>
   <h2 style="font-size:18px;">We'd like you back.</h2>
-  <p>It's been 2 months since you left Enough. We've been improving the platform — better recommendations, faster analysis, and new AI readiness scoring.</p>
+  <p>It's been 2 months since you left Tended. We've been improving the platform — better recommendations, faster analysis, and new AI readiness scoring.</p>
   <div style="background:#f0fdf4;padding:20px;border-radius:8px;text-align:center;margin:20px 0;border:1px solid #16a34a;">
     <div style="color:#16a34a;font-size:24px;font-weight:700;">30% off for 3 months</div>
     <div style="color:#94a3b8;font-size:14px;margin-top:8px;">$104.30/month instead of $149 — just use code COMEBACK30</div>
   </div>
   <p>This is our last email. If you'd like to come back, the offer is valid for 14 days.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://enough.app?coupon=COMEBACK30" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Claim 30% Off &rarr;</a>
+    <a href="https://tended.app?coupon=COMEBACK30" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Claim 30% Off &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    <a href="https://enough.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
-    &bull; Enough
+    <a href="https://tended.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    &bull; Tended
   </div>
 </div>""",
                 },
@@ -651,6 +651,28 @@ class StripeService:
         except Exception as e:
             logger.error("Win-back day 60 email failed for %s: %s", email, e)
             return False
+
+    async def _get_tier_limits(self, db: asyncpg.Connection, user_id: str) -> dict:
+        """Return the TIER_LIMITS dict for a user based on their subscription.
+
+        Handles past_due grace period and paused states.
+        """
+        sub = await self.get_subscription(db, user_id)
+        tier = sub["tier"]
+        if tier == "past_due":
+            from datetime import datetime
+            grace_row = await db.fetchrow(
+                "SELECT grace_period_ends_at FROM profiles WHERE id = $1::uuid",
+                user_id,
+            )
+            grace_ends = grace_row["grace_period_ends_at"] if grace_row else None
+            if grace_ends and grace_ends > datetime.now(UTC):
+                tier = "growth"
+            else:
+                tier = "free"
+        if tier == "paused":
+            tier = "free"
+        return TIER_LIMITS.get(tier, TIER_LIMITS["free"])
 
     async def check_usage_limits(
         self, db: asyncpg.Connection, user_id: str, feature: str
