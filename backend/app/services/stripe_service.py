@@ -329,6 +329,16 @@ class StripeService:
         self, db: asyncpg.Connection, user_id: str
     ) -> dict:
         """Get current subscription details."""
+        # Dev bypass: when Stripe is not configured, grant growth access for testing
+        settings = get_settings()
+        if not settings.stripe_secret_key:
+            return {
+                "tier": "growth",
+                "status": "active",
+                "stripe_subscription_id": None,
+                "current_period_end": None,
+            }
+
         row = await db.fetchrow(
             """SELECT subscription_status, stripe_subscription_id,
                       subscription_ends_at
@@ -678,6 +688,11 @@ class StripeService:
         self, db: asyncpg.Connection, user_id: str, feature: str
     ) -> bool:
         """Check if user is within their tier limits for a feature."""
+        # Dev bypass: when Stripe is not configured, allow all features
+        settings = get_settings()
+        if not settings.stripe_secret_key:
+            return True
+
         sub = await self.get_subscription(db, user_id)
         tier = sub["tier"]
         if tier == "past_due":

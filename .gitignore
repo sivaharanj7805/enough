@@ -52,3 +52,4 @@ frontend/out/
 *.key
 *.cert
 *.secret
+allapis.md

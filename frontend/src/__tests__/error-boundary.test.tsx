@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
-function ThrowError() {
+function ThrowError(): JSX.Element {
   throw new Error('Test error');
 }
 

@@ -211,7 +211,7 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
               rows={2}
               className="flex-1 resize-none rounded-xl bg-[#0a0f1a] border border-[#1e293b] text-sm
                          text-[#e2e8f0] placeholder-[#334155] px-3 py-2.5 focus:outline-none
-                         focus:border-[#22c55e] transition-colors"
+                         focus:border-[#3b82f6] transition-colors"
             />
             <button
               onClick={() => void handleSubmit(input)}

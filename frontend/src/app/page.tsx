@@ -211,7 +211,7 @@ function LandingPage() {
               </p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="mt-10">
+            <form onSubmit={(e) => void handleSubmit(e)} className="mt-10">
               <div className="flex flex-col sm:flex-row items-stretch gap-3">
                 <div className="flex-1">
                   <input
@@ -426,15 +426,13 @@ function LandingPage() {
             <span className={`text-[14px] ${!annual ? 'text-[#E8EAED]' : 'text-[#9BA1AD]'}`}>Monthly</span>
             <button
               onClick={() => setAnnual(!annual)}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                annual ? 'bg-[#3B82F6]' : 'bg-[#23262F]'
-              }`}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${annual ? 'bg-[#3B82F6]' : 'bg-[#23262F]'
+                }`}
               aria-label="Toggle annual billing"
             >
               <span
-                className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
-                  annual ? 'translate-x-6' : 'translate-x-1'
-                }`}
+                className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${annual ? 'translate-x-6' : 'translate-x-1'
+                  }`}
               />
             </button>
             <span className={`text-[14px] ${annual ? 'text-[#E8EAED]' : 'text-[#9BA1AD]'}`}>

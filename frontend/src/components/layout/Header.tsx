@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronRight, ChevronDown, RefreshCw } from 'lucide-react';
+import { ChevronRight, ChevronDown, RefreshCw, Loader2 } from 'lucide-react';
 import { useSite } from '@/lib/hooks/useSite';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { apiFetch } from '@/lib/api';
 
 /* ─── Route → label map for breadcrumbs ──────── */
 
@@ -80,11 +82,10 @@ function SiteSelector() {
                 selectSite(site.id);
                 setOpen(false);
               }}
-              className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${
-                site.id === currentSite.id
+              className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${site.id === currentSite.id
                   ? 'text-[#3B82F6] bg-[#3B82F6]/10'
                   : 'text-[#9CA3AF] hover:bg-[#1E1F2B] hover:text-white'
-              }`}
+                }`}
             >
               {site.name}
             </button>
@@ -100,10 +101,24 @@ function SiteSelector() {
 export function Header() {
   const pathname = usePathname();
   const { currentSite } = useSite();
+  const { token } = useAuth();
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   const breadcrumbs = useMemo(() => buildBreadcrumbs(pathname), [pathname]);
 
   const showReanalyze = isStale(currentSite?.last_crawl_at, 7);
+
+  const handleReanalyze = async () => {
+    if (!currentSite?.id || !token) return;
+    setReanalyzing(true);
+    try {
+      await apiFetch(`/sites/${currentSite.id}/pipeline`, { method: 'POST', token });
+    } catch (err) {
+      console.error('Re-analysis failed:', err);
+    } finally {
+      setReanalyzing(false);
+    }
+  };
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-[#23262F] px-6">
@@ -135,10 +150,12 @@ export function Header() {
 
         {showReanalyze && (
           <button
-            className="flex items-center gap-1.5 rounded-md border border-[#3B82F6] px-3 py-1.5 text-sm font-medium text-[#3B82F6] hover:bg-[#3B82F6]/10 transition-colors duration-150"
+            onClick={() => void handleReanalyze()}
+            disabled={reanalyzing}
+            className="flex items-center gap-1.5 rounded-md border border-[#3B82F6] px-3 py-1.5 text-sm font-medium text-[#3B82F6] hover:bg-[#3B82F6]/10 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <RefreshCw size={14} />
-            <span>Re-analyze</span>
+            {reanalyzing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            <span>{reanalyzing ? 'Re-analyzing...' : 'Re-analyze'}</span>
           </button>
         )}
       </div>

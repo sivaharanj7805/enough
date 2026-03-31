@@ -215,11 +215,10 @@ export default function TodayPage() {
     healthContext = `Based on content analysis of ${health.total_posts} posts.`;
   }
 
-  const timelineItems = [
-    { label: 'Initial analysis completed', date: '3 days ago' },
-    { label: 'Fixed 2 schema issues', date: '2 days ago' },
-    { label: 'Merged duplicate posts', date: 'Yesterday' },
-  ];
+  const timelineItems = completedRecs.slice(0, 3).map((rec) => ({
+    label: rec.title,
+    date: fmtDate(rec.updated_at),
+  }));
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 py-2">

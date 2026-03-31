@@ -8,8 +8,7 @@ export function useSWRFetch<T>(
   path: string | null,
   config?: SWRConfiguration<T>
 ) {
-  const { session } = useAuth();
-  const token = session?.access_token;
+  const { token } = useAuth();
 
   return useSWR<T>(
     path && token ? [path, token] : null,

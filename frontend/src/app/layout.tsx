@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     description: 'Your blog has problems you don\'t know about yet. Tended finds them and tells you what to fix.',
     images: [
       {
-        url: `${APP_URL}/og-default.png`,
+        url: `${APP_URL}/og-default.svg`,
         width: 1200,
         height: 630,
         alt: 'Tended — Content Ecosystem Intelligence Platform',
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Tended — Content Ecosystem Intelligence',
     description: 'Your blog has problems you don\'t know about yet. Tended finds them and tells you what to fix.',
-    images: [`${APP_URL}/og-default.png`],
+    images: [`${APP_URL}/og-default.svg`],
   },
   robots: {
     index: true,
@@ -47,9 +47,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
     ],
-    apple: '/apple-touch-icon.png',
   },
 };
 
