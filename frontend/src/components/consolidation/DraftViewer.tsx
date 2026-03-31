@@ -58,6 +58,17 @@ export function DraftViewer({ siteId, clusterId }: DraftViewerProps) {
     URL.revokeObjectURL(url);
   }
 
+  function downloadHTML() {
+    if (!draft?.draft_html) return;
+    const blob = new Blob([draft.draft_html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'consolidated-draft.html';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (!draft) {
     return (
       <Card>
@@ -107,10 +118,38 @@ export function DraftViewer({ siteId, clusterId }: DraftViewerProps) {
           </Button>
           <Button variant="secondary" size="sm" onClick={downloadMarkdown}>
             <Download size={14} />
-            Download .md
+            .md
           </Button>
+          {draft.draft_html && (
+            <Button variant="secondary" size="sm" onClick={downloadHTML}>
+              <Download size={14} />
+              .html
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Word count summary */}
+      {draft.word_count_summary && (
+        <div className="flex flex-wrap gap-4 mb-3 text-xs text-brand-text-muted">
+          <span>Combined input: <strong className="text-brand-text">{draft.word_count_summary.total_input_words.toLocaleString()}</strong> words</span>
+          <span>Recommended output: <strong className="text-brand-text">~{draft.word_count_summary.recommended_output_words.toLocaleString()}</strong> words</span>
+          <span>Sources: <strong className="text-brand-text">{draft.word_count_summary.source_posts.length}</strong> posts</span>
+        </div>
+      )}
+
+      {/* SEO metadata preview */}
+      {draft.seo_metadata && (draft.seo_metadata.title_tag || draft.seo_metadata.meta_description) && (
+        <div className="rounded-lg bg-brand-surface-hover border border-brand-border p-3 mb-3">
+          <p className="text-xs font-semibold text-brand-text mb-1">Suggested SEO Metadata</p>
+          {draft.seo_metadata.title_tag && (
+            <p className="text-xs text-brand-text-muted"><span className="text-brand-text">Title:</span> {draft.seo_metadata.title_tag}</p>
+          )}
+          {draft.seo_metadata.meta_description && (
+            <p className="text-xs text-brand-text-muted mt-0.5"><span className="text-brand-text">Description:</span> {draft.seo_metadata.meta_description}</p>
+          )}
+        </div>
+      )}
 
       <div className="prose prose-invert prose-sm max-w-none rounded-lg bg-brand-bg p-4 border border-brand-border overflow-y-auto max-h-[600px]">
         <pre className="whitespace-pre-wrap text-sm text-brand-text font-sans leading-relaxed">
@@ -119,7 +158,7 @@ export function DraftViewer({ siteId, clusterId }: DraftViewerProps) {
       </div>
 
       <p className="mt-3 text-xs text-brand-text-muted italic">
-        ⚠️ Review and edit this draft before publishing. AI-generated content should always be human-verified.
+        Review and edit this draft before publishing. AI-generated content should always be human-verified.
       </p>
     </Card>
   );

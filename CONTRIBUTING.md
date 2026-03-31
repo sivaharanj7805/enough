@@ -1,10 +1,10 @@
-# Contributing to Enough
+# Contributing to Tended
 
 ## Setup
 
 ```bash
-git clone https://github.com/blossummico123/enough.git
-cd enough
+git clone https://github.com/blossummico123/tended.git
+cd tended
 
 # Backend
 cd backend

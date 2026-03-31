@@ -1,7 +1,8 @@
 """Weekly ecosystem email report generation."""
 
+import html as html_mod
 import logging
-from datetime import date, timedelta
+from datetime import date
 from uuid import UUID
 
 import asyncpg
@@ -120,13 +121,16 @@ class WeeklyReportService:
 
     async def generate_report(self, db: asyncpg.Connection, site_id: UUID) -> dict:
         """Generate a weekly report with HTML and text bodies."""
+        settings = get_settings()
+        frontend_url = settings.frontend_url or "https://tended.app"
+
         current = await self._get_current_metrics(db, site_id)
         previous = await self._get_previous_snapshot(db, site_id)
 
         # Get site name
         site = await db.fetchrow("SELECT name, domain FROM sites WHERE id = $1", site_id)
-        site_name = site["name"] if site else "Your Site"
-        site_domain = site["domain"] if site else ""
+        site_name = html_mod.escape(site["name"]) if site else "Your Site"
+        site_domain = html_mod.escape(site["domain"]) if site else ""
 
         # Calculate deltas
         prev_health = previous["health_score"] if previous else None
@@ -181,8 +185,8 @@ class WeeklyReportService:
         cluster_html = ""
         cluster_text = ""
         for c in cluster_changes:
-            label = c["label"] or "Unnamed"
-            state = c["ecosystem_state"] or "unknown"
+            label = html_mod.escape(c["label"] or "Unnamed")
+            state = html_mod.escape(c["ecosystem_state"] or "unknown")
             score = c["health_score"] or 0
             cluster_html += f'<tr><td style="padding:6px 12px;border-bottom:1px solid #1f2937;">{label}</td><td style="padding:6px 12px;border-bottom:1px solid #1f2937;">{state}</td><td style="padding:6px 12px;border-bottom:1px solid #1f2937;">{score:.1f}</td></tr>'
             cluster_text += f"  • {label} ({state}) — Score: {score:.1f}\n"
@@ -191,7 +195,7 @@ class WeeklyReportService:
         qw_html = ""
         qw_text = ""
         if quick_win:
-            qw_label = quick_win["label"] or "Unnamed cluster"
+            qw_label = html_mod.escape(quick_win["label"] or "Unnamed cluster")
             qw_count = quick_win["post_count"]
             qw_html = f'<div style="background:#f0fdf4;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #bbf7d0;"><strong style="color:#16a34a;">🎯 Quick Win of the Week</strong><br/><span style="color:#374151;">Consolidate <strong>{qw_label}</strong> — {qw_count} posts could become 1 strong pillar.</span></div>'
             qw_text = f"\n🎯 Quick Win: Consolidate '{qw_label}' — {qw_count} posts could become 1 strong pillar.\n"
@@ -235,9 +239,9 @@ class WeeklyReportService:
         priority_html = ""
         priority_text = ""
         if top_rec:
-            rec_title = top_rec["title"] or "Review your top recommendation"
-            rec_summary = top_rec["summary"] or ""
-            rec_priority = (top_rec["priority"] or "medium").capitalize()
+            rec_title = html_mod.escape(top_rec["title"] or "Review your top recommendation")
+            rec_summary = html_mod.escape(top_rec["summary"] or "")
+            (top_rec["priority"] or "medium").capitalize()
             priority_color = "#ef4444" if top_rec["priority"] == "critical" else "#f97316" if top_rec["priority"] == "high" else "#eab308"
             priority_html = f'<div style="background:#f8fafc;padding:16px;border-radius:8px;border-left:4px solid {priority_color};margin:16px 0;"><strong style="color:{priority_color};">⚡ Your #1 Priority This Week</strong><br/><span style="color:#111827;font-weight:600;">{rec_title}</span><br/><span style="color:#64748b;font-size:13px;">{rec_summary[:200]}</span></div>'
             priority_text = f"\n⚡ Your #1 Priority: {rec_title}\n   {rec_summary[:200]}\n"
@@ -245,22 +249,28 @@ class WeeklyReportService:
         html_body = f"""
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;padding:32px;border-radius:12px;border:1px solid #e5e7eb;">
   <div style="text-align:center;margin-bottom:24px;">
-    <h1 style="color:#16a34a;font-size:24px;margin:0;">Enough</h1>
+    <h1 style="color:#16a34a;font-size:24px;margin:0;">Tended</h1>
     <p style="color:#64748b;font-size:14px;margin:4px 0 0 0;">{site_domain}</p>
   </div>
 
   <h2 style="font-size:20px;margin:0 0 16px 0;color:#111827;">Your Ecosystem This Week</h2>
 
-  <div style="display:flex;gap:16px;margin-bottom:24px;">
-    <div style="flex:1;background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;">
-      <div style="color:#64748b;font-size:12px;text-transform:uppercase;">Content Health</div>
-      <div style="font-size:20px;font-weight:600;margin-top:4px;color:#111827;">{health_delta}</div>
-    </div>
-    <div style="flex:1;background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;">
-      <div style="color:#64748b;font-size:12px;text-transform:uppercase;">Efficiency</div>
-      <div style="font-size:20px;font-weight:600;margin-top:4px;color:#111827;">{efficiency_delta}</div>
-    </div>
-  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+    <tr>
+      <td width="50%" style="padding-right:8px;" valign="top">
+        <div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;">
+          <div style="color:#64748b;font-size:12px;text-transform:uppercase;">Content Health</div>
+          <div style="font-size:20px;font-weight:600;margin-top:4px;color:#111827;">{health_delta}</div>
+        </div>
+      </td>
+      <td width="50%" style="padding-left:8px;" valign="top">
+        <div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;">
+          <div style="color:#64748b;font-size:12px;text-transform:uppercase;">Efficiency</div>
+          <div style="font-size:20px;font-weight:600;margin-top:4px;color:#111827;">{efficiency_delta}</div>
+        </div>
+      </td>
+    </tr>
+  </table>
 
   <div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:16px;">
     <div style="color:#64748b;font-size:12px;text-transform:uppercase;margin-bottom:8px;">Posts Breakdown</div>
@@ -289,11 +299,11 @@ class WeeklyReportService:
   {qw_html}
 
   <div style="text-align:center;margin-top:24px;">
-    <a href="#" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">See Your Full Landscape →</a>
+    <a href="{frontend_url}/landscape" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">See Your Full Landscape →</a>
   </div>
 
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    Enough — Publish Less. Grow More.
+    Tended — Publish Less. Grow More.
   </div>
 </div>"""
 
@@ -345,19 +355,23 @@ Log in to see your full landscape.
             # Send via Resend if configured
             if settings.resend_api_key:
                 import asyncio
+
                 import resend
 
-                resend.api_key = settings.resend_api_key
-                await asyncio.to_thread(
-                    resend.Emails.send,
-                    {
-                        "from": settings.email_from,
-                        "to": [user_email],
-                        "subject": report["subject"],
-                        "html": report["html_body"],
-                        "text": report["text_body"],
-                    },
-                )
+                try:
+                    resend.api_key = settings.resend_api_key
+                    await asyncio.to_thread(
+                        resend.Emails.send,
+                        {
+                            "from": settings.email_from,
+                            "to": [user_email],
+                            "subject": report["subject"],
+                            "html": report["html_body"],
+                            "text": report["text_body"],
+                        },
+                    )
+                finally:
+                    resend.api_key = ""
                 logger.info("Weekly report sent to %s for site %s", user_email, site_id)
             else:
                 logger.info(
@@ -371,7 +385,7 @@ Log in to see your full landscape.
         except Exception as e:
             logger.error("Failed to send report for site %s: %s", site_id, e)
             await self._record_history(
-                db, site_id, f"Weekly Report (failed)", "failed"
+                db, site_id, "Weekly Report (failed)", "failed"
             )
             return False
 

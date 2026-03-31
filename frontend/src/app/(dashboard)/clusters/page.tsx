@@ -4,15 +4,11 @@ import Link from 'next/link';
 import { useSite } from '@/lib/hooks/useSite';
 import { useClusters, useCannibalizationPairs } from '@/lib/hooks/useApi';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
-import { ECOSYSTEM_COLORS } from '@/lib/constants';
-import type { EcosystemState } from '@/lib/constants';
 import {
   Layers,
   FileText,
   AlertTriangle,
-  TrendingUp,
   ArrowRight,
 } from 'lucide-react';
 
@@ -24,7 +20,6 @@ function ClusterCard({
     id: string;
     label: string | null;
     description?: string | null;
-    ecosystem_state: EcosystemState | null;
     health_score: number | null;
     post_count: number;
   };
@@ -36,10 +31,6 @@ function ClusterCard({
     : (cluster.health_score ?? 0) >= 25 ? '#f97316'
     : '#ef4444';
 
-  const ecoInfo = cluster.ecosystem_state
-    ? ECOSYSTEM_COLORS[cluster.ecosystem_state]
-    : null;
-
   return (
     <Link href={`/clusters/${cluster.id}`}>
       <Card className="group hover:border-brand-border-hover transition-all duration-200 h-full">
@@ -50,11 +41,6 @@ function ClusterCard({
             </h3>
             {cluster.description && (
               <p className="text-xs text-brand-text-muted mt-1 line-clamp-2">{cluster.description}</p>
-            )}
-            {ecoInfo && !cluster.description && (
-              <Badge className="mt-1.5" color={ecoInfo.border}>
-                {ecoInfo.label}
-              </Badge>
             )}
           </div>
           {cluster.health_score != null && (

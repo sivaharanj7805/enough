@@ -40,7 +40,7 @@ export function SetupChecklist({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const d = localStorage.getItem('enough_checklist_dismissed');
+      const d = localStorage.getItem('tended_checklist_dismissed');
       if (d === 'true') setDismissed(true);
     }
   }, []);
@@ -92,7 +92,7 @@ export function SetupChecklist({
   const handleDismiss = () => {
     setDismissed(true);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('enough_checklist_dismissed', 'true');
+      localStorage.setItem('tended_checklist_dismissed', 'true');
     }
   };
 

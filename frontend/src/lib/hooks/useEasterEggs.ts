@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback, useRef, useState } from 'react';
 
-const STORAGE_KEY = 'enough_easter_eggs';
+const STORAGE_KEY = 'tended_easter_eggs';
 
 interface EasterEggState {
   konami: boolean;
@@ -129,10 +129,10 @@ function showToast(message: string, icon: string): void {
  * Apply zen mode — dims the UI and makes it peaceful.
  */
 function toggleZenMode(on: boolean): void {
-  const existing = document.getElementById('enough-zen-overlay');
+  const existing = document.getElementById('tended-zen-overlay');
   if (on && !existing) {
     const overlay = document.createElement('div');
-    overlay.id = 'enough-zen-overlay';
+    overlay.id = 'tended-zen-overlay';
     overlay.style.cssText = `
       position: fixed;
       inset: 0;
@@ -220,7 +220,7 @@ export function useEasterEggs(): EasterEggsAPI {
             showToast('All creatures evolved to max level!', '🌸');
             discover('bloom');
             // Dispatch custom event that landscape can listen for
-            window.dispatchEvent(new CustomEvent('enough:bloom'));
+            window.dispatchEvent(new CustomEvent('tended:bloom'));
           }
         }
       }
@@ -234,7 +234,7 @@ export function useEasterEggs(): EasterEggsAPI {
     showConfetti();
     showToast('All creatures evolved to max level!', '🌸');
     discover('bloom');
-    window.dispatchEvent(new CustomEvent('enough:bloom'));
+    window.dispatchEvent(new CustomEvent('tended:bloom'));
   }, [discover]);
 
   const registerLogoClick = useCallback(() => {
@@ -251,6 +251,13 @@ export function useEasterEggs(): EasterEggsAPI {
       logoClickCount.current = 0;
     }, 2000);
   }, [discover]);
+
+  // Clean up logo click timer on unmount
+  useEffect(() => {
+    return () => {
+      if (logoClickTimer.current) clearTimeout(logoClickTimer.current);
+    };
+  }, []);
 
   const totalFound = Object.values(discovered).filter(Boolean).length;
 

@@ -9,8 +9,7 @@ Handles common URL variations that point to the same content:
 - Case normalization of domain
 """
 
-import re
-from urllib.parse import urlparse, urlunparse, urlencode, parse_qs
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 # Query parameters that are tracking/marketing noise (not content identifiers)
 STRIP_PARAMS = {

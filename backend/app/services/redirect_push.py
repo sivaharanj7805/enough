@@ -1,11 +1,11 @@
 """Redirect Push — Push 301 redirects to WordPress via REST API."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
-import httpx
 import asyncpg
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class RedirectPusher:
             for entry in redirect_map:
                 old_url = entry["old_url"]
                 new_url = entry["new_url"]
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
 
                 try:
                     if has_plugin:
@@ -93,30 +93,15 @@ class RedirectPusher:
                             failed += 1
                             error = f"HTTP {resp.status_code}: {resp.text[:200]}"
                     else:
-                        # Fallback: create redirect via WP REST API custom endpoint
-                        # This assumes a simple mu-plugin or functions.php snippet
-                        resp = await client.post(
-                            f"{wp_url}/wp-json/wp/v2/settings",
-                            json={
-                                "enough_redirect": {
-                                    "old_url": old_url,
-                                    "new_url": new_url,
-                                    "type": 301,
-                                }
-                            },
-                            headers={
-                                "Authorization": f"Basic {app_password}",
-                                "Content-Type": "application/json",
-                            },
+                        # Redirection plugin not available — cannot push automatically
+                        logger.warning(
+                            "Redirection plugin not found on %s. Cannot push redirect %s → %s. "
+                            "Install the Redirection plugin or push manually.",
+                            wp_url, old_url, new_url,
                         )
-                        if resp.status_code in (200, 201):
-                            status = "pushed"
-                            pushed += 1
-                            error = None
-                        else:
-                            status = "failed"
-                            failed += 1
-                            error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                        status = "failed"
+                        failed += 1
+                        error = "Redirection plugin not available"
 
                 except Exception as e:
                     status = "failed"
@@ -215,7 +200,7 @@ class RedirectPusher:
 
         verified = 0
         failed = 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         async with httpx.AsyncClient(
             timeout=10.0, follow_redirects=False

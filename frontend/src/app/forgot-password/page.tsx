@@ -29,7 +29,7 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">ENOUGH</span>
+          <span className="text-2xl font-bold tracking-widest text-[#3b82f6]">TENDED</span>
         </div>
 
         <div>

@@ -8,17 +8,17 @@ class TestComputeSeverity:
     """Test severity computation with text-embedding-3-small thresholds."""
 
     def test_critical_high_cosine_plus_shared(self):
-        assert CannibalizationDetector._compute_severity(0.65, 3) == "critical"
-        assert CannibalizationDetector._compute_severity(0.60, 1) == "critical"
+        assert CannibalizationDetector._compute_severity(0.70, 3) == "critical"
+        assert CannibalizationDetector._compute_severity(0.65, 1) == "critical"
 
     def test_high_cosine_only(self):
-        assert CannibalizationDetector._compute_severity(0.52, 0) == "high"
+        assert CannibalizationDetector._compute_severity(0.57, 0) == "high"
 
     def test_high_moderate_cosine_plus_shared(self):
-        assert CannibalizationDetector._compute_severity(0.42, 2) == "high"
+        assert CannibalizationDetector._compute_severity(0.47, 2) == "high"
 
     def test_medium_cosine_threshold(self):
-        assert CannibalizationDetector._compute_severity(0.40, 0) == "medium"
+        assert CannibalizationDetector._compute_severity(0.45, 0) == "medium"
 
     def test_medium_many_shared_queries(self):
         assert CannibalizationDetector._compute_severity(None, 5) == "medium"
@@ -76,6 +76,6 @@ class TestDetectorInit:
             COSINE_THRESHOLD_HIGH,
             COSINE_THRESHOLD_CRITICAL,
         )
-        assert COSINE_THRESHOLD_FLAG == 0.40
-        assert COSINE_THRESHOLD_HIGH == 0.50
-        assert COSINE_THRESHOLD_CRITICAL == 0.60
+        assert COSINE_THRESHOLD_FLAG == 0.45
+        assert COSINE_THRESHOLD_HIGH == 0.55
+        assert COSINE_THRESHOLD_CRITICAL == 0.65

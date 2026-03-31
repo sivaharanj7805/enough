@@ -36,12 +36,14 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
 
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 150);
+      const timer = setTimeout(() => inputRef.current?.focus(), 150);
+      return () => clearTimeout(timer);
     }
   }, [open]);
 
   const handleSubmit = useCallback(async (content: string) => {
-    if (!currentSite || !content.trim()) return;
+    const trimmed = content.trim();
+    if (!currentSite || !trimmed) return;
     setLoading(true);
     setError(null);
     setVerdict(null);
@@ -52,12 +54,21 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
         {
           method: 'POST',
           token: session?.access_token,
-          body: JSON.stringify({ draft_text: content, target_keyword: null }),
+          body: JSON.stringify({ draft_text: trimmed }),
         }
       );
       setVerdict(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Oracle analysis failed');
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('400')) {
+        setError('Please enter a question or paste some content to analyze.');
+      } else if (msg.includes('429')) {
+        setError('Rate limit reached. Please wait a moment before trying again.');
+      } else if (msg.includes('403')) {
+        setError('Oracle is not available on your current plan.');
+      } else {
+        setError(msg || 'Oracle analysis failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -127,6 +138,7 @@ export function OraclePanel({ open, onClose }: OraclePanelProps) {
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-[#64748b] hover:text-[#e2e8f0] hover:bg-[#1e293b] transition-colors"
+              aria-label="Close Oracle panel"
             >
               <X size={16} />
             </button>

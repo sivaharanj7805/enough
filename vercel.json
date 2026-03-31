@@ -16,6 +16,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://api.enough.app/v1/$1" }
+    { "source": "/api/(.*)", "destination": "https://api.tended.app/v1/$1" }
   ]
 }

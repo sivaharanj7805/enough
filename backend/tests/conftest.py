@@ -1,4 +1,4 @@
-"""Shared fixtures for the Enough backend test suite."""
+"""Shared fixtures for the Tended backend test suite."""
 
 import os
 import sys
@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # ── Patch settings before any app import ──
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-tests")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
+os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-anthropic-key")
 os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_fake")

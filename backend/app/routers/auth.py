@@ -1,21 +1,21 @@
 """Authentication endpoints using Supabase Auth."""
 
 import logging
-import os
 import re
+from datetime import UTC
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from fastapi.responses import RedirectResponse
 import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.config import get_settings, Settings
-from app.database import get_supabase_client, get_supabase_admin
+from app.config import Settings, get_settings
+from app.database import get_supabase_admin, get_supabase_client
 from app.dependencies import get_current_user_id
-from app.models.schemas import RegisterRequest, LoginRequest, AuthResponse
+from app.models.schemas import AuthResponse, LoginRequest, RegisterRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -122,10 +122,10 @@ async def google_oauth_redirect(
     Pass ?site_id=<uuid> to automatically link the token to a site after auth.
     The site_id is encoded in the OAuth state parameter (HMAC-signed to prevent tampering).
     """
+    import base64
     import hashlib
     import hmac
     import json
-    import base64
 
     scopes = [
         "https://www.googleapis.com/auth/analytics.readonly",
@@ -168,10 +168,10 @@ async def google_oauth_callback(
     If state contains a valid signed site_id, automatically stores the refresh
     token for that site (requires the user to be authenticated).
     """
+    import base64
     import hashlib
     import hmac
     import json
-    import base64
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -216,6 +216,7 @@ async def google_oauth_callback(
         # Auto-store tokens if we have a valid site_id
         if site_id and tokens.get("refresh_token"):
             import time
+
             from app.database import get_pool
             from app.services.google_auth import encrypt_token
             try:
@@ -381,14 +382,15 @@ async def accept_terms(
     if not body.accepted:
         raise HTTPException(status_code=400, detail="Terms must be accepted")
 
+    from datetime import datetime
+
     from app.database import get_pool
-    from datetime import datetime, timezone
 
     pool = await get_pool()
     async with pool.acquire() as db:
         await db.execute(
             "UPDATE profiles SET terms_accepted_at = $1 WHERE id = $2::uuid",
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
             user_id,
         )
 

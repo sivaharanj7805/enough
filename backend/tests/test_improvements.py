@@ -71,13 +71,14 @@ class TestDynamicWeights:
         assert w["technical_seo"] > 0
         assert abs(sum(w.values()) - 1.0) < 1e-6
 
-    def test_crawl_only_proportions_preserved(self):
-        """Relative proportions of crawl factors preserved when scaling."""
+    def test_crawl_only_has_proxy_signals(self):
+        """Crawl-only mode includes proxy engagement and structure signals."""
         w = compute_dynamic_weights(has_ga4=False, has_gsc=False)
-        # Freshness should still be 3x technical_seo (15% vs 5%)
-        ratio = w["freshness"] / w["technical_seo"]
-        expected_ratio = W_FRESHNESS / W_TECHNICAL_SEO  # 0.15/0.05 = 3.0
-        assert abs(ratio - expected_ratio) < 1e-6
+        assert w.get("predicted_engagement", 0) > 0, "Missing predicted_engagement weight"
+        assert w.get("content_structure", 0) > 0, "Missing content_structure weight"
+        assert w["traffic_trend"] == 0.0
+        assert w["ranking"] == 0.0
+        assert w["engagement"] == 0.0
 
     def test_all_weights_sum_to_one(self):
         """Every combination should sum to 1.0."""
@@ -99,9 +100,9 @@ class TestThresholdCalibration:
 
     def test_default_thresholds_are_sane(self):
         """Default thresholds are calibrated for text-embedding-3-small."""
-        assert COSINE_THRESHOLD_FLAG == 0.40
-        assert COSINE_THRESHOLD_HIGH == 0.50
-        assert COSINE_THRESHOLD_CRITICAL == 0.60
+        assert COSINE_THRESHOLD_FLAG == 0.45
+        assert COSINE_THRESHOLD_HIGH == 0.55
+        assert COSINE_THRESHOLD_CRITICAL == 0.65
 
     def test_severity_with_custom_thresholds(self):
         """Site-specific thresholds override defaults."""
@@ -140,23 +141,27 @@ class TestSmallClusterEdgeCases:
 
     def test_content_depth_with_industry_avg(self):
         """When cluster avg is used as industry avg (1000), scoring is sensible."""
-        # 500 words vs 1000 industry avg = ratio 0.5 → falls in 0.5-0.75 range = 40
+        # 500 words: absolute=20, relative=35 (ratio 0.5), base=27.5
         score = _content_depth_score(500, 1000.0)
-        assert score == 40.0
+        assert abs(score - 27.5) < 2.0
 
-        # 1000 words vs 1000 avg = ratio 1.0 → should be ~60
+        # 1000 words: absolute=40, relative=60 (ratio 1.0), base=50
         score = _content_depth_score(1000, 1000.0)
-        assert 55.0 <= score <= 65.0
+        assert 45.0 <= score <= 55.0
 
-        # 2000 words vs 1000 avg = ratio 2.0 → should be near 100
+        # 2000 words: absolute=80, relative=100 (ratio 2.0), base=90
         score = _content_depth_score(2000, 1000.0)
-        assert score >= 90.0
+        assert score >= 85.0
 
     def test_very_short_content(self):
-        """< 300 words always scores 10 regardless of avg."""
-        assert _content_depth_score(200, 500.0) == 10.0
-        assert _content_depth_score(200, 1000.0) == 10.0
-        assert _content_depth_score(200, 10000.0) == 10.0
+        """< 300 words scores low regardless of avg (blended absolute + relative)."""
+        # 200 words: absolute=8, relative=15 (ratio < 0.5), base=11.5
+        score_500 = _content_depth_score(200, 500.0)
+        score_1000 = _content_depth_score(200, 1000.0)
+        score_10000 = _content_depth_score(200, 10000.0)
+        assert score_500 < 15.0
+        assert score_1000 < 15.0
+        assert score_10000 < 15.0
 
 
 # ═══════════════════════════════════════════════

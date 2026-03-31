@@ -341,7 +341,7 @@ def print_subheader(title: str) -> None:
 
 def run_simulation():
     print("╔══════════════════════════════════════════════════════════════════════╗")
-    print("║  ENOUGH — Full Intelligence Layer Simulation                       ║")
+    print("║  TENDED — Full Intelligence Layer Simulation                       ║")
     print("║  Blog: GrowthStack.io (15 posts, 3 clusters)                       ║")
     print("║  13 Intelligence Signals                                           ║")
     print("╚══════════════════════════════════════════════════════════════════════╝")

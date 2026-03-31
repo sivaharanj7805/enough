@@ -2,14 +2,14 @@
 
 import logging
 from datetime import date, datetime
-from uuid import UUID
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import get_db
-from app.dependencies import get_current_user_id, get_verified_site
+from app.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

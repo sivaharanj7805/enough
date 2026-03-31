@@ -1,8 +1,8 @@
 """Site management endpoints."""
 
 import logging
-from uuid import UUID
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.dependencies import get_current_user_id, require_site_limit
-from app.models.schemas import SiteCreate, SiteResponse, SiteListResponse
+from app.models.schemas import SiteCreate, SiteListResponse, SiteResponse
 from app.utils.encryption import encrypt_value
 
 logger = logging.getLogger(__name__)
@@ -194,7 +194,7 @@ async def update_site_settings(
     if not updates:
         return {"message": "No changes"}
 
-    updates.append(f"updated_at = NOW()")
+    updates.append("updated_at = NOW()")
     query = f"UPDATE sites SET {', '.join(updates)} WHERE id = ${idx} AND user_id = ${idx + 1}"
     params.extend([site_id, user_id])
     await db.execute(query, *params)

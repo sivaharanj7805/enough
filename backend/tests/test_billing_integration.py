@@ -65,8 +65,8 @@ async def test_create_checkout_success(app_with_mocks):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post("/v1/billing/checkout", json={
                 "price_id": "price_growth_monthly",
-                "success_url": "https://app.enough.io/success",
-                "cancel_url": "https://app.enough.io/cancel",
+                "success_url": "https://app.tended.io/success",
+                "cancel_url": "https://app.tended.io/cancel",
             }, headers=AUTH_HEADER)
 
     assert resp.status_code == 200
@@ -85,8 +85,8 @@ async def test_create_checkout_invalid_price(app_with_mocks):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post("/v1/billing/checkout", json={
                 "price_id": "price_invalid",
-                "success_url": "https://app.enough.io/success",
-                "cancel_url": "https://app.enough.io/cancel",
+                "success_url": "https://app.tended.io/success",
+                "cancel_url": "https://app.tended.io/cancel",
             }, headers=AUTH_HEADER)
 
     assert resp.status_code == 400
@@ -101,8 +101,8 @@ async def test_create_checkout_no_auth(app_with_mocks):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.post("/v1/billing/checkout", json={
             "price_id": "price_growth_monthly",
-            "success_url": "https://app.enough.io/success",
-            "cancel_url": "https://app.enough.io/cancel",
+            "success_url": "https://app.tended.io/success",
+            "cancel_url": "https://app.tended.io/cancel",
         })
 
     assert resp.status_code == 422

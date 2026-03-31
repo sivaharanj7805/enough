@@ -1,15 +1,15 @@
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'Privacy Policy — Enough',
-  description: 'Privacy Policy for Enough Content Ecosystem Intelligence Platform',
+  title: 'Privacy Policy — Tended',
+  description: 'Privacy Policy for Tended Content Ecosystem Intelligence Platform',
 };
 
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-[#e2e8f0]">
       <nav className="border-b border-[#1e293b] px-6 py-4 flex items-center justify-between">
-        <Link href="/" className="text-lg font-bold tracking-widest text-[#3b82f6]">ENOUGH</Link>
+        <Link href="/" className="text-lg font-bold tracking-widest text-[#3b82f6]">TENDED</Link>
         <Link href="/login" className="text-sm text-[#64748b] hover:text-[#94a3b8] transition-colors">Sign in</Link>
       </nav>
       <div className="max-w-3xl mx-auto px-6 py-16">
@@ -35,7 +35,7 @@ export default function PrivacyPage() {
           },
           {
             title: '5. Data Retention',
-            body: 'Content analysis data is retained for the lifetime of your account. If you delete your account, all associated data is deleted within 30 days. You may request data deletion at any time by emailing privacy@enough.app.',
+            body: 'Content analysis data is retained for the lifetime of your account. If you delete your account, all associated data is deleted within 30 days. You may request data deletion at any time by emailing privacy@tended.app.',
           },
           {
             title: '6. Third-Party Services',
@@ -47,7 +47,7 @@ export default function PrivacyPage() {
           },
           {
             title: '8. Your Rights (GDPR)',
-            body: 'If you are in the EU/EEA, you have the right to: access your personal data, correct inaccurate data, request deletion, object to processing, and data portability. Contact privacy@enough.app to exercise these rights.',
+            body: 'If you are in the EU/EEA, you have the right to: access your personal data, correct inaccurate data, request deletion, object to processing, and data portability. Contact privacy@tended.app to exercise these rights.',
           },
           {
             title: '9. Changes',
@@ -55,7 +55,7 @@ export default function PrivacyPage() {
           },
           {
             title: '10. Contact',
-            body: 'Data controller: Enough. For privacy questions: privacy@enough.app',
+            body: 'Data controller: Tended. For privacy questions: privacy@tended.app',
           },
         ].map(({ title, body }) => (
           <div key={title} className="mb-8">

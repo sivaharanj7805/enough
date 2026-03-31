@@ -95,10 +95,10 @@ class TestClusteringIntegration:
             result = await clusterer.cluster_site(db, SITE_ID)
             assert result == 1  # Single cluster for <5 posts
 
-            # Verify 2D positions were stored
-            update_calls = [c for c in db.execute.call_args_list
+            # Verify 2D positions were stored via executemany
+            update_calls = [c for c in db.executemany.call_args_list
                            if "x_pos" in str(c)]
-            assert len(update_calls) == 3  # One per post
+            assert len(update_calls) >= 1  # At least one batch update
 
 
 
@@ -163,6 +163,7 @@ class TestHealthScoringIntegration:
             [Row(post_id=POST_IDS[0], cnt=5)],  # inbound
             [Row(post_id=POST_IDS[0], cnt=3)],  # outbound
             [],  # cannibalization
+            [],  # AI readiness scores
         ]
 
         scorer = HealthScorer()
@@ -178,17 +179,17 @@ class TestHealthScoringIntegration:
         score_bad = records[1][5]
         assert score_good > score_bad, f"Good ({score_good}) should beat Bad ({score_bad})"
 
-    def test_all_seven_weights_sum_to_one(self):
-        """Verify the 7 weights sum to exactly 1.0."""
+    def test_all_weights_sum_to_one(self):
+        """Verify all health scoring weights sum to exactly 1.0."""
         from app.services.health_scoring import (
             W_TRAFFIC_TREND, W_RANKING, W_ENGAGEMENT,
             W_FRESHNESS, W_CONTENT_DEPTH, W_INTERNAL_LINKS,
-            W_TECHNICAL_SEO,
+            W_TECHNICAL_SEO, W_AI_READINESS,
         )
         total = sum([
             W_TRAFFIC_TREND, W_RANKING, W_ENGAGEMENT,
             W_FRESHNESS, W_CONTENT_DEPTH, W_INTERNAL_LINKS,
-            W_TECHNICAL_SEO,
+            W_TECHNICAL_SEO, W_AI_READINESS,
         ])
         assert abs(total - 1.0) < 0.0001
 
@@ -197,18 +198,18 @@ class TestHealthScoringIntegration:
         from app.services.health_scoring import (
             W_TRAFFIC_TREND, W_RANKING, W_ENGAGEMENT,
             W_FRESHNESS, W_CONTENT_DEPTH, W_INTERNAL_LINKS,
-            W_TECHNICAL_SEO,
+            W_TECHNICAL_SEO, W_AI_READINESS,
         )
         # All factors at 0
         min_score = 0 * (W_TRAFFIC_TREND + W_RANKING + W_ENGAGEMENT +
                          W_FRESHNESS + W_CONTENT_DEPTH + W_INTERNAL_LINKS +
-                         W_TECHNICAL_SEO)
+                         W_TECHNICAL_SEO + W_AI_READINESS)
         assert min_score == 0.0
 
         # All factors at 100
         max_score = 100 * (W_TRAFFIC_TREND + W_RANKING + W_ENGAGEMENT +
                            W_FRESHNESS + W_CONTENT_DEPTH + W_INTERNAL_LINKS +
-                           W_TECHNICAL_SEO)
+                           W_TECHNICAL_SEO + W_AI_READINESS)
         assert abs(max_score - 100.0) < 0.01
 
 
@@ -235,17 +236,17 @@ class TestCannibalizationIntegration:
         """Test all severity combinations (calibrated for text-embedding-3-small)."""
         from app.services.cannibalization import CannibalizationDetector
 
-        # Critical: cosine >= 0.60 + shared queries
-        assert CannibalizationDetector._compute_severity(0.65, 2) == "critical"
+        # Critical: cosine >= 0.65 + shared queries
+        assert CannibalizationDetector._compute_severity(0.70, 2) == "critical"
 
-        # High: cosine >= 0.50
-        assert CannibalizationDetector._compute_severity(0.52, 0) == "high"
+        # High: cosine >= 0.55
+        assert CannibalizationDetector._compute_severity(0.57, 0) == "high"
 
         # High: moderate cosine + shared
-        assert CannibalizationDetector._compute_severity(0.42, 1) == "high"
+        assert CannibalizationDetector._compute_severity(0.47, 1) == "high"
 
         # Medium: cosine at threshold
-        assert CannibalizationDetector._compute_severity(0.40, 0) == "medium"
+        assert CannibalizationDetector._compute_severity(0.45, 0) == "medium"
 
         # Medium: many shared queries
         assert CannibalizationDetector._compute_severity(None, 4) == "medium"
@@ -389,12 +390,12 @@ class TestPipelineSteps:
 
         source = inspect.getsource(_run_full_pipeline)
 
-        # Verify ordering: clustering before cannibalization before health before problems before recommendations
-        clustering_pos = source.index("TopicClusterer")
-        cannibalization_pos = source.index("CannibalizationDetector")
-        health_pos = source.index("HealthScorer")
-        problem_pos = source.index("ProblemDetector")
-        recommendation_pos = source.index("RecommendationEngine")
+        # Match on instantiation (not imports, which are alphabetical)
+        clustering_pos = source.index("TopicClusterer()")
+        cannibalization_pos = source.index("CannibalizationDetector()")
+        health_pos = source.index("HealthScorer()")
+        problem_pos = source.index("ProblemDetector()")
+        recommendation_pos = source.index("generate_fast_recommendations")
 
         assert clustering_pos < cannibalization_pos < health_pos < problem_pos < recommendation_pos
 
@@ -409,7 +410,7 @@ class TestPipelineSteps:
         assert "CannibalizationDetector" in source
         assert "HealthScorer" in source
         assert "ProblemDetector" in source
-        assert "RecommendationEngine" in source
+        assert "generate_fast_recommendations" in source
 
     def test_pipeline_status_tracking(self):
         """Verify pipeline tracks status for each step."""

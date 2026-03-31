@@ -2,7 +2,7 @@
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import asyncpg
@@ -40,7 +40,7 @@ class CalendarRestraint:
                 )
 
         # Generate site-wide summary
-        summary = self._build_summary(results)
+        self._build_summary(results)
         logger.info(
             "Generated %d recommendations for site %s", len(results), site_id
         )
@@ -63,8 +63,8 @@ class CalendarRestraint:
         if state == "forest":
             rec_type = "maintain"
             rec_text = (
-                f"This cluster is healthy. Recommended: maintain current cadence. "
-                f"Consider 1 supporting post per quarter to keep it fresh."
+                "This cluster is healthy. Recommended: maintain current cadence. "
+                "Consider 1 supporting post per quarter to keep it fresh."
             )
 
         elif state == "swamp":
@@ -185,7 +185,7 @@ class CalendarRestraint:
             rec_text,
             suggested_keywords,
             pause_months,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
         )
 
         return {

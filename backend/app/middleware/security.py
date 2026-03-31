@@ -1,4 +1,4 @@
-"""Security middleware for the Enough backend.
+"""Security middleware for the Tended backend.
 
 Provides:
 - Security headers (HSTS, X-Frame-Options, CSP, etc.)
@@ -10,11 +10,11 @@ Provides:
 import logging
 import secrets
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response, JSONResponse
+from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         self.max_bytes = max_bytes
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Check Content-Length header first (fast path)
         content_length = request.headers.get("content-length")
 
         try:
@@ -97,6 +98,17 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                     "detail": f"Request body too large. Max: {self.max_bytes // (1024*1024)}MB",
                 },
             )
+
+        # For chunked transfers without Content-Length, read and measure body
+        if not content_length and request.method in ("POST", "PUT", "PATCH"):
+            body = await request.body()
+            if len(body) > self.max_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": f"Request body too large. Max: {self.max_bytes // (1024*1024)}MB",
+                    },
+                )
 
         return await call_next(request)
 

@@ -108,7 +108,7 @@ class ContentWrappedService:
             site_id,
         )
         state_counts = {row["ecosystem_state"]: row["cnt"] for row in ecosystem_states if row["ecosystem_state"]}
-        swamps_cleared = state_counts.get("swamp", 0)
+        swamps_found = state_counts.get("swamp", 0)
         deserts_found = state_counts.get("desert", 0)
 
         # Cannibalization pairs
@@ -172,7 +172,7 @@ class ContentWrappedService:
                 else None
             ),
             "cluster_count": cluster_count,
-            "swamps_found": swamps_cleared,
+            "swamps_found": swamps_found,
             "deserts_found": deserts_found,
             "cannibalization_pairs": cann_pairs,
             "total_words": total_words,
@@ -232,7 +232,7 @@ class ContentWrappedService:
         # Slide 2: Total posts
         slides.append({
             "title": "Posts Analyzed",
-            "subtitle": f"We analyzed every corner of your content ecosystem",
+            "subtitle": "We analyzed every corner of your content ecosystem",
             "stat": str(total_posts),
             "stat_label": "total posts",
             "color": "from-blue-600 to-cyan-600",

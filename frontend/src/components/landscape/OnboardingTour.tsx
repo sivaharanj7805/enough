@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { X, ChevronRight, ChevronLeft } from 'lucide-react';
 
-const TOUR_KEY = 'enough_landscape_tour_seen';
+const TOUR_KEY = 'tended_landscape_tour_seen';
 
 const STEPS = [
   {

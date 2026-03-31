@@ -14,7 +14,7 @@ cumulative value.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import asyncpg
@@ -51,7 +51,7 @@ class ImpactTracker:
 
         post_id = rec["post_id"]
         site_id = rec["site_id"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Get current metrics as "before" baseline
         metrics = await db.fetchrow(

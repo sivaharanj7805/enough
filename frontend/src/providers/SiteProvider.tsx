@@ -29,7 +29,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (sites.length > 0 && !selectedId) {
       const saved = typeof window !== 'undefined'
-        ? localStorage.getItem('enough_site_id')
+        ? localStorage.getItem('tended_site_id')
         : null;
       const found = saved && sites.find((s) => s.id === saved);
       setSelectedId(found ? saved : sites[0].id);
@@ -39,7 +39,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   const selectSite = useCallback((siteId: string) => {
     setSelectedId(siteId);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('enough_site_id', siteId);
+      localStorage.setItem('tended_site_id', siteId);
     }
   }, []);
 

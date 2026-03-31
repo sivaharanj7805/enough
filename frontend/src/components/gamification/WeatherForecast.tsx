@@ -34,7 +34,7 @@ export function WeatherForecast() {
   const { session } = useAuth();
   const token =
     session?.access_token ??
-    (typeof window !== 'undefined' ? localStorage.getItem('enough_access_token') : null);
+    (typeof window !== 'undefined' ? localStorage.getItem('tended_access_token') : null);
 
   const [forecast, setForecast] = useState<ForecastDay[]>([]);
   const [loading, setLoading] = useState(true);

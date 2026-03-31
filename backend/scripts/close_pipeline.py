@@ -56,7 +56,7 @@ MAX_POSTS = 600  # Cap at 600 to control costs while exceeding 500
 
 # We'll create a new site entry
 USER_ID = "11111111-1111-1111-1111-111111111111"  # Dummy user
-USER_EMAIL = "pipeline-test@enough.app"
+USER_EMAIL = "pipeline-test@tended.app"
 
 
 async def main():

@@ -12,7 +12,7 @@ from anthropic import AsyncAnthropic
 
 from app.config import get_settings
 from app.utils.rate_limiter import RateLimiter
-from app.utils.token_guard import truncate_for_api, DRAFT_CHAR_LIMIT
+from app.utils.token_guard import truncate_for_api
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ class ConsolidationPlanner:
             """,
             cluster_id, pillar_id,
         )
-        estimated_traffic_recovery = int(cannibal_traffic * 0.6)
+        estimated_traffic_recovery = int(cannibal_traffic * 0.35)
 
         # Estimate effort (hours)
         total_word_count = sum(
@@ -238,6 +238,17 @@ class ConsolidationPlanner:
         merge_section = "\n\n---\n\n".join(merge_texts) if merge_texts else "(no merge candidates)"
         pillar_body = truncate_for_api(pillar_row["body_text"] or "", max_chars=5000, label="pillar")
 
+        # Calculate word counts for summary
+        pillar_word_count = len((pillar_row["body_text"] or "").split())
+        merge_word_counts = {
+            mr["title"]: len((mr["body_text"] or "").split()) for mr in merge_rows
+        }
+        total_input_words = pillar_word_count + sum(merge_word_counts.values())
+        recommended_output_words = max(1500, int(total_input_words * 0.4))
+
+        # Build source list for annotations
+        source_titles = [mr["title"] for mr in merge_rows]
+
         prompt = f"""You are a content strategist consolidating multiple blog posts into one \
 authoritative piece.
 
@@ -254,7 +265,11 @@ Instructions:
 from the merge posts that aren't already in the pillar
 3. Remove redundancy — don't repeat the same point twice
 4. Ensure the final piece is comprehensive and authoritative
-5. Output the complete merged post in markdown format"""
+5. Output the complete merged post in markdown format
+6. When integrating content from a merge post, add a source annotation \
+comment: <!-- Integrated from: "Post Title" -->
+7. At the end, suggest an SEO-optimized title tag (under 60 chars) and \
+meta description (under 155 chars) for the consolidated post"""
 
         await self.rate_limiter.wait()
         try:
@@ -274,10 +289,88 @@ from the merge posts that aren't already in the pillar
             for mr in merge_rows
         ]
 
+        # Generate HTML version from markdown
+        draft_html = self._markdown_to_html(draft_markdown)
+
+        # Extract SEO metadata from the draft (Claude appends it at the end)
+        seo_metadata = self._extract_seo_metadata(draft_markdown)
+
         return {
             "draft_markdown": draft_markdown,
+            "draft_html": draft_html,
             "redirect_map": redirect_map,
+            "word_count_summary": {
+                "pillar_words": pillar_word_count,
+                "merge_source_words": merge_word_counts,
+                "total_input_words": total_input_words,
+                "recommended_output_words": recommended_output_words,
+                "source_posts": [pillar_row["title"]] + source_titles,
+            },
+            "seo_metadata": seo_metadata,
         }
+
+    @staticmethod
+    def _markdown_to_html(markdown_text: str) -> str:
+        """Convert markdown draft to basic HTML for content managers."""
+        import re
+        html = markdown_text
+
+        # Convert headings
+        for level in range(6, 0, -1):
+            pattern = r'^' + '#' * level + r'\s+(.+)$'
+            html = re.sub(pattern, rf'<h{level}>\1</h{level}>', html, flags=re.MULTILINE)
+
+        # Convert bold and italic
+        html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+        html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
+
+        # Convert links
+        html = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', html)
+
+        # Convert unordered lists
+        html = re.sub(r'^- (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
+
+        # Wrap consecutive <li> in <ul>
+        html = re.sub(r'((?:<li>.*?</li>\n?)+)', r'<ul>\1</ul>', html)
+
+        # Wrap remaining paragraphs
+        lines = html.split('\n\n')
+        wrapped = []
+        for block in lines:
+            block = block.strip()
+            if not block:
+                continue
+            if block.startswith(('<h', '<ul', '<ol', '<!--')):
+                wrapped.append(block)
+            else:
+                wrapped.append(f'<p>{block}</p>')
+
+        return '\n\n'.join(wrapped)
+
+    @staticmethod
+    def _extract_seo_metadata(draft_text: str) -> dict:
+        """Extract SEO title and meta description from the draft tail."""
+        import re
+        title_tag = ""
+        meta_desc = ""
+
+        # Look for title tag suggestion
+        title_match = re.search(
+            r'(?:title\s*tag|seo\s*title)[:\s]*["\']?(.{10,60}?)["\']?\s*$',
+            draft_text, re.IGNORECASE | re.MULTILINE,
+        )
+        if title_match:
+            title_tag = title_match.group(1).strip().strip('"\'')
+
+        # Look for meta description suggestion
+        meta_match = re.search(
+            r'(?:meta\s*description)[:\s]*["\']?(.{30,160}?)["\']?\s*$',
+            draft_text, re.IGNORECASE | re.MULTILINE,
+        )
+        if meta_match:
+            meta_desc = meta_match.group(1).strip().strip('"\'')
+
+        return {"title_tag": title_tag, "meta_description": meta_desc}
 
     @staticmethod
     def export_redirect_map(
@@ -295,7 +388,7 @@ from the merge posts that aren't already in the pillar
         """
         if fmt == "htaccess":
             lines = [
-                "# Generated by Enough — paste into your .htaccess file",
+                "# Generated by Tended — paste into your .htaccess file",
                 "# Make sure mod_rewrite is enabled",
                 "",
             ]

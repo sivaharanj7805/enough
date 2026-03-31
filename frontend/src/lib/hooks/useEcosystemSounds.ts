@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState, useEffect } from 'react';
 
-const STORAGE_KEY = 'enough_sounds_enabled';
+const STORAGE_KEY = 'tended_sounds_enabled';
 
 type OscillatorType = 'sine' | 'triangle' | 'sawtooth' | 'square';
 

@@ -110,6 +110,23 @@ export function AIReadinessCard({ scores, loading, onRunScan }: Props) {
     overallScore >= 35 ? 'text-amber-400' :
     'text-red-400';
 
+  // Identify which dimension is dragging the composite down the most
+  const dimensions = [
+    { name: 'Schema Markup', score: scores.avg_schema },
+    { name: 'AI Citability', score: scores.avg_citability },
+    { name: 'E-E-A-T', score: scores.avg_eeat },
+    { name: 'AI Extraction', score: scores.avg_extraction },
+  ];
+  const otherDimsAvg = (dim: typeof dimensions[0]) => {
+    const others = dimensions.filter(d => d !== dim);
+    return others.reduce((sum, d) => sum + d.score, 0) / others.length;
+  };
+  const biggestGap = dimensions.reduce<{ name: string; gap: number; score: number }>((worst, dim) => {
+    const gap = otherDimsAvg(dim) - dim.score;
+    return gap > worst.gap ? { name: dim.name, gap, score: dim.score } : worst;
+  }, { name: '', gap: 0, score: 0 });
+  const showGapHint = biggestGap.gap >= 20;
+
   return (
     <Card>
       <div className="flex items-start justify-between mb-4">
@@ -123,6 +140,11 @@ export function AIReadinessCard({ scores, loading, onRunScan }: Props) {
         <div className="text-right">
           <span className={`text-2xl font-bold ${overallColor}`}>{overallScore}</span>
           <span className="text-xs text-[#475569]">/100</span>
+          {showGapHint && (
+            <p className="text-[10px] text-[#64748b] mt-0.5">
+              {biggestGap.name} ({Math.round(biggestGap.score)}/100) is your biggest gap
+            </p>
+          )}
         </div>
       </div>
 

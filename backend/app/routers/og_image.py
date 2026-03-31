@@ -1,7 +1,7 @@
 """OG image endpoint — returns a styled SVG for social sharing previews."""
 import logging
-from uuid import UUID
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
@@ -104,7 +104,7 @@ async def og_image(
 
   <!-- Brand -->
   <text x="60" y="66" font-family="system-ui, sans-serif" font-size="22" font-weight="700"
-        fill="#22c55e" letter-spacing="4">ENOUGH</text>
+        fill="#22c55e" letter-spacing="4">TENDED</text>
   <text x="168" y="66" font-family="system-ui, sans-serif" font-size="16" fill="#64748b">
     Content Intelligence</text>
 
@@ -138,7 +138,7 @@ async def og_image(
 
   <!-- Footer -->
   <text x="60" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#334155">
-    enough.app · AI-powered content ecosystem intelligence
+    tended.app · AI-powered content ecosystem intelligence
   </text>
 </svg>"""
 

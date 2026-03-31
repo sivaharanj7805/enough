@@ -9,7 +9,7 @@ Results are stored as position_alerts with alert_type='new_post_detected'.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import asyncpg
@@ -33,7 +33,7 @@ class NewContentChecker:
         Returns the number of alerts generated.
         """
         alerts_created = 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for post_id in new_post_ids:
             post = await db.fetchrow(

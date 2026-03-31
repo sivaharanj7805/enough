@@ -1,10 +1,10 @@
 """Database connection management for Supabase/PostgreSQL."""
 
 import logging
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import asyncpg
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 from app.config import get_settings
 
@@ -19,12 +19,13 @@ async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         settings = get_settings()
+        ssl_mode = "require" if settings.environment == "production" else None
         _pool = await asyncpg.create_pool(
             dsn=settings.database_url,
             min_size=settings.db_pool_min_size,
             max_size=settings.db_pool_max_size,
             command_timeout=60,
-            ssl="require",
+            ssl=ssl_mode,
         )
         logger.info("Database connection pool created")
     return _pool

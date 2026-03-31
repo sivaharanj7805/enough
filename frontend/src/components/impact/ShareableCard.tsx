@@ -157,7 +157,7 @@ export function ShareableCard(props: ShareableCardProps) {
     // Footer
     ctx.font = '10px system-ui, -apple-system, sans-serif';
     ctx.fillStyle = '#475569';
-    ctx.fillText('Powered by Enough — Content Intelligence', w / 2, h - 14);
+    ctx.fillText('Powered by Tended — Content Intelligence', w / 2, h - 14);
 
     return new Promise((resolve) => {
       canvas.toBlob((blob) => resolve(blob), 'image/png');
@@ -262,7 +262,7 @@ export function ShareableCard(props: ShareableCardProps) {
         </div>
 
         <p className="absolute bottom-2 left-0 right-0 text-center text-[9px] text-[#475569]">
-          Powered by Enough — Content Intelligence
+          Powered by Tended — Content Intelligence
         </p>
       </div>
 

@@ -1,11 +1,9 @@
 """Pydantic models for request/response schemas."""
 
-from datetime import datetime, date
+from datetime import date, datetime
 from uuid import UUID
-from typing import Optional
 
-from pydantic import BaseModel, Field, HttpUrl
-
+from pydantic import BaseModel, Field
 
 # ──────────────────────────── Auth ────────────────────────────
 
@@ -81,15 +79,39 @@ class PostResponse(BaseModel):
     cms_tags: list[str] | None
     word_count: int | None
     content_hash: str | None
+    # Pipeline-computed fields (surfaced per productplan.md gap analysis)
+    page_type: str | None = None
+    content_intent: str | None = None
+    readability_score: float | None = None
+    grade_level: float | None = None
+    pagerank_score: float | None = None
     created_at: datetime
     updated_at: datetime
 
 
 class PostDetailResponse(PostResponse):
     """Post with full metrics."""
+    composite_score: float | None = None
+    role: str | None = None
+    cluster_id: str | None = None
+    cluster_name: str | None = None
+    factor_scores: dict | None = None
+    ai_citability_score: float | None = None
     ga4_metrics: list["GA4MetricResponse"] = []
     gsc_metrics: list["GSCMetricResponse"] = []
     internal_links: list[InternalLinkSchema] = []
+    # AI signals breakdown — explains WHY the post scored what it scored
+    ai_signals: dict | None = None
+    # Content analysis fields from posts table
+    meta_description: str | None = None
+    meta_title: str | None = None
+    headings: list | None = None
+    # Computed content structure counts (derived from body_html / headings jsonb)
+    headings_count: int | None = None
+    h1_count: int | None = None
+    h2_count: int | None = None
+    h3_count: int | None = None
+    image_count: int | None = None
 
 
 class PostListResponse(BaseModel):
@@ -181,6 +203,9 @@ class PostHealthResponse(BaseModel):
     ranking_strength: float | None
     internal_link_score: float | None
     data_completeness: float | None = None  # 0.0-1.0, fraction of signals available
+    score_confidence: str | None = None  # "full", "partial", or "crawl_only"
+    x_pos: float | None = None  # UMAP 2D x-coordinate for ecosystem map
+    y_pos: float | None = None  # UMAP 2D y-coordinate for ecosystem map
 
 
 class ClusterResponse(BaseModel):
@@ -192,6 +217,8 @@ class ClusterResponse(BaseModel):
     ecosystem_state: str | None
     health_score: float | None
     post_count: int
+    center_x: float | None = None
+    center_y: float | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -209,6 +236,9 @@ class CannibalizationPairResponse(BaseModel):
     post_b: PostHealthResponse
     overlap_score: float
     severity: str
+    resolution: str | None = None
+    stronger_post_id: UUID | None = None
+    chunk_confirmed: bool | None = None
     overlapping_queries: list[str] | None
 
 
@@ -273,10 +303,28 @@ class ConsolidationDetailResponse(ConsolidationPlanResponse):
     redirect_map: list[RedirectEntry] = []
 
 
+class WordCountSummary(BaseModel):
+    """Word count breakdown for consolidation drafts."""
+    pillar_words: int
+    merge_source_words: dict[str, int]
+    total_input_words: int
+    recommended_output_words: int
+    source_posts: list[str]
+
+
+class SEOMetadata(BaseModel):
+    """Extracted SEO metadata from consolidation draft."""
+    title_tag: str = ""
+    meta_description: str = ""
+
+
 class ConsolidationDraftResponse(BaseModel):
-    """AI-generated consolidated draft."""
+    """AI-generated consolidated draft with SEO metadata and HTML export."""
     draft_markdown: str
+    draft_html: str = ""
     redirect_map: list[RedirectEntry]
+    word_count_summary: WordCountSummary | None = None
+    seo_metadata: SEOMetadata | None = None
 
 
 class SimilarPostInfo(BaseModel):
@@ -296,6 +344,12 @@ class OracleRequest(BaseModel):
     """Pre-publish oracle request body."""
     draft_text: str | None = None
     target_keyword: str | None = None
+
+    @classmethod
+    def validate_draft_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 500_000:
+            raise ValueError("Draft text exceeds maximum length of 500,000 characters")
+        return v
 
 
 class OracleVerdictResponse(BaseModel):
@@ -455,6 +509,15 @@ class CheckoutRequest(BaseModel):
     success_url: str
     cancel_url: str
 
+    @classmethod
+    def validate_redirect_url(cls, url: str) -> str:
+        """Ensure redirect URLs point to our own frontend."""
+        import os
+        frontend = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+        if not url.startswith(frontend):
+            raise ValueError(f"Redirect URL must start with {frontend}")
+        return url
+
 
 class CheckoutResponse(BaseModel):
     """Stripe checkout session URL."""
@@ -585,8 +648,19 @@ class TerrainFeature(BaseModel):
     meaning: str
 
 
+class ClusterPosition(BaseModel):
+    """Cluster position and metadata for landscape rendering."""
+    id: str
+    label: str
+    x: float
+    y: float
+    post_count: int
+    ecosystem_state: str
+
+
 class EcosystemVisualsResponse(BaseModel):
     """Full ecosystem visual metadata payload."""
+    clusters: list[ClusterPosition] = []
     rivers: list[RiverData]
     grass: dict[str, GrassData]
     weather: dict[str, WeatherData]

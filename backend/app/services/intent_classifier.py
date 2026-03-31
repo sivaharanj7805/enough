@@ -120,7 +120,7 @@ class IntentClassifier:
             batch = posts[i:i + batch_size]
             intents = await self._classify_batch(batch)
 
-            for post, intent in zip(batch, intents):
+            for post, intent in zip(batch, intents, strict=False):
                 await db.execute(
                     "UPDATE posts SET content_intent = $1 WHERE id = $2",
                     intent, post["id"],

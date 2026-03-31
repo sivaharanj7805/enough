@@ -1,24 +1,29 @@
 """Content ingestion trigger endpoints."""
 
+import asyncio
 import logging
-from uuid import UUID
+from datetime import UTC, datetime
 from typing import Annotated
-from datetime import datetime, timezone
+from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id, get_verified_site, verify_cron_secret
+from app.dependencies import get_current_user_id, verify_cron_secret
 from app.models.schemas import CrawlStatusResponse, TaskTriggerResponse
-from app.services.wordpress import WordPressConnector
-from app.services.sitemap import SitemapCrawler
-from app.services.normalizer import save_normalized_posts
+from app.services.embeddings import EmbeddingPipeline
 from app.services.ga4 import GA4Connector
 from app.services.gsc import GSCConnector
-from app.services.embeddings import EmbeddingPipeline
+from app.services.normalizer import save_normalized_posts
+from app.services.sitemap import SitemapCrawler
+from app.services.wordpress import WordPressConnector
 from app.utils.encryption import decrypt_value
+
+_limiter = Limiter(key_func=get_remote_address)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,7 +52,10 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
     """Background task: crawl content from WordPress or sitemap."""
     pool = await get_pool()
 
-    # Initialize crawl status in DB
+    # Initialize crawl status in DB.
+    # Preserve previous crawl's results (prev_completed_at, prev_posts_processed)
+    # so they remain queryable during the new crawl. The current crawl counters
+    # reset to 0, but the previous crawl's data isn't erased until this one succeeds.
     async with pool.acquire() as db:
         await db.execute(
             """
@@ -55,6 +63,8 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
             VALUES ($1, 'crawling', $2, $2)
             ON CONFLICT (site_id) DO UPDATE SET
                 status = 'crawling',
+                prev_completed_at = crawl_jobs.completed_at,
+                prev_posts_processed = crawl_jobs.posts_processed,
                 started_at = $2,
                 completed_at = NULL,
                 error = NULL,
@@ -62,7 +72,7 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
                 posts_processed = 0,
                 updated_at = $2
             """,
-            site_id, datetime.now(timezone.utc),
+            site_id, datetime.now(UTC),
         )
 
     try:
@@ -118,7 +128,7 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
 
             await db.execute(
                 "UPDATE sites SET last_crawl_at = $1 WHERE id = $2",
-                datetime.now(timezone.utc), site_id,
+                datetime.now(UTC), site_id,
             )
             await db.execute(
                 """
@@ -129,7 +139,7 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
                     updated_at = $2
                 WHERE site_id = $3
                 """,
-                saved, datetime.now(timezone.utc), site_id,
+                saved, datetime.now(UTC), site_id,
             )
 
         logger.info("Crawl completed for site %s: %d posts", site_id, saved)
@@ -147,7 +157,9 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
 
 
 @router.post("/{site_id}/crawl", response_model=TaskTriggerResponse)
+@_limiter.limit("5/minute")
 async def trigger_crawl(
+    request: Request,  # Required by slowapi
     site_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
@@ -155,8 +167,52 @@ async def trigger_crawl(
 ):
     """Trigger a content crawl (WordPress or sitemap) as a background task."""
     site = await _get_site_for_ingestion(site_id, user_id, db)
-    background_tasks.add_task(_run_crawl, site_id, site)
-    return TaskTriggerResponse(message="Crawl started", site_id=site_id)
+
+    # Rate limit: max 1 re-analyze per hour per site (prevents abuse + API costs)
+    COOLDOWN_MINUTES = 60
+    last_completed = await db.fetchval(
+        """SELECT MAX(updated_at) FROM crawl_jobs
+           WHERE site_id = $1 AND status = 'completed'""",
+        site_id,
+    )
+    if last_completed:
+        elapsed_min = (datetime.now(UTC) - last_completed).total_seconds() / 60
+        if elapsed_min < COOLDOWN_MINUTES:
+            remaining = int(COOLDOWN_MINUTES - elapsed_min)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Re-analysis available in {remaining} minutes. Maximum 1 analysis per hour.",
+            )
+
+    # Check if a crawl is already running (TOCTOU guard).
+    # Also recover from orphaned jobs: if a crawl has been stuck in 'crawling'
+    # for >30 minutes (e.g. process crash, DB hiccup), auto-reset it to 'failed'
+    # so the site isn't permanently locked from re-crawling.
+    STALE_MINUTES = 30
+    stale_row = await db.fetchrow(
+        """SELECT site_id, status, updated_at FROM crawl_jobs
+           WHERE site_id = $1 AND status = 'crawling' LIMIT 1""",
+        site_id,
+    )
+    if stale_row:
+        elapsed = (datetime.now(UTC) - stale_row["updated_at"]).total_seconds()
+        if elapsed > STALE_MINUTES * 60:
+            logger.warning(
+                "Resetting stale crawl job for site %s (stuck for %.0f min)",
+                site_id, elapsed / 60,
+            )
+            await db.execute(
+                """UPDATE crawl_jobs SET status = 'failed',
+                   error = 'Crawl timed out (no progress for 30+ minutes)',
+                   updated_at = NOW() WHERE site_id = $1""",
+                site_id,
+            )
+        else:
+            raise HTTPException(status_code=429, detail="A crawl is already running for this site")
+
+    from app.services.job_queue import enqueue_job
+    await enqueue_job(db, "full_pipeline", site_id)
+    return TaskTriggerResponse(message="Full pipeline started (crawl + analysis)", site_id=site_id)
 
 
 @router.get("/{site_id}/crawl/status", response_model=CrawlStatusResponse)
@@ -232,26 +288,30 @@ async def _run_analytics_sync(site_id: UUID, site: dict) -> None:
             logger.warning("No Google refresh token for site %s", site_id)
             return
 
-        async with pool.acquire() as db:
-            if site.get("ga4_property_id"):
-                ga4 = GA4Connector(
-                    property_id=site["ga4_property_id"],
-                    refresh_token=refresh_token,
-                )
+        # Acquire connection only for DB writes, not during API fetches
+        # to avoid holding a pool connection for minutes during external calls
+        if site.get("ga4_property_id"):
+            ga4 = GA4Connector(
+                property_id=site["ga4_property_id"],
+                refresh_token=refresh_token,
+            )
+            async with pool.acquire() as db:
                 await ga4.sync_metrics(db, site_id)
-                logger.info("GA4 sync completed for site %s", site_id)
+            logger.info("GA4 sync completed for site %s", site_id)
 
-            if site.get("gsc_site_url"):
-                gsc = GSCConnector(
-                    site_url=site["gsc_site_url"],
-                    refresh_token=refresh_token,
-                )
+        if site.get("gsc_site_url"):
+            gsc = GSCConnector(
+                site_url=site["gsc_site_url"],
+                refresh_token=refresh_token,
+            )
+            async with pool.acquire() as db:
                 await gsc.sync_metrics(db, site_id)
-                logger.info("GSC sync completed for site %s", site_id)
+            logger.info("GSC sync completed for site %s", site_id)
 
+        async with pool.acquire() as db:
             await db.execute(
                 "UPDATE sites SET last_analytics_sync_at = $1 WHERE id = $2",
-                datetime.now(timezone.utc), site_id,
+                datetime.now(UTC), site_id,
             )
     except Exception as e:
         logger.error("Analytics sync failed for site %s: %s", site_id, e)
@@ -528,7 +588,7 @@ async def get_pipeline_status(
         post_count = crawl["posts_found"] or 0 if crawl else 0
         # Rough estimates: crawling ~2s/post, embedding ~1s/post, analysis ~0.5s/post
         total_estimate = max(120, post_count * 3.5)  # seconds
-        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+        elapsed = (datetime.now(UTC) - started_at).total_seconds()
         remaining = max(0, total_estimate - elapsed)
         estimated_time_remaining = round(remaining)
 
@@ -574,8 +634,10 @@ async def _pipeline_step(pool, site_id: UUID, step_name: str, status: str, fn) -
     try:
         async with pool.acquire() as db:
             await db.execute(
-                "UPDATE crawl_jobs SET status=$1, updated_at=NOW() WHERE site_id=$2",
-                status, site_id,
+                """UPDATE crawl_jobs SET status=$1, current_step=$2,
+                   steps_completed = COALESCE(steps_completed, 0) + 1,
+                   updated_at=NOW() WHERE site_id=$3""",
+                status, step_name, site_id,
             )
         async with pool.acquire() as db:
             await fn(db)
@@ -599,11 +661,34 @@ async def _pipeline_step(pool, site_id: UUID, step_name: str, status: str, fn) -
         return False
 
 
-async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
+async def _run_full_pipeline(
+    site_id: UUID,
+    site: dict,
+    *,
+    skip_chunk_confirmation: bool = False,
+) -> None:
     """Background: crawl → embed → cluster → health → problems → recs.
 
     Each step is independently error-handled. A failing step logs the error
     and continues to the next step rather than aborting the whole pipeline.
+
+    Pipeline steps (see PIPELINE.md for full reference):
+      Step 1     : Crawl + Normalize
+      Steps 2-5  : Enrichment (Embed, Readability, PageRank, Intent)
+      Step 6     : Clustering (UMAP + HDBSCAN + sub-cluster)
+      Step 6b    : TF-IDF cluster labels
+      Step 6c    : AI Citability
+      Step 7     : Health Scoring
+      Step 8     : Cannibalization
+      Step 8b    : Chunk confirmation (optional, $0.50)
+      Step 8c    : Role patch (post-cannibalization)
+      Step 9     : Problem Detection
+      Step 10    : Recommendations
+      Step 10b   : Claude enrichment (optional)
+
+    Args:
+        skip_chunk_confirmation: Skip the $0.50 chunk-level cannibalization step.
+            Pass True for cold outreach / prospect pipelines to control cost.
     """
     pool = await get_pool()
 
@@ -647,20 +732,86 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
         await _pipeline_step(pool, site_id, "intent", "analyzing",
                              lambda db: classify_site_fast(db, site_id))
 
-        # Step 6: clustering + Claude labels
+        # Step 6: clustering (TF-IDF labels — no Claude calls)
         from app.services.clustering import TopicClusterer
-        await _pipeline_step(pool, site_id, "clustering", "clustering",
-                             lambda db: TopicClusterer().cluster_site(db, site_id, skip_labeling=False))
+
+        async def _clustering_with_progress(db: "asyncpg.Connection") -> int:
+            async def _on_clustering_progress(msg: str) -> None:
+                """Best-effort progress update using a separate pool connection."""
+                try:
+                    async with pool.acquire() as progress_db:
+                        await progress_db.execute(
+                            "UPDATE crawl_jobs SET current_step=$1, updated_at=NOW() WHERE site_id=$2",
+                            f"clustering: {msg}", site_id,
+                        )
+                except Exception:
+                    pass
+
+            def _fire_progress(msg: str) -> None:
+                asyncio.create_task(_on_clustering_progress(msg))
+
+            return await TopicClusterer().cluster_site(
+                db, site_id, skip_labeling=True, on_progress=_fire_progress,
+            )
+
+        await _pipeline_step(pool, site_id, "clustering", "clustering", _clustering_with_progress)
+
+        # Step 6b: fast TF-IDF cluster labels
+        from app.services.fast_cluster_labels import label_clusters_fast
+        await _pipeline_step(pool, site_id, "cluster_labels", "clustering",
+                             lambda db: label_clusters_fast(db, site_id))
+
+        # Step 6c: AI citability scoring — runs ONLY here (not in enrichment).
+        # Must run before health scoring so the 15% ai_readiness weight is populated.
+        from app.services.ai_citability import AICitabilityService
+        await _pipeline_step(pool, site_id, "ai_citability", "analyzing",
+                             lambda db: AICitabilityService().score_site(db, site_id))
 
         # Step 7: health scoring
         from app.services.health_scoring import HealthScorer
-        await _pipeline_step(pool, site_id, "health_scoring", "analyzing",
-                             lambda db: HealthScorer().score_site(db, site_id))
+
+        async def _health_with_progress(db: "asyncpg.Connection") -> int:
+            async def _on_health_progress(msg: str) -> None:
+                try:
+                    async with pool.acquire() as progress_db:
+                        await progress_db.execute(
+                            "UPDATE crawl_jobs SET current_step=$1, updated_at=NOW() WHERE site_id=$2",
+                            f"health_scoring: {msg}", site_id,
+                        )
+                except Exception:
+                    pass
+
+            def _fire_health_progress(msg: str) -> None:
+                asyncio.create_task(_on_health_progress(msg))
+
+            return await HealthScorer().score_site(db, site_id, on_progress=_fire_health_progress)
+
+        await _pipeline_step(pool, site_id, "health_scoring", "analyzing", _health_with_progress)
 
         # Step 8: cannibalization
         from app.services.cannibalization import CannibalizationDetector
         await _pipeline_step(pool, site_id, "cannibalization", "analyzing",
                              lambda db: CannibalizationDetector().detect_for_site(db, site_id))
+
+        # Step 8b: chunk-level cannibalization confirmation (non-fatal, OpenAI ~$0.50)
+        # Skipped for cold outreach / prospect pipelines to control cost.
+        if not skip_chunk_confirmation:
+            try:
+                from app.services.chunk_cannibalization import confirm_chunk_overlap
+                async with pool.acquire() as db:
+                    result = await confirm_chunk_overlap(db, site_id, pair_limit=50)
+                    logger.info("Chunk confirmation: %s", result)
+            except Exception as e:
+                logger.warning("Chunk confirmation failed (non-fatal): %s", e)
+        else:
+            logger.info("Skipping chunk confirmation for site %s (skip_chunk_confirmation=True)", site_id)
+
+        # Step 8c: post-cannibalization role patch
+        # Fixes competitor roles + ecosystem states that depend on cannibalization data
+        # (health scoring at Step 7 ran before cannibalization at Step 8, so roles were incomplete)
+        from app.services.health_scoring import HealthScorer as _HS
+        await _pipeline_step(pool, site_id, "role_patch", "analyzing",
+                             lambda db: _HS().patch_roles_after_cannibalization(db, site_id))
 
         # Step 9: problem detection
         from app.services.problem_detection import ProblemDetector
@@ -672,10 +823,14 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
         await _pipeline_step(pool, site_id, "recommendations", "analyzing",
                              lambda db: generate_fast_recommendations(db, site_id))
 
-        # Step 10b: AI citability scoring
-        from app.services.ai_citability import AICitabilityService
-        await _pipeline_step(pool, site_id, "ai_citability", "analyzing",
-                             lambda db: AICitabilityService().score_site(db, site_id))
+        # Step 10b: auto-enrich top 10 recommendations with Claude (non-fatal)
+        # Pass pool directly for concurrent enrichment (~3x faster than sequential)
+        try:
+            from app.services.on_demand_enrichment import auto_enrich_top_recs
+            enriched = await auto_enrich_top_recs(pool, site_id, limit=10)
+            logger.info("Auto-enriched %d recs for site %s", enriched, site_id)
+        except Exception as e:
+            logger.warning("Auto-enrichment failed (non-fatal): %s", e)
 
         # Mark complete
         async with pool.acquire() as db:
@@ -702,9 +857,26 @@ async def _run_full_pipeline(site_id: UUID, site: dict) -> None:
 class PipelineOptions(BaseModel):
     url_patterns: list[str] | None = None  # e.g. ["/blog/", "/resources/"]
 
+    def model_post_init(self, __context) -> None:
+        """Validate url_patterns to prevent accidental over-matching."""
+        if self.url_patterns:
+            cleaned = []
+            for pat in self.url_patterns:
+                pat = pat.strip()
+                if not pat:
+                    continue
+                # Require patterns to start with / to match path segments, not substrings.
+                # "blog" would match /about-blogging; "/blog/" is correct.
+                if not pat.startswith("/"):
+                    pat = "/" + pat
+                cleaned.append(pat)
+            self.url_patterns = cleaned or None
+
 
 @router.post("/{site_id}/pipeline", response_model=TaskTriggerResponse)
+@_limiter.limit("3/minute")
 async def trigger_full_pipeline(
+    request: Request,  # Required by slowapi
     site_id: UUID,
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
@@ -723,8 +895,13 @@ async def trigger_full_pipeline(
         )
         site = dict(site)
         site["url_patterns"] = options.url_patterns
-    background_tasks.add_task(_run_full_pipeline, site_id, site)
-    return TaskTriggerResponse(message="Full pipeline started — crawl → analyze → cluster → recommendations", site_id=site_id)
+    from app.services.job_queue import enqueue_job
+    payload = {"url_patterns": options.url_patterns} if options and options.url_patterns else {}
+    await enqueue_job(db, "full_pipeline", site_id, payload)
+    return TaskTriggerResponse(
+        message="Full pipeline started — crawl → analyze → cluster → recommendations",
+        site_id=site_id,
+    )
 
 
 # ── Incremental refresh (re-crawl new/changed posts only, then re-analyze) ────
@@ -760,6 +937,11 @@ async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
         await _pipeline_step(pool, site_id, "pagerank", "analyzing",
                              lambda db: InternalPageRank().compute_for_site(db, site_id))
 
+        # AI citability before health scoring so composite includes AI readiness
+        from app.services.ai_citability import AICitabilityService
+        await _pipeline_step(pool, site_id, "ai_citability", "analyzing",
+                             lambda db: AICitabilityService().score_site(db, site_id))
+
         from app.services.health_scoring import HealthScorer
         await _pipeline_step(pool, site_id, "health_scoring", "analyzing",
                              lambda db: HealthScorer().score_site(db, site_id))
@@ -775,6 +957,14 @@ async def _run_incremental_pipeline(site_id: UUID, site: dict) -> None:
         from app.services.fast_recommendations import generate_fast_recommendations
         await _pipeline_step(pool, site_id, "recommendations", "analyzing",
                              lambda db: generate_fast_recommendations(db, site_id))
+
+        # Auto-enrich top recs with Claude (non-fatal)
+        try:
+            from app.services.on_demand_enrichment import auto_enrich_top_recs
+            enriched = await auto_enrich_top_recs(pool, site_id, limit=10)
+            logger.info("Auto-enriched %d recs for site %s", enriched, site_id)
+        except Exception as e:
+            logger.warning("Auto-enrichment failed (non-fatal): %s", e)
 
         async with pool.acquire() as db:
             await db.execute(
@@ -805,8 +995,9 @@ async def trigger_incremental_refresh(
 ):
     """Incremental refresh: re-crawl changed posts only, embed new ones, re-analyze.
     Much faster than full pipeline on re-runs — only processes what changed."""
-    site = await _get_site_for_ingestion(site_id, user_id, db)
-    background_tasks.add_task(_run_incremental_pipeline, site_id, site)
+    await _get_site_for_ingestion(site_id, user_id, db)
+    from app.services.job_queue import enqueue_job
+    await enqueue_job(db, "incremental_pipeline", site_id)
     return TaskTriggerResponse(
         message="Incremental refresh started — only new/changed posts will be re-processed",
         site_id=site_id,

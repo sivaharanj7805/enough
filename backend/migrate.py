@@ -65,7 +65,7 @@ def discover_migrations() -> list[tuple[str, Path]]:
 
 
 async def apply_migration(conn: asyncpg.Connection, version: str, path: Path) -> None:
-    sql = path.read_text()
+    sql = path.read_text(encoding="utf-8")
     logger.info("Applying migration %s ...", version)
     async with conn.transaction():
         await conn.execute(sql)
@@ -116,7 +116,7 @@ async def show_status() -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Enough DB migration runner")
+    parser = argparse.ArgumentParser(description="Tended DB migration runner")
     parser.add_argument("--status", action="store_true", help="Show migration status")
     args = parser.parse_args()
 

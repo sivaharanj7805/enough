@@ -30,6 +30,19 @@ export function PipelineProgress({ siteId }: { siteId: string }) {
     return null;
   }
 
+  // Show a calming overlay during re-clustering instead of blank dashboard data
+  if (status.current_step === 'rebuilding') {
+    return (
+      <div className="rounded-xl border border-[#f59e0b]/20 bg-[#f59e0b]/5 px-4 py-3 card-in">
+        <div className="flex items-center gap-2">
+          <Loader2 size={14} className="animate-spin text-[#f59e0b]" />
+          <span className="text-sm font-medium text-[#f59e0b]">Refreshing data</span>
+        </div>
+        <p className="text-xs text-[#94a3b8] mt-1">{copy.rebuilding}</p>
+      </div>
+    );
+  }
+
   if (status.status === 'failed') {
     // Map raw error text to user-friendly messages
     const rawError = (status.error ?? '').toLowerCase();
@@ -38,7 +51,7 @@ export function PipelineProgress({ siteId }: { siteId: string }) {
     if (rawError.includes('sitemap') || rawError.includes('404')) {
       friendlyError = "We couldn't find a sitemap at your domain. Try entering your sitemap URL directly in Settings > Integrations.";
     } else if (rawError.includes('robots.txt') || rawError.includes('blocked') || rawError.includes('403')) {
-      friendlyError = "Your site's robots.txt or server is blocking our crawler. Allow the Enough user-agent or whitelist our IP.";
+      friendlyError = "Your site's robots.txt or server is blocking our crawler. Allow the Tended user-agent or whitelist our IP.";
     } else if (rawError.includes('timeout') || rawError.includes('connection') || rawError.includes('ECONNREFUSED')) {
       friendlyError = "We couldn't connect to your site. Check if it's online and accessible, then try again.";
     } else if (rawError.includes('javascript') || rawError.includes('spa') || rawError.includes('no posts')) {

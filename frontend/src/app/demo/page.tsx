@@ -237,7 +237,7 @@ export default function DemoPage() {
       <header className="border-b border-[#1f2937] bg-[#111827] px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-[#22c55e]">Enough</h1>
+            <h1 className="text-xl font-bold text-[#22c55e]">Tended</h1>
             <p className="text-xs text-[#94a3b8]">Content Ecosystem Intelligence — close.com/blog</p>
           </div>
           <Badge color="#22c55e">Demo · 600 posts analyzed</Badge>

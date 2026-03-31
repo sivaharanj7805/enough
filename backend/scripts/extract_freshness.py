@@ -111,7 +111,7 @@ async def main():
     log.info("  Checking %d posts via HEAD request", len(posts_still_missing))
 
     header_found = 0
-    client = httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Enough/0.1"})
+    client = httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Tended/0.1"})
 
     for post in posts_still_missing:
         try:

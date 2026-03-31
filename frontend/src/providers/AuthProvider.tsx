@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isDemo) {
       const demoUser = {
         id: '11111111-1111-1111-1111-111111111111',
-        email: 'pipeline-test@enough.app',
+        email: 'pipeline-test@tended.app',
         user_metadata: { name: 'Demo User' },
       } as unknown as User;
       const demoSession = {
@@ -54,6 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       setLoading(false);
+    }).catch(() => {
+      setLoading(false);
     });
 
     const {
@@ -63,8 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(s?.user ?? null);
       // On SIGNED_IN via magic link, clear any old localStorage token
       if (s && typeof window !== 'undefined') {
-        localStorage.removeItem('enough_access_token');
-        localStorage.removeItem('enough_user_id');
+        localStorage.removeItem('tended_access_token');
+        localStorage.removeItem('tended_user_id');
       }
       setLoading(false);
     });
@@ -105,8 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     // Clear manual token if set
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('enough_access_token');
-      localStorage.removeItem('enough_user_id');
+      localStorage.removeItem('tended_access_token');
+      localStorage.removeItem('tended_user_id');
     }
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
@@ -115,8 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** Manual token injection — used when backend JWT is obtained without Supabase session */
   const login = useCallback((accessToken: string, _userId: string) => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('enough_access_token', accessToken);
-      localStorage.setItem('enough_user_id', _userId);
+      localStorage.setItem('tended_access_token', accessToken);
+      localStorage.setItem('tended_user_id', _userId);
     }
     // Trigger a reload so session-dependent components re-render
     window.location.href = '/dashboard';
@@ -125,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Derive token: prefer Supabase session, fall back to manually stored token
   const token =
     session?.access_token ??
-    (typeof window !== 'undefined' ? localStorage.getItem('enough_access_token') : null);
+    (typeof window !== 'undefined' ? localStorage.getItem('tended_access_token') : null);
 
   return (
     <AuthContext.Provider

@@ -9,17 +9,17 @@ wrapped in asyncio.to_thread() to avoid blocking the event loop.
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
-from uuid import UUID
+from datetime import date, datetime, timedelta
 from urllib.parse import urlparse
+from uuid import UUID
 
 import asyncpg
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import (
-    RunReportRequest,
     DateRange,
     Dimension,
     Metric,
+    RunReportRequest,
 )
 from google.oauth2.credentials import Credentials
 

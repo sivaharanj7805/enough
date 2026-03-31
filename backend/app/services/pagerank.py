@@ -63,6 +63,32 @@ class InternalPageRank:
             logger.info("No internal links for site %s — equal PageRank assigned", site_id)
             return len(all_post_ids)
 
+        # Quality gate: check link resolution rate.
+        # If only a small fraction of internal links resolved to known posts
+        # (e.g., capped crawl at 150 of 3000 URLs → 4% resolution), the link
+        # graph is too sparse for meaningful PageRank. Most nodes would be
+        # disconnected and get near-equal scores, making the metric useless.
+        # In this case, assign equal PageRank and log a warning.
+        MIN_RESOLUTION_RATE = 0.20  # 20% of links must resolve
+        total_links = await db.fetchval(
+            """SELECT COUNT(*) FROM internal_links il
+               JOIN posts p ON p.id = il.source_post_id
+               WHERE p.site_id = $1""",
+            site_id,
+        )
+        resolution_rate = len(links) / max(total_links, 1)
+        if resolution_rate < MIN_RESOLUTION_RATE:
+            equal_rank = 1.0 / len(all_post_ids)
+            await self._store_pageranks(db, {pid: equal_rank for pid in all_post_ids})
+            logger.warning(
+                "PageRank skipped for site %s: link resolution %.1f%% < %.0f%% threshold "
+                "(only %d of %d links resolved — likely a capped crawl). "
+                "Equal PageRank assigned.",
+                site_id, resolution_rate * 100, MIN_RESOLUTION_RATE * 100,
+                len(links), total_links,
+            )
+            return len(all_post_ids)
+
         # Build graph and compute PageRank in thread (CPU-bound)
         edges = [(r["source_post_id"], r["target_post_id"]) for r in links]
         pageranks = await asyncio.to_thread(
@@ -73,8 +99,8 @@ class InternalPageRank:
         await self._store_pageranks(db, pageranks)
 
         logger.info(
-            "Internal PageRank computed for %d posts in site %s",
-            len(pageranks), site_id,
+            "Internal PageRank computed for %d posts (%.0f%% link resolution) in site %s",
+            len(pageranks), resolution_rate * 100, site_id,
         )
         return len(pageranks)
 
@@ -105,16 +131,16 @@ class InternalPageRank:
     async def _store_pageranks(
         db: asyncpg.Connection, pageranks: dict,
     ) -> None:
-        """Store PageRank scores on post_health_scores."""
-        for post_id, rank in pageranks.items():
-            await db.execute(
-                """
-                UPDATE post_health_scores
-                SET internal_pagerank = $1
-                WHERE post_id = $2
-                """,
-                float(rank), post_id,
-            )
+        """Store PageRank scores on post_health_scores (batch update)."""
+        batch_data = [(float(rank), post_id) for post_id, rank in pageranks.items()]
+        await db.executemany(
+            """
+            UPDATE post_health_scores
+            SET internal_pagerank = $1
+            WHERE post_id = $2
+            """,
+            batch_data,
+        )
 
     @staticmethod
     async def detect_broken_links(

@@ -10,18 +10,18 @@ Schedule:
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import asyncpg
 
 from app.database import get_pool
-from app.services.sitemap import SitemapCrawler
-from app.services.wordpress import WordPressConnector
-from app.services.normalizer import save_normalized_posts, compute_content_hash
+from app.services.embeddings import EmbeddingPipeline
 from app.services.ga4 import GA4Connector
 from app.services.gsc import GSCConnector
-from app.services.embeddings import EmbeddingPipeline
+from app.services.normalizer import save_normalized_posts
+from app.services.sitemap import SitemapCrawler
+from app.services.wordpress import WordPressConnector
 from app.utils.encryption import decrypt_value
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ async def get_sites_needing_refresh(
         - 'crawl_weekly': content crawl older than 7 days
         - 'embed_monthly': embeddings older than 30 days with content changes
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if refresh_type == "analytics_daily":
         threshold = now - timedelta(hours=24)
@@ -128,7 +128,7 @@ async def refresh_analytics(site_id: UUID, site: dict) -> dict:
         # Update last sync timestamp
         await db.execute(
             "UPDATE sites SET last_analytics_sync_at = $1 WHERE id = $2",
-            datetime.now(timezone.utc), site_id,
+            datetime.now(UTC), site_id,
         )
 
     return result
@@ -147,7 +147,8 @@ async def recrawl_site(site_id: UUID, site: dict) -> dict:
             "SELECT id, url, content_hash FROM posts WHERE site_id = $1",
             site_id,
         )
-    existing_hashes = {row["url"]: row["content_hash"] for row in existing_rows}
+    from app.utils.url_normalize import normalize_url
+    existing_hashes = {normalize_url(row["url"]): row["content_hash"] for row in existing_rows}
     existing_urls = set(existing_hashes.keys())
 
     # Crawl fresh content
@@ -190,7 +191,7 @@ async def recrawl_site(site_id: UUID, site: dict) -> dict:
 
     # Save all crawled posts (upsert handles new + updated)
     async with pool.acquire() as db:
-        saved = await save_normalized_posts(db, site_id, normalized_posts)
+        await save_normalized_posts(db, site_id, normalized_posts)
 
         # Soft-mark deleted posts (don't hard delete — they have analytics history)
         if deleted_urls:
@@ -206,7 +207,7 @@ async def recrawl_site(site_id: UUID, site: dict) -> dict:
 
         await db.execute(
             "UPDATE sites SET last_crawl_at = $1 WHERE id = $2",
-            datetime.now(timezone.utc), site_id,
+            datetime.now(UTC), site_id,
         )
 
     result = {
@@ -261,21 +262,23 @@ async def run_daily_refresh() -> dict:
         stale_crawl = await db.execute(
             """UPDATE crawl_jobs SET status = 'failed', error = 'stale - server restart', updated_at = NOW()
                WHERE status IN ('crawling', 'embedding', 'analyzing', 'clustering')
-                 AND updated_at < NOW() - INTERVAL '2 hours'"""
+                 AND updated_at < NOW() - INTERVAL '6 hours'"""
         )
         stale_pipe = await db.execute(
             """UPDATE pipeline_jobs SET status = 'failed', error = 'stale - server restart'
-               WHERE status = 'running' AND started_at < NOW() - INTERVAL '2 hours'"""
+               WHERE status = 'running' AND started_at < NOW() - INTERVAL '6 hours'"""
         )
         stale_audit = await db.execute(
             """UPDATE pending_audit_pipelines SET status = 'failed', error = 'stale - server restart'
-               WHERE status IN ('pending', 'running') AND started_at < NOW() - INTERVAL '2 hours'"""
+               WHERE status IN ('pending', 'running') AND started_at < NOW() - INTERVAL '6 hours'"""
         )
         logger.info("Stale job cleanup: crawl=%s, pipeline=%s, audit=%s", stale_crawl, stale_pipe, stale_audit)
 
         # Clean up anonymous audit sites older than 30 days
+        # Preserve sites with active audit pipelines
         deleted_anon = await db.execute(
-            "DELETE FROM sites WHERE user_id IS NULL AND created_at < NOW() - INTERVAL '30 days'"
+            """DELETE FROM sites WHERE user_id IS NULL AND created_at < NOW() - INTERVAL '30 days'
+               AND id NOT IN (SELECT site_id FROM pending_audit_pipelines WHERE status NOT IN ('complete', 'failed'))"""
         )
         logger.info("Anonymous site cleanup: %s", deleted_anon)
 

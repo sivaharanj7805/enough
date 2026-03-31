@@ -1,7 +1,6 @@
 """Google Search Console data sync service."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import date, timedelta
 from uuid import UUID
@@ -172,7 +171,7 @@ class GSCSyncService:
             if not post_id:
                 continue
 
-            qcount = agg["query_count"]
+            agg["query_count"]
             total_imp = agg["impressions"]
             avg_ctr = agg["ctr_sum"] / total_imp if total_imp else 0.0
             avg_pos = agg["position_sum"] / total_imp if total_imp else 0.0

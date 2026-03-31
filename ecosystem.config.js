@@ -4,7 +4,7 @@ const ROOT = path.resolve(__dirname);
 module.exports = {
   apps: [
     {
-      name: 'enough-backend',
+      name: 'tended-backend',
       cwd: path.join(ROOT, 'backend'),
       script: 'python3',
       args: '-m uvicorn app.main:app --host 0.0.0.0 --port 8000',
@@ -18,7 +18,7 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
     {
-      name: 'enough-frontend',
+      name: 'tended-frontend',
       cwd: path.join(ROOT, 'frontend'),
       script: 'node_modules/.bin/next',
       args: 'start -p 3000',
@@ -31,7 +31,7 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
     {
-      name: 'enough-tunnel-be',
+      name: 'tended-tunnel-be',
       script: 'cloudflared',
       args: 'tunnel --url http://localhost:8000',
       interpreter: 'none',
@@ -41,7 +41,7 @@ module.exports = {
       out_file:   path.join(ROOT, 'logs', 'tunnel-be-out.log'),
     },
     {
-      name: 'enough-tunnel-fe',
+      name: 'tended-tunnel-fe',
       script: 'cloudflared',
       args: 'tunnel --url http://localhost:3000',
       interpreter: 'none',

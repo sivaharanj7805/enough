@@ -22,7 +22,13 @@ async def test_oracle_fallback_verdict_is_review_not_publish():
     oracle.rate_limiter = AsyncMock()
     oracle.rate_limiter.wait = AsyncMock()
 
+    mock_db = AsyncMock()
+    mock_db.fetchrow = AsyncMock(return_value=None)
+    mock_db.fetch = AsyncMock(return_value=[])
+
     result = await oracle._generate_verdict(
+        db=mock_db,
+        site_id=uuid4(),
         draft_text="A test draft about Python decorators",
         target_keyword="python decorators",
         similar_posts=[],
@@ -53,7 +59,13 @@ async def test_oracle_verdict_publish_on_no_similar():
     oracle.rate_limiter = AsyncMock()
     oracle.rate_limiter.wait = AsyncMock()
 
+    mock_db = AsyncMock()
+    mock_db.fetchrow = AsyncMock(return_value=None)
+    mock_db.fetch = AsyncMock(return_value=[])
+
     result = await oracle._generate_verdict(
+        db=mock_db,
+        site_id=uuid4(),
         draft_text="Totally unique content with no overlaps",
         target_keyword="unique topic xyz123",
         similar_posts=[],

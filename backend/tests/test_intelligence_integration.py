@@ -81,11 +81,8 @@ def app_with_mocks(mock_conn):
 @pytest.mark.asyncio
 async def test_trigger_clustering_success(app_with_mocks):
     app, conn = app_with_mocks
-    conn._fetchrow_returns = [_site_exists()]
-
-    # Clear the running pipelines set
-    from app.routers.intelligence import _running_pipelines
-    _running_pipelines.discard(TEST_SITE_ID)
+    # First fetchrow: site verification, second: pipeline lock check (None = no running pipeline)
+    conn._fetchrow_returns = [_site_exists(), None]
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -96,28 +93,22 @@ async def test_trigger_clustering_success(app_with_mocks):
 
     assert resp.status_code == 200
     assert "Clustering started" in resp.json()["message"]
-    _running_pipelines.discard(TEST_SITE_ID)
 
 
 @pytest.mark.asyncio
 async def test_trigger_clustering_already_running(app_with_mocks):
     app, conn = app_with_mocks
-    conn._fetchrow_returns = [_site_exists()]
+    # First fetchrow: site verification, second: pipeline lock check (row = already running)
+    conn._fetchrow_returns = [_site_exists(), make_record(id=TEST_SITE_ID)]
 
-    from app.routers.intelligence import _running_pipelines
-    _running_pipelines.add(TEST_SITE_ID)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.post(
+            f"/v1/sites/{TEST_SITE_ID}/intelligence/cluster",
+            headers=AUTH_HEADER,
+        )
 
-    try:
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post(
-                f"/v1/sites/{TEST_SITE_ID}/intelligence/cluster",
-                headers=AUTH_HEADER,
-            )
-
-        assert resp.status_code == 429
-    finally:
-        _running_pipelines.discard(TEST_SITE_ID)
+    assert resp.status_code == 429
 
 
 @pytest.mark.asyncio

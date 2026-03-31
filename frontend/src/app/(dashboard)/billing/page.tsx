@@ -39,6 +39,8 @@ interface Invoice {
 interface UsageResponse {
   posts_analyzed: number;
   posts_limit: number;
+  sites_count?: number;
+  sites_limit?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -49,8 +51,8 @@ const PLANS = [
   {
     tier: 'growth',
     name: 'Growth',
-    monthlyPrice: 99,
-    annualPrice: 990,
+    monthlyPrice: 149,
+    annualPrice: 1490,
     features: [
       '1 site',
       'Up to 500 posts',
@@ -65,11 +67,11 @@ const PLANS = [
   {
     tier: 'scale',
     name: 'Scale',
-    monthlyPrice: 249,
-    annualPrice: 2490,
+    monthlyPrice: 349,
+    annualPrice: 3490,
     features: [
-      'Up to 10 sites',
-      'Up to 5,000 posts',
+      'Up to 3 sites',
+      'Up to 2,000 posts',
       'Everything in Growth',
       'Unlimited consolidations',
       'Impact tracking',
@@ -94,42 +96,11 @@ const CANCEL_REASONS = [
 
 type CancelReason = (typeof CANCEL_REASONS)[number]['key'];
 
-function getRetentionOffer(reason: CancelReason) {
-  switch (reason) {
-    case 'too_expensive':
-      return {
-        title: 'How about a downgrade instead?',
-        description:
-          'Switch to the Growth plan at $99/mo and keep your core features. You can always upgrade again later.',
-        cta: 'Downgrade to Growth',
-        action: 'downgrade' as const,
-      };
-    case 'not_using':
-      return {
-        title: 'Pause your subscription instead?',
-        description:
-          'We can pause your subscription for up to 3 months. Your data stays safe and you can resume anytime.',
-        cta: 'Pause for 3 months',
-        action: 'pause' as const,
-      };
-    case 'missing_features':
-      return {
-        title: "We'd love your feedback",
-        description:
-          "We ship improvements every week. Tell us what's missing and we'll prioritize it. In the meantime, consider staying on your current plan.",
-        cta: 'Send feedback & stay',
-        action: 'feedback' as const,
-      };
-    default:
-      return null;
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /*  Cancel flow step type                                              */
 /* ------------------------------------------------------------------ */
 
-type CancelStep = 'reason' | 'offer' | 'confirm';
+type CancelStep = 'reason' | 'confirm';
 
 /* ------------------------------------------------------------------ */
 /*  Billing Page                                                       */
@@ -139,6 +110,7 @@ export default function BillingPage() {
   const { session } = useAuth();
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [annual, setAnnual] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
 
   // Cancel flow state
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -167,6 +139,7 @@ export default function BillingPage() {
   const handleUpgrade = async (priceId: string) => {
     if (!session?.access_token) return;
     setUpgrading(priceId);
+    setBillingError(null);
     try {
       const res = await apiFetch<CheckoutResponse>('/billing/checkout', {
         method: 'POST',
@@ -180,6 +153,7 @@ export default function BillingPage() {
       window.location.href = res.checkout_url;
     } catch (err) {
       console.error('Checkout failed:', err);
+      setBillingError('Checkout failed. Please try again.');
     } finally {
       setUpgrading(null);
     }
@@ -187,6 +161,7 @@ export default function BillingPage() {
 
   const handleManage = async () => {
     if (!session?.access_token) return;
+    setBillingError(null);
     try {
       const res = await apiFetch<PortalResponse>('/billing/portal', {
         token: session.access_token,
@@ -194,6 +169,7 @@ export default function BillingPage() {
       window.location.href = res.portal_url;
     } catch (err) {
       console.error('Portal failed:', err);
+      setBillingError('Failed to open billing portal. Please try again.');
     }
   };
 
@@ -226,7 +202,6 @@ export default function BillingPage() {
   }
 
   const currentTier = subscription?.tier ?? 'free';
-  const retentionOffer = cancelReason ? getRetentionOffer(cancelReason) : null;
 
   /* ---- Render ---- */
 
@@ -239,6 +214,11 @@ export default function BillingPage() {
           Manage your subscription, usage, and invoices.
         </p>
       </div>
+
+      {/* Billing error */}
+      {billingError && (
+        <p className="text-sm text-red-400 mt-2">{billingError}</p>
+      )}
 
       {/* 30-day money-back guarantee */}
       <div className="flex items-center gap-3 rounded-xl bg-[#22c55e]/10 border border-[#22c55e]/20 px-5 py-4">
@@ -309,6 +289,22 @@ export default function BillingPage() {
             <p className="text-xs text-[#f97316] mt-2">
               You&apos;re approaching your plan limit. Consider upgrading for more capacity.
             </p>
+          )}
+          {/* Sites usage (GAP-14) */}
+          {usage.sites_count != null && usage.sites_limit != null && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-brand-text-muted">Sites</span>
+                <span className="text-sm text-brand-text-muted">
+                  {usage.sites_count} of {usage.sites_limit}
+                </span>
+              </div>
+              <ProgressBar
+                value={usage.sites_count}
+                max={usage.sites_limit}
+                color={usage.sites_count >= usage.sites_limit ? '#ef4444' : '#22c55e'}
+              />
+            </div>
           )}
         </Card>
       )}
@@ -520,8 +516,7 @@ export default function BillingPage() {
                   key={reason.key}
                   onClick={() => {
                     setCancelReason(reason.key);
-                    const offer = getRetentionOffer(reason.key);
-                    setCancelStep(offer ? 'offer' : 'confirm');
+                    setCancelStep('confirm');
                   }}
                   className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
                     cancelReason === reason.key
@@ -536,37 +531,7 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Step 2: Retention Offer (with cancel button always visible for CA compliance) */}
-        {cancelStep === 'offer' && retentionOffer && (
-          <div className="space-y-4">
-            <div className="rounded-xl bg-brand-accent/10 border border-brand-accent/20 p-4">
-              <h4 className="text-sm font-semibold text-brand-text mb-1">
-                {retentionOffer.title}
-              </h4>
-              <p className="text-sm text-brand-text-muted">
-                {retentionOffer.description}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Button
-                className="w-full"
-                onClick={() => setCancelModalOpen(false)}
-              >
-                {retentionOffer.cta}
-              </Button>
-              {/* California compliance: cancel button always visible alongside retention offer */}
-              <button
-                onClick={() => setCancelStep('confirm')}
-                className="w-full px-4 py-2.5 rounded-xl border border-red-500/50 text-red-400 text-sm font-medium
-                           hover:bg-red-500/10 transition-colors"
-              >
-                No thanks, continue cancelling
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Confirmation */}
+        {/* Step 2: Confirmation */}
         {cancelStep === 'confirm' && (
           <div className="space-y-4">
             <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4">

@@ -1,11 +1,12 @@
 """Application configuration loaded from environment variables."""
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Central configuration for the Enough backend."""
+    """Central configuration for the Tended backend."""
 
     # Supabase
     supabase_url: str = ""
@@ -34,7 +35,11 @@ class Settings(BaseSettings):
 
     # Email (Resend)
     resend_api_key: str = ""
-    email_from: str = "Enough <reports@enough.app>"
+    email_from: str = "Tended <reports@tended.app>"
+
+    # Prospect Discovery (optional)
+    google_cse_key: str = ""
+    google_cse_id: str = ""
 
     # App
     secret_key: str = "change-me-in-production"
@@ -116,6 +121,9 @@ def validate_production(settings: "Settings | None" = None) -> None:
 
     if not settings.stripe_price_growth:
         errors.append("STRIPE_PRICE_GROWTH is required — create a Stripe price and set the ID")
+
+    if not settings.stripe_price_scale:
+        errors.append("STRIPE_PRICE_SCALE is required — create a Stripe price and set the ID")
 
     if not settings.resend_api_key:
         errors.append("RESEND_API_KEY is required in production — weekly reports need email delivery")

@@ -5,10 +5,8 @@
 
 import * as d3 from 'd3';
 import { ECOSYSTEM_COLORS, type EcosystemState } from '@/lib/constants';
+import { drawVegetation, drawBloomling, drawRustmite, drawFogling, type VegetationConfig, type CreatureType } from './VegetationRenderer';
 import type { PostHealth } from '@/lib/types';
-
-type VegetationConfig = { color: string; size: number };
-type CreatureType = string;
 
 export interface RegionData {
   id: string;
@@ -21,33 +19,24 @@ export interface RegionData {
   radius: number;
 }
 
-/**
- * Determine which creature (if any) should appear next to this post.
- */
-function getCreatureType(post: PostHealth): CreatureType {
-  const role = post.role ?? 'dead_weight';
-  const score = post.composite_score ?? 0;
-  const trend = post.trend ?? 'stable';
-
-  // Bloomling: healthy pillar/supporter posts with traffic
-  if ((role === 'pillar' || role === 'supporter') && score >= 60 && (post.traffic_contribution ?? 0) > 0.001) {
-    return 'bloomling';
-  }
-  // Rustmite: declining posts
-  if (trend === 'declining' && score < 50) {
-    return 'rustmite';
-  }
-  // Fogling: low-health, low internal link score (orphan-ish, no PageRank)
-  if (score < 35 && (post.internal_link_score ?? 0) < 0.01) {
-    return 'fogling';
-  }
-  return null;
-}
-
 function scoreColor(score: number): string {
   if (score >= 70) return '#22c55e';
   if (score >= 40) return '#eab308';
   return '#ef4444';
+}
+
+/**
+ * Seeded PRNG — deterministic output from a string seed.
+ * Prevents ground textures from shifting on every re-render.
+ */
+function seededRandom(seed: string): () => number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(31, h) + seed.charCodeAt(i) | 0;
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+    h = Math.imul(h ^ (h >>> 13), 0x45d9f3b);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
 }
 
 /**
@@ -65,9 +54,11 @@ function isNewPost(_post: PostHealth): boolean {
 function drawGround(
   g: d3.Selection<SVGGElement, unknown, null, undefined>,
   state: EcosystemState,
-  radius: number
+  radius: number,
+  regionId: string
 ): void {
   const colors = ECOSYSTEM_COLORS[state];
+  const rand = seededRandom(regionId);
 
   // Main ground shape — organic blob using rounded rect
   g.append('ellipse')
@@ -85,20 +76,20 @@ function drawGround(
     // Murky patches
     for (let i = 0; i < 5; i++) {
       const angle = (i / 5) * Math.PI * 2;
-      const dist = radius * 0.4 * Math.random();
+      const dist = radius * 0.4 * rand();
       g.append('ellipse')
         .attr('cx', Math.cos(angle) * dist)
         .attr('cy', Math.sin(angle) * dist * 0.7)
-        .attr('rx', 10 + Math.random() * 15)
-        .attr('ry', 6 + Math.random() * 10)
+        .attr('rx', 10 + rand() * 15)
+        .attr('ry', 6 + rand() * 10)
         .attr('fill', '#1a2e0f')
-        .attr('opacity', 0.4 + Math.random() * 0.2);
+        .attr('opacity', 0.4 + rand() * 0.2);
     }
   } else if (state === 'desert') {
     // Crack lines
     for (let i = 0; i < 4; i++) {
-      const startAngle = Math.random() * Math.PI * 2;
-      const len = radius * 0.3 + Math.random() * radius * 0.3;
+      const startAngle = rand() * Math.PI * 2;
+      const len = radius * 0.3 + rand() * radius * 0.3;
       const x1 = Math.cos(startAngle) * radius * 0.1;
       const y1 = Math.sin(startAngle) * radius * 0.1 * 0.7;
       const x2 = Math.cos(startAngle) * len;
@@ -115,25 +106,25 @@ function drawGround(
   } else if (state === 'forest') {
     // Lush ground patches
     for (let i = 0; i < 4; i++) {
-      const angle = (i / 4) * Math.PI * 2 + Math.random() * 0.5;
-      const dist = radius * 0.3 * Math.random();
+      const angle = (i / 4) * Math.PI * 2 + rand() * 0.5;
+      const dist = radius * 0.3 * rand();
       g.append('ellipse')
         .attr('cx', Math.cos(angle) * dist)
         .attr('cy', Math.sin(angle) * dist * 0.7)
-        .attr('rx', 8 + Math.random() * 12)
-        .attr('ry', 5 + Math.random() * 8)
+        .attr('rx', 8 + rand() * 12)
+        .attr('ry', 5 + rand() * 8)
         .attr('fill', '#14532d')
         .attr('opacity', 0.3);
     }
   } else if (state === 'seedbed') {
     // Soft soil dots
     for (let i = 0; i < 8; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = Math.random() * radius * 0.6;
+      const angle = rand() * Math.PI * 2;
+      const dist = rand() * radius * 0.6;
       g.append('circle')
         .attr('cx', Math.cos(angle) * dist)
         .attr('cy', Math.sin(angle) * dist * 0.7)
-        .attr('r', 2 + Math.random() * 3)
+        .attr('r', 2 + rand() * 3)
         .attr('fill', '#166534')
         .attr('opacity', 0.25);
     }
@@ -141,7 +132,7 @@ function drawGround(
 }
 
 /**
- * Render a complete cluster region with ground, vegetation, creatures, and labels.
+ * Render a complete cluster region with ground, vegetation, and labels.
  */
 export function renderRegion(
   parent: d3.Selection<SVGGElement, unknown, null, undefined>,
@@ -156,7 +147,7 @@ export function renderRegion(
     .attr('class', 'region');
 
   // Ground plane
-  drawGround(g, region.ecosystemState, region.radius);
+  drawGround(g, region.ecosystemState, region.radius, region.id);
 
   // Click region to zoom
   g.append('ellipse')
@@ -194,7 +185,41 @@ export function renderRegion(
         onClickPost(post);
       });
 
-    // Vegetation and creature rendering removed (renderers deleted)
+    const config: VegetationConfig = {
+      role: post.role ?? 'dead_weight',
+      traffic: post.traffic_contribution ?? 0,
+      maxTraffic,
+      isNew: isNewPost(post),
+    };
+
+    drawVegetation(vegGroup, config);
+
+    // Determine creature type based on post role/trend
+    let creature: CreatureType = null;
+    if (post.role === 'pillar' && (post.trend === 'growing' || post.trend === 'stable')) {
+      creature = 'bloomling';
+    } else if (post.trend === 'declining') {
+      creature = 'rustmite';
+    } else if ((post.internal_link_score ?? 0) < 0.1 && post.role !== 'pillar') {
+      creature = 'fogling';
+    }
+
+    if (creature) {
+      const creatureScale = 0.5 + (config.traffic / config.maxTraffic) * 0.5;
+      const creatureG = vegGroup.append('g')
+        .attr('transform', `translate(${12 * creatureScale},${-4 * creatureScale})`)
+        .attr('class', creature)
+        .style('animation-delay', `${i * 0.3}s`)
+        .attr('cursor', 'pointer')
+        .on('click', (event: MouseEvent) => {
+          event.stopPropagation();
+          if (onClickCreature) onClickCreature(post, creature);
+        });
+
+      if (creature === 'bloomling') drawBloomling(creatureG, creatureScale);
+      else if (creature === 'rustmite') drawRustmite(creatureG, creatureScale);
+      else if (creature === 'fogling') drawFogling(creatureG, creatureScale);
+    }
   });
 
   // Label above region

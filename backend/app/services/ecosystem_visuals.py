@@ -54,11 +54,17 @@ class EcosystemVisualsService:
         """Compute all ecosystem visual metadata for a site."""
         # Fetch clusters
         clusters = await db.fetch(
-            "SELECT id, label, post_count, ecosystem_state FROM clusters WHERE site_id = $1",
+            """SELECT id, label, post_count, ecosystem_state FROM clusters
+               WHERE site_id = $1
+               AND id NOT IN (
+                   SELECT parent_cluster_id FROM clusters
+                   WHERE parent_cluster_id IS NOT NULL AND site_id = $1
+               )""",
             site_id,
         )
         if not clusters:
             return {
+                "clusters": [],
                 "rivers": [],
                 "grass": {},
                 "weather": {},
@@ -68,6 +74,9 @@ class EcosystemVisualsService:
             }
 
         cluster_list = [dict(c) for c in clusters]
+
+        # Compute cluster center positions from post 2D coordinates
+        cluster_positions = await self._compute_cluster_positions(db, cluster_list)
 
         rivers = await self._compute_rivers(db, site_id, cluster_list)
         grass = await self._compute_grass(db, cluster_list)
@@ -79,6 +88,7 @@ class EcosystemVisualsService:
         rivers = await self._compute_water_quality(db, rivers)
 
         return {
+            "clusters": cluster_positions,
             "rivers": rivers,
             "grass": grass,
             "weather": weather,
@@ -86,6 +96,38 @@ class EcosystemVisualsService:
             "water_quality_note": "Water quality based on engagement metrics of connected clusters",
             "terrain_features": terrain_features,
         }
+
+    async def _compute_cluster_positions(
+        self, db: asyncpg.Connection, clusters: list[dict],
+    ) -> list[dict]:
+        """Compute cluster center positions from post 2D coordinates.
+
+        Each cluster's center is the mean of its posts' x_pos/y_pos.
+        Returns list of cluster dicts with id, label, x, y, post_count, ecosystem_state.
+        """
+        result = []
+        for cluster in clusters:
+            cid = cluster["id"]
+            center = await db.fetchrow(
+                """
+                SELECT AVG(p.x_pos) AS cx, AVG(p.y_pos) AS cy
+                FROM post_clusters pc
+                JOIN posts p ON p.id = pc.post_id
+                WHERE pc.cluster_id = $1 AND p.x_pos IS NOT NULL
+                """,
+                cid,
+            )
+            cx = float(center["cx"]) if center and center["cx"] is not None else 0.0
+            cy = float(center["cy"]) if center and center["cy"] is not None else 0.0
+            result.append({
+                "id": str(cid),
+                "label": cluster.get("label", ""),
+                "x": cx,
+                "y": cy,
+                "post_count": cluster.get("post_count", 0),
+                "ecosystem_state": cluster.get("ecosystem_state", "seedbed"),
+            })
+        return result
 
     async def _compute_rivers(
         self, db: asyncpg.Connection, site_id: UUID, clusters: list[dict]
@@ -162,9 +204,9 @@ class EcosystemVisualsService:
             row = await db.fetchrow(
                 """
                 SELECT
-                    AVG(EXTRACT(EPOCH FROM (NOW() - COALESCE(p.updated_at, p.published_at)))) AS avg_age,
-                    MAX(EXTRACT(EPOCH FROM (NOW() - COALESCE(p.updated_at, p.published_at)))) AS oldest_age,
-                    MIN(EXTRACT(EPOCH FROM (NOW() - COALESCE(p.updated_at, p.published_at)))) AS newest_age
+                    AVG(EXTRACT(EPOCH FROM (NOW() - COALESCE(p.modified_date, p.publish_date)))) AS avg_age,
+                    MAX(EXTRACT(EPOCH FROM (NOW() - COALESCE(p.modified_date, p.publish_date)))) AS oldest_age,
+                    MIN(EXTRACT(EPOCH FROM (NOW() - COALESCE(p.modified_date, p.publish_date)))) AS newest_age
                 FROM posts p
                 JOIN post_clusters pc ON pc.post_id = p.id
                 WHERE pc.cluster_id = $1
@@ -460,7 +502,7 @@ class EcosystemVisualsService:
         """Get average engagement score for a cluster (0-1 scale)."""
         avg_health = await db.fetchval(
             """
-            SELECT AVG(phs.health_score) FROM post_health_scores phs
+            SELECT AVG(phs.composite_score) FROM post_health_scores phs
             JOIN post_clusters pc ON pc.post_id = phs.post_id
             WHERE pc.cluster_id = $1::uuid
             """,

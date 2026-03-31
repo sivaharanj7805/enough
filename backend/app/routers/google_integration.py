@@ -1,10 +1,15 @@
 """Google OAuth2 + GSC/GA4 sync endpoints."""
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
+import logging
 import os
 import secrets
 import time
+import urllib.parse
 from typing import Annotated
 from uuid import UUID
 
@@ -13,18 +18,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from app.dependencies import get_current_user_id
+from app.config import get_settings
 from app.database import get_db
+from app.dependencies import get_current_user_id
+from app.services.ga4_sync import GA4SyncService
 from app.services.google_auth import (
-    decrypt_token,
     encrypt_token,
     exchange_code,
     get_auth_url,
     get_valid_token,
 )
 from app.services.gsc_sync import GSCSyncService
-from app.services.ga4_sync import GA4SyncService
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["google"])
 
 
@@ -43,7 +49,18 @@ async def start_google_oauth(
     if not site:
         raise HTTPException(404, "Site not found")
 
-    state = f"{site_id}:{user_id}:{secrets.token_urlsafe(16)}"
+    settings = get_settings()
+    state_data = json.dumps(
+        {"site_id": str(site_id), "user_id": user_id, "nonce": secrets.token_urlsafe(16)},
+        separators=(",", ":"),
+    )
+    state_b64 = base64.urlsafe_b64encode(state_data.encode()).decode()
+    state_sig = hmac.new(
+        settings.secret_key.encode(),
+        state_b64.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:16]
+    state = f"{state_b64}.{state_sig}"
     auth_url = get_auth_url(state)
     return {"auth_url": auth_url}
 
@@ -56,34 +73,65 @@ async def google_oauth_callback(
     db: asyncpg.Connection = Depends(get_db),
 ):
     """Handle Google OAuth callback and store tokens."""
-    if error:
-        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-        return RedirectResponse(f"{frontend_url}/settings?google_error={error}")
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
-    parts = state.split(":")
-    if len(parts) < 2:
+    if error:
+        safe_error = urllib.parse.quote(str(error), safe="")
+        return RedirectResponse(f"{frontend_url}/settings?google_error={safe_error}")
+
+    # Verify HMAC-signed state to prevent forgery
+    settings = get_settings()
+    if "." not in state:
         raise HTTPException(400, "Invalid state")
 
-    site_id_str, user_id = parts[0], parts[1]
+    state_b64, state_sig = state.rsplit(".", 1)
+    expected_sig = hmac.new(
+        settings.secret_key.encode(),
+        state_b64.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:16]
+
+    if not hmac.compare_digest(state_sig, expected_sig):
+        logger.warning("OAuth state signature mismatch — rejecting callback (possible tampering)")
+        raise HTTPException(400, "Invalid OAuth state — please restart the authorization flow")
+
+    try:
+        state_data = json.loads(base64.urlsafe_b64decode(state_b64))
+    except (json.JSONDecodeError, Exception):
+        raise HTTPException(400, "Invalid state data")
+
+    site_id_str = state_data.get("site_id", "")
+    user_id = state_data.get("user_id", "")
+    if not site_id_str or not user_id:
+        raise HTTPException(400, "Invalid state: missing site_id or user_id")
+
     try:
         site_id = UUID(site_id_str)
     except ValueError:
         raise HTTPException(400, "Invalid site ID in state")
 
+    # Verify the user actually owns this site
+    site = await db.fetchrow(
+        "SELECT id FROM sites WHERE id = $1 AND user_id = $2",
+        site_id, user_id,
+    )
+    if not site:
+        raise HTTPException(403, "Site not found or not owned by user")
+
     try:
         token_data = await exchange_code(code)
-    except Exception as e:
-        raise HTTPException(500, f"Token exchange failed: {e}")
+    except Exception:
+        logger.exception("Google token exchange failed for site %s", site_id)
+        raise HTTPException(500, "Google token exchange failed. Please try again.")
 
     token_data["expires_at"] = time.time() + token_data.get("expires_in", 3600)
     encrypted = encrypt_token(token_data)
 
     await db.execute(
-        "UPDATE sites SET google_tokens = $1 WHERE id = $2",
-        encrypted, site_id,
+        "UPDATE sites SET google_tokens = $1 WHERE id = $2 AND user_id = $3",
+        encrypted, site_id, user_id,
     )
 
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     return RedirectResponse(f"{frontend_url}/settings?google_connected=1&site_id={site_id}")
 
 
