@@ -5,13 +5,13 @@
 | Directory | What's there |
 |-----------|-------------|
 | `app/services/` | 40+ modules — intelligence pipeline, AI calls, Stripe, email, PDF |
-| `app/routers/` | 12 FastAPI routers (auth, sites, ingestion, intelligence, actions, analytics…) |
+| `app/routers/` | 14 FastAPI routers (auth, sites, ingestion, intelligence, actions, analytics, retention, gamification…) |
 | `app/models/schemas.py` | All Pydantic request/response schemas |
 | `app/config.py` | BaseSettings from `.env`. `validate_production()` enforces secrets at startup |
 | `app/database.py` | asyncpg pool (min 2, max 10) + Supabase clients |
 | `app/middleware/` | Security headers, 10MB request limit, host validation |
 | `app/utils/` | DB helpers, encryption, error handling, rate limiter, token guard, URL normalize |
-| `migrations/` | 27 sequential .sql files tracked in `schema_migrations` |
+| `migrations/` | 42 sequential .sql files tracked in `schema_migrations` |
 | `tests/` | pytest + asyncio. Coverage target: 70% |
 
 ## Intelligence Pipeline (see `PIPELINE.md` for full reference)

@@ -19,6 +19,7 @@ import {
   Compass,
   ChevronLeft,
   Hammer,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -91,7 +92,7 @@ function isActive(pathname: string, href: string) {
 function DesktopSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
 
   const width = collapsed ? 'w-16' : 'w-60';
 
@@ -175,9 +176,19 @@ function DesktopSidebar() {
             {user?.email?.[0]?.toUpperCase() ?? '?'}
           </div>
           {!collapsed && (
-            <span className="truncate text-sm text-[#9CA3AF] max-w-[160px]">
-              {user?.email ?? ''}
-            </span>
+            <>
+              <span className="truncate text-sm text-[#9CA3AF] max-w-[120px] flex-1">
+                {user?.email ?? ''}
+              </span>
+              <button
+                onClick={() => void signOut()}
+                className="rounded-md p-1.5 text-[#9CA3AF] hover:bg-[#1E1F2B] hover:text-red-400 transition-colors duration-150"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <LogOut size={16} />
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -189,6 +200,7 @@ function DesktopSidebar() {
 
 function MobileBottomNav() {
   const pathname = usePathname();
+  const { signOut } = useAuth();
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const toggleSheet = useCallback(() => setSheetOpen((v) => !v), []);
@@ -282,6 +294,16 @@ function MobileBottomNav() {
                   </Link>
                 );
               })}
+
+              <div className="mt-2 pt-2 border-t border-[#23262F]">
+                <button
+                  onClick={() => { toggleSheet(); void signOut(); }}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-[#9CA3AF] hover:bg-[#1E1F2B] hover:text-red-400 transition-colors duration-150"
+                >
+                  <LogOut size={20} />
+                  <span>Sign out</span>
+                </button>
+              </div>
             </div>
           </div>
         </>

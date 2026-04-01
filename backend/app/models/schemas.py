@@ -537,6 +537,27 @@ class PortalResponse(BaseModel):
     portal_url: str
 
 
+class CancelRequest(BaseModel):
+    """Cancel subscription request with optional reason."""
+    reason: str | None = None
+
+
+class UsageResponse(BaseModel):
+    """Current usage statistics for the billing page."""
+    posts_analyzed: int
+    posts_limit: int
+    sites_count: int | None = None
+    sites_limit: int | None = None
+
+
+class InvoiceResponse(BaseModel):
+    """A single Stripe invoice."""
+    id: str
+    date: str
+    amount: int
+    status: str
+
+
 # ──────────────────────────── Phase 6: Living Ecosystem ────────────────────────────
 
 # ──────────────────────────── Phase 2: Problem Detection ────────────────────────────

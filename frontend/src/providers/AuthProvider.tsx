@@ -30,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [manualToken, setManualToken] = useState<string | null>(null);
 
   useEffect(() => {
     // Demo mode: bypass Supabase auth with pipeline test user
@@ -50,6 +51,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Hydrate manual token from localStorage (only on client, inside useEffect)
+    const storedToken = localStorage.getItem('tended_access_token');
+    if (storedToken) setManualToken(storedToken);
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
@@ -63,10 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
-      // On SIGNED_IN via magic link, clear any old localStorage token
-      if (s && typeof window !== 'undefined') {
+      // On SIGNED_IN via Supabase, clear any old manual localStorage token
+      if (s) {
         localStorage.removeItem('tended_access_token');
         localStorage.removeItem('tended_user_id');
+        setManualToken(null);
       }
       setLoading(false);
     });
@@ -89,9 +95,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
+    const callbackUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent('/onboarding')}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/onboarding` },
+      options: { redirectTo: callbackUrl },
     });
     if (error) throw error;
   }, []);
@@ -99,35 +106,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithMagicLink = useCallback(async (email: string) => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: true },
+      options: { shouldCreateUser: false },
     });
     if (error) throw error;
   }, []);
 
   const signOut = useCallback(async () => {
-    // Clear manual token if set
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('tended_access_token');
-      localStorage.removeItem('tended_user_id');
+    localStorage.removeItem('tended_access_token');
+    localStorage.removeItem('tended_user_id');
+    setManualToken(null);
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Best-effort — local state is already cleared
     }
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    // Hard redirect ensures cookies and cache are fully cleared
+    window.location.href = '/login';
   }, []);
 
   /** Manual token injection — used when backend JWT is obtained without Supabase session */
   const login = useCallback((accessToken: string, _userId: string) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('tended_access_token', accessToken);
-      localStorage.setItem('tended_user_id', _userId);
-    }
-    // Trigger a reload so session-dependent components re-render
+    localStorage.setItem('tended_access_token', accessToken);
+    localStorage.setItem('tended_user_id', _userId);
+    setManualToken(accessToken);
     window.location.href = '/dashboard';
   }, []);
 
-  // Derive token: prefer Supabase session, fall back to manually stored token
-  const token =
-    session?.access_token ??
-    (typeof window !== 'undefined' ? localStorage.getItem('tended_access_token') : null);
+  // Derive token: prefer Supabase session, fall back to manually stored token (hydration-safe)
+  const token = session?.access_token ?? manualToken;
 
   return (
     <AuthContext.Provider

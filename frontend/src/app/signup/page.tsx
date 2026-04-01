@@ -122,9 +122,10 @@ export default function SignupPage() {
   }, [token, router]);
 
   async function handleGoogleSignup() {
+    const callbackUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent('/onboarding')}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin + '/today' },
+      options: { redirectTo: callbackUrl },
     });
     if (error) {
       setGeneralError(error.message);

@@ -35,7 +35,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self'",
-              `connect-src 'self' https://*.supabase.co https://api.enough.app wss://*.supabase.co${isDev ? ' http://localhost:8000' : ''}`,
+              `connect-src 'self' https://*.supabase.co https://api.tended.app wss://*.supabase.co${isDev ? ' http://localhost:8000' : ''}`,
               "frame-ancestors 'none'",
             ].join('; '),
           },

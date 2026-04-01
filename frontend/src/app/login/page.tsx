@@ -66,15 +66,20 @@ export default function LoginPage() {
     !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder');
 
   const sessionExpired = searchParams.get('expired') === 'true';
+  const authCallbackError = searchParams.get('error') === 'auth';
+  // Validate redirectTo to prevent open redirect attacks — only allow relative paths
+  const rawRedirect = searchParams.get('redirectTo') || '/today';
+  const redirectTo = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/today';
 
   useEffect(() => {
-    if (token) router.replace('/today');
-  }, [token, router]);
+    if (token) router.replace(redirectTo);
+  }, [token, router, redirectTo]);
 
   async function handleGoogleLogin() {
+    const callbackUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin + '/today' },
+      options: { redirectTo: callbackUrl },
     });
     if (error) {
       setError(error.message);
@@ -100,7 +105,7 @@ export default function LoginPage() {
     setError('');
     try {
       await signIn(email, password);
-      router.replace('/today');
+      router.replace(redirectTo);
     } catch (err) {
       setStatus('error');
       setError(err instanceof Error ? err.message : 'Incorrect email or password');
@@ -144,6 +149,13 @@ export default function LoginPage() {
             <div className="mb-6 flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 rounded-xl px-4 py-3 border border-amber-400/20">
               <span className="flex-shrink-0 mt-0.5">⏱️</span>
               <span>Session expired. Please sign in again to continue.</span>
+            </div>
+          )}
+
+          {authCallbackError && (
+            <div className="mb-6 flex items-start gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3 border border-red-400/20">
+              <span className="flex-shrink-0 mt-0.5">⚠️</span>
+              <span>Sign-in failed — the link may have expired. Please try again.</span>
             </div>
           )}
 

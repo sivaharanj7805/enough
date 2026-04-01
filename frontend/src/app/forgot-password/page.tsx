@@ -1,12 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/lib/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
-  const { signInWithMagicLink } = useAuth();
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
   const [error, setError] = useState('');
@@ -16,8 +15,10 @@ export default function ForgotPasswordPage() {
     setStatus('loading');
     setError('');
     try {
-      // Supabase OTP / magic link doubles as password reset
-      await signInWithMagicLink(email);
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/login')}`,
+      });
+      if (resetError) throw resetError;
       setStatus('sent');
     } catch (err) {
       setStatus('error');

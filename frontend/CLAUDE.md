@@ -30,7 +30,6 @@
 
 ## Known Issues
 
-- ErrorBoundary exists but is NOT in the dashboard layout — needs wiring
 - Landscape renderers were deleted in c0a296b — restore pending
 
 ## Testing

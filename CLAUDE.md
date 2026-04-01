@@ -4,11 +4,10 @@ Solo-founder SaaS. Monorepo: Python/FastAPI backend + Next.js 14 frontend + Post
 
 ## Gotchas
 
-- **API URL bug:** `NEXT_PUBLIC_API_URL` must be `http://localhost:8000` (no `/v1`). `frontend/src/lib/api.ts` appends `/v1` automatically. The backend `.env.example` has this wrong; the frontend one is correct.
+- **API URL bug:** `NEXT_PUBLIC_API_URL` must be `http://localhost:8000` (no `/v1`). `frontend/src/lib/api.ts` appends `/v1` automatically. Both `.env.example` and `.env.local.example` now have the correct value.
 - **Repo is PUBLIC with MIT license.** Treat all secrets accordingly. Never commit `.env` files.
 - **20+ unreviewed PRs exist.** Do not create PRs unless explicitly asked. Do not auto-merge. Work on the current branch.
 - **Landing page pricing is stale** — shows $99/$249. Correct: $149/mo Growth, $349/mo Scale. Do not change pricing without explicit instruction.
-- **ErrorBoundary** exists but is NOT wired into the dashboard layout.
 
 ## Protected Files
 
@@ -40,10 +39,10 @@ Fix failures before committing. Do not skip.
 ```
 frontend/          → Next.js 14 (App Router, SWR, D3/Canvas, Tailwind, Supabase Auth)
 backend/           → FastAPI (asyncpg, OpenAI, Claude, Stripe, Google APIs)
-backend/migrations → 27 sequential .sql files, tracked in schema_migrations
+backend/migrations → 42 sequential .sql files, tracked in schema_migrations
 ```
 
-All API routes under `/v1`. Backend mounts 12 routers in `main.py`. For full details see `ARCHITECTURE.md`. For ecosystem visuals see `ECOSYSTEM-BIBLE.md`.
+All API routes under `/v1`. Backend mounts 14 routers in `main.py`. For full details see `ARCHITECTURE.md`. For ecosystem visuals see `ECOSYSTEM-BIBLE.md`.
 
 ### Intelligence Pipeline (canonical numbering — see `PIPELINE.md`)
 
@@ -78,8 +77,7 @@ Pipeline docs: `PIPELINE-STEP{N}-*.md`. Test results: `STEP{N}-TEST-RESULTS.md`.
 2. Repo is PUBLIC — must be made private
 3. Landing page shows stale pricing
 4. 20+ open PRs unreviewed
-5. ErrorBoundary not wired into dashboard layout
-6. End-to-end flow (signup → Stripe → pipeline → results) untested as integrated system
+5. End-to-end flow (signup → Stripe → pipeline → results) untested as integrated system
 
 ## On Compaction
 

@@ -1,3 +1,4 @@
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
@@ -30,9 +31,11 @@ const PROTECTED_PREFIXES = [
   '/settings',
   '/profile',
   '/wrapped',
+  '/patcher',
+  '/pioneer',
 ];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Demo mode bypasses auth — the AuthProvider handles fake sessions client-side
@@ -48,22 +51,50 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for Supabase auth cookie (set automatically by @supabase/ssr)
-  const supabaseSession =
-    request.cookies.get('sb-access-token') ||
-    request.cookies.get('supabase-auth-token') ||
-    request.cookies.get(`sb-${process.env.NEXT_PUBLIC_SUPABASE_URL?.split('//')[1]?.split('.')[0]}-auth-token`);
+  // Create a Supabase server client that reads/writes cookies on the request/response
+  let supabaseResponse = NextResponse.next({ request });
 
-  // Also allow if Authorization header present (API-style auth)
-  const authHeader = request.headers.get('authorization');
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet, headers) {
+          // Forward refreshed cookies to downstream server components
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          supabaseResponse = NextResponse.next({ request });
+          // Set cookies on the outgoing response so the browser stores them
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+          // Apply cache-control headers to prevent CDN caching of authenticated responses
+          if (headers) {
+            Object.entries(headers).forEach(([key, value]) =>
+              supabaseResponse.headers.set(key, String(value))
+            );
+          }
+        },
+      },
+    }
+  );
 
-  if (!supabaseSession && !authHeader) {
+  // Validate the session — this also refreshes expired tokens
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {
@@ -88,5 +119,7 @@ export const config = {
     '/settings/:path*',
     '/profile/:path*',
     '/wrapped/:path*',
+    '/patcher/:path*',
+    '/pioneer/:path*',
   ],
 };

@@ -104,7 +104,7 @@ async def send_magic_link(request: Request, body: LoginRequest):
         client = get_supabase_client()
         client.auth.sign_in_with_otp({
             "email": body.email,
-            "options": {"should_create_user": True},
+            "options": {"should_create_user": False},
         })
         return {"message": "Magic link sent — check your email"}
     except Exception as e:

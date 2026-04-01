@@ -39,7 +39,7 @@ export default function PrivacyPage() {
           },
           {
             title: '6. Third-Party Services',
-            body: 'We use: Supabase (database and authentication), Stripe (payment processing), Resend (transactional email), Sentry (error tracking), and OpenAI (content embeddings). Each has its own privacy policy. We share only the minimum data required for each service to function.',
+            body: 'We use: Supabase (database and authentication), Stripe (payment processing), Resend (transactional email), and OpenAI (content embeddings). Each has its own privacy policy. We share only the minimum data required for each service to function.',
           },
           {
             title: '7. Cookies',

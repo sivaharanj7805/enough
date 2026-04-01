@@ -10,18 +10,21 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.schemas import (
+    CancelRequest,
     CheckoutRequest,
     CheckoutResponse,
     ImpactCardResponse,
     ImpactDetailResponse,
     ImpactSnapshotResponse,
     ImpactTrackingResponse,
+    InvoiceResponse,
     PortalResponse,
     ReportHistoryEntry,
     StartTrackingRequest,
     StewardProfile,
     SubscriptionResponse,
     TaskTriggerResponse,
+    UsageResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -372,3 +375,121 @@ async def get_billing_portal(
         raise HTTPException(status_code=400, detail=str(e))
 
     return PortalResponse(portal_url=url)
+
+
+@router.post("/billing/cancel")
+async def cancel_subscription(
+    body: CancelRequest,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Cancel the user's Stripe subscription at period end."""
+    import asyncio
+    import stripe
+    from app.services.stripe_service import StripeService
+
+    service = StripeService()
+    sub = await service.get_subscription(db, user_id)
+
+    if not sub.get("stripe_subscription_id"):
+        raise HTTPException(status_code=400, detail="No active subscription to cancel")
+
+    try:
+        await asyncio.to_thread(
+            stripe.Subscription.modify,
+            sub["stripe_subscription_id"],
+            cancel_at_period_end=True,
+        )
+    except Exception as e:
+        logger.error("Stripe cancel failed for user %s: %s", user_id, e)
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+    if body.reason:
+        try:
+            await db.execute(
+                """INSERT INTO cancellation_reasons (user_id, reason, created_at)
+                   VALUES ($1, $2, NOW())""",
+                user_id, body.reason,
+            )
+        except Exception:
+            logger.warning("Could not store cancellation reason for user %s (table may not exist)", user_id)
+
+    return {"status": "cancelled_at_period_end"}
+
+
+@router.get("/billing/usage", response_model=UsageResponse)
+async def get_billing_usage(
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get current usage statistics for the billing page."""
+    from app.services.stripe_service import StripeService, TIER_LIMITS
+
+    service = StripeService()
+    sub = await service.get_subscription(db, user_id)
+    tier = sub["tier"]
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+
+    posts_count = await db.fetchval(
+        """SELECT COUNT(*) FROM posts p
+           JOIN sites s ON s.id = p.site_id
+           WHERE s.user_id = $1""",
+        user_id,
+    ) or 0
+
+    sites_count = await db.fetchval(
+        "SELECT COUNT(*) FROM sites WHERE user_id = $1",
+        user_id,
+    ) or 0
+
+    return UsageResponse(
+        posts_analyzed=posts_count,
+        posts_limit=limits["posts"],
+        sites_count=sites_count,
+        sites_limit=limits["sites"],
+    )
+
+
+@router.get("/billing/invoices", response_model=list[InvoiceResponse])
+async def get_billing_invoices(
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get invoice history from Stripe."""
+    import asyncio
+    import stripe
+    from app.config import get_settings
+    from app.services.stripe_service import StripeService
+
+    StripeService()  # Initializes stripe.api_key
+    settings = get_settings()
+
+    if not settings.stripe_secret_key:
+        return []
+
+    profile = await db.fetchrow(
+        "SELECT stripe_customer_id FROM profiles WHERE id = $1::uuid",
+        user_id,
+    )
+    if not profile or not profile["stripe_customer_id"]:
+        return []
+
+    try:
+        invoices = await asyncio.to_thread(
+            stripe.Invoice.list,
+            customer=profile["stripe_customer_id"],
+            limit=24,
+        )
+    except Exception as e:
+        logger.error("Failed to fetch invoices for user %s: %s", user_id, e)
+        return []
+
+    return [
+        InvoiceResponse(
+            id=inv["id"],
+            date=str(inv["created"]),
+            amount=inv["amount_paid"],
+            status=inv["status"] or "unknown",
+        )
+        for inv in invoices.get("data", [])
+    ]

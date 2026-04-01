@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
+import { apiUrl } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://tended.app';
 const ANON_TOKEN = '11111111-1111-1111-1111-111111111111';
 
@@ -16,7 +16,7 @@ interface AuditReportMeta {
 
 async function fetchAuditMeta(siteId: string): Promise<AuditReportMeta | null> {
   try {
-    const res = await fetch(`${API_BASE}/v1/sites/${siteId}/audit-report`, {
+    const res = await fetch(apiUrl(`/sites/${siteId}/audit-report`), {
       headers: { Authorization: `Bearer ${ANON_TOKEN}` },
       next: { revalidate: 3600 },
     });
@@ -61,7 +61,7 @@ export async function generateMetadata({
       type: 'article',
       images: [
         {
-          url: `${API_BASE}/v1/sites/${siteId}/og-image`,
+          url: apiUrl(`/sites/${siteId}/og-image`),
           width: 1200,
           height: 630,
           alt: title,
@@ -72,7 +72,7 @@ export async function generateMetadata({
       card: 'summary_large_image',
       title,
       description,
-      images: [`${API_BASE}/v1/sites/${siteId}/og-image`],
+      images: [apiUrl(`/sites/${siteId}/og-image`)],
     },
     alternates: {
       canonical: reportUrl,

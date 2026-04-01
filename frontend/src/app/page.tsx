@@ -393,14 +393,49 @@ function LandingPage() {
             ))}
           </div>
 
-          {/* Product screenshot */}
-          <div className="mt-16 rounded-xl border border-[#23262F] overflow-hidden shadow-2xl shadow-[#3B82F6]/5">
-            <img
-              src="/ecosystem-preview.png"
-              alt="Tended ecosystem landscape — interactive visualization of your content clusters, health scores, and cannibalization patterns"
-              className="w-full"
-              loading="lazy"
-            />
+          {/* Product screenshot placeholder */}
+          <div
+            className="mt-16 rounded-xl border border-[#23262F] overflow-hidden shadow-2xl shadow-[#3B82F6]/5 bg-[#0F1117] relative"
+            style={{ aspectRatio: '16/9' }}
+            role="img"
+            aria-label="Tended ecosystem landscape — interactive visualization of your content clusters, health scores, and cannibalization patterns"
+          >
+            <div className="absolute inset-0 flex items-center justify-center">
+              <svg viewBox="0 0 800 450" className="w-full h-full opacity-60" xmlns="http://www.w3.org/2000/svg">
+                {/* Cluster nodes */}
+                <circle cx="200" cy="180" r="45" fill="#3B82F6" opacity="0.15" stroke="#3B82F6" strokeWidth="1" />
+                <circle cx="200" cy="180" r="6" fill="#3B82F6" />
+                <circle cx="360" cy="120" r="60" fill="#22C55E" opacity="0.12" stroke="#22C55E" strokeWidth="1" />
+                <circle cx="360" cy="120" r="7" fill="#22C55E" />
+                <circle cx="550" cy="200" r="50" fill="#F97316" opacity="0.12" stroke="#F97316" strokeWidth="1" />
+                <circle cx="550" cy="200" r="6" fill="#F97316" />
+                <circle cx="450" cy="300" r="40" fill="#8B5CF6" opacity="0.12" stroke="#8B5CF6" strokeWidth="1" />
+                <circle cx="450" cy="300" r="5" fill="#8B5CF6" />
+                <circle cx="650" cy="340" r="35" fill="#3B82F6" opacity="0.12" stroke="#3B82F6" strokeWidth="1" />
+                <circle cx="650" cy="340" r="5" fill="#3B82F6" />
+                <circle cx="150" cy="330" r="30" fill="#EAB308" opacity="0.12" stroke="#EAB308" strokeWidth="1" />
+                <circle cx="150" cy="330" r="5" fill="#EAB308" />
+                {/* Connections */}
+                <line x1="200" y1="180" x2="360" y2="120" stroke="#3B82F6" strokeWidth="0.5" opacity="0.3" />
+                <line x1="360" y1="120" x2="550" y2="200" stroke="#22C55E" strokeWidth="0.5" opacity="0.3" />
+                <line x1="550" y1="200" x2="450" y2="300" stroke="#F97316" strokeWidth="0.5" opacity="0.3" />
+                <line x1="450" y1="300" x2="650" y2="340" stroke="#8B5CF6" strokeWidth="0.5" opacity="0.3" />
+                <line x1="200" y1="180" x2="150" y2="330" stroke="#EAB308" strokeWidth="0.5" opacity="0.3" />
+                <line x1="150" y1="330" x2="450" y2="300" stroke="#EAB308" strokeWidth="0.5" opacity="0.3" />
+                {/* Scatter dots */}
+                <circle cx="180" cy="160" r="2" fill="#3B82F6" opacity="0.5" />
+                <circle cx="220" cy="195" r="2" fill="#3B82F6" opacity="0.5" />
+                <circle cx="340" cy="105" r="2" fill="#22C55E" opacity="0.5" />
+                <circle cx="380" cy="140" r="2" fill="#22C55E" opacity="0.5" />
+                <circle cx="530" cy="185" r="2" fill="#F97316" opacity="0.5" />
+                <circle cx="570" cy="220" r="2" fill="#F97316" opacity="0.5" />
+                <circle cx="435" cy="285" r="2" fill="#8B5CF6" opacity="0.5" />
+                <circle cx="465" cy="315" r="2" fill="#8B5CF6" opacity="0.5" />
+              </svg>
+            </div>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-[#0F1117]/80 backdrop-blur px-4 py-2 rounded-lg border border-[#23262F]">
+              <span className="text-xs text-[#9BA1AD]">Live ecosystem visualization — available after analysis</span>
+            </div>
           </div>
           <p className="text-center mt-4 text-[13px] text-[#9BA1AD]">
             Your content ecosystem, visualized. Every cluster, every connection, every problem.
