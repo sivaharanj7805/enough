@@ -415,12 +415,12 @@ def _draw_footer(canvas, doc, dt_str, domain=""):
     else:
         footer_text = f"Tended \u00b7 {dt_str} \u00b7 Page {page_num}"
     canvas.drawCentredString(PAGE_W / 2, y_line - 12, footer_text)
-    # S-04: Make "Tended" clickable to tended.app on every page
+    # S-04: Make "Tended" clickable to usetended.io on every page
     from reportlab.pdfbase.pdfmetrics import stringWidth
     tended_w = stringWidth("Tended", "Helvetica", 9)
     tended_x = PAGE_W / 2 - stringWidth(footer_text, "Helvetica", 9) / 2
     canvas.linkURL(
-        "https://tended.app",
+        "https://usetended.io",
         (tended_x, y_line - 14, tended_x + tended_w, y_line - 3),
         relative=0,
     )
@@ -1001,9 +1001,9 @@ def generate_audit_pdf(report, *, brand_name=None, logo_url=None):
     )
     story.append(Paragraph(_safe(urg_text), urg_style))
 
-    # tended.app link — balanced spacing below urgency
+    # usetended.io link — balanced spacing below urgency
     story.append(Spacer(1, 0.8 * inch))
-    story.append(Paragraph('<a href="https://tended.app" color="#2563EB">tended.app</a>', s["c_url"]))
+    story.append(Paragraph('<a href="https://usetended.io" color="#2563EB">usetended.io</a>', s["c_url"]))
 
     story.append(PageBreak())
 
@@ -1912,8 +1912,8 @@ def generate_audit_pdf(report, *, brand_name=None, logo_url=None):
     # P6-05: Styled CTA button
     cta_btn_flowables = [
         Paragraph(
-            '<a href="https://tended.app" color="#FFFFFF">'
-            '<b>Start your free audit at tended.app \u2192</b></a>',
+            '<a href="https://usetended.io" color="#FFFFFF">'
+            '<b>Start your free audit at usetended.io \u2192</b></a>',
             ParagraphStyle("CTABtn", fontName="Helvetica-Bold", fontSize=13,
                            alignment=TA_CENTER, textColor=WHITE, leading=16),
         ),
@@ -1925,7 +1925,7 @@ def generate_audit_pdf(report, *, brand_name=None, logo_url=None):
     try:
         import qrcode as _qr
         _qobj = _qr.QRCode(version=1, box_size=2, border=1)
-        _qobj.add_data("https://tended.app")
+        _qobj.add_data("https://usetended.io")
         _qobj.make(fit=True)
         _qimg = _qobj.make_image(fill_color="black", back_color="white")
         _qbuf = io.BytesIO()

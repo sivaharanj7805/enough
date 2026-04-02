@@ -1,8 +1,4 @@
 {
-  "framework": "nextjs",
-  "buildCommand": "npm run build",
-  "installCommand": "npm ci",
-  "outputDirectory": ".next",
   "headers": [
     {
       "source": "/(.*)",
@@ -15,6 +11,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://api.tended.app/v1/$1" }
+    { "source": "/api/(.*)", "destination": "https://api.usetended.io/v1/$1" }
   ]
 }

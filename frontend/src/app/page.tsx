@@ -207,7 +207,7 @@ function LandingPage() {
                 Check your inbox in 20-25 minutes.
               </p>
               <p className="mt-2 text-[13px] text-[#9BA1AD]">
-                Add <span className="font-medium text-[#E8EAED]">hello@tended.app</span> to your contacts so the report doesn&apos;t go to spam.
+                Add <span className="font-medium text-[#E8EAED]">hello@usetended.io</span> to your contacts so the report doesn&apos;t go to spam.
               </p>
             </div>
           ) : (
@@ -609,7 +609,7 @@ function LandingPage() {
             <Link href="/privacy" className="hover:text-[#E8EAED] transition-colors">
               Privacy
             </Link>
-            <a href="mailto:hello@tended.app" className="hover:text-[#E8EAED] transition-colors">
+            <a href="mailto:hello@usetended.io" className="hover:text-[#E8EAED] transition-colors">
               Contact
             </a>
           </div>

@@ -50,7 +50,7 @@ async def unsubscribe(
   <div class="card">
     <div class="check">&#10003;</div>
     <h1>You've been unsubscribed</h1>
-    <p>You won't receive any more emails from Tended. If this was a mistake, just submit a new audit at <a href="https://tended.app" style="color:#16a34a;">tended.app</a>.</p>
+    <p>You won't receive any more emails from Tended. If this was a mistake, just submit a new audit at <a href="https://usetended.io" style="color:#16a34a;">usetended.io</a>.</p>
   </div>
 </body>
 </html>""", status_code=200)

@@ -28,7 +28,7 @@ export default function TermsPage() {
           { title: '9. Disclaimer of Warranties', body: 'The Service is provided "as is" without warranty of any kind. We do not guarantee that recommendations will improve search rankings, traffic, or any other metric. SEO results depend on many factors outside our control.' },
           { title: '10. Limitation of Liability', body: 'To the maximum extent permitted by law, Tended shall not be liable for any indirect, incidental, or consequential damages arising from your use of the Service.' },
           { title: '11. Changes to Terms', body: 'We may update these terms from time to time. Continued use of the Service after changes constitutes acceptance of the new terms. We will notify users of material changes via email.' },
-          { title: '12. Contact', body: 'For questions about these terms, contact us at legal@tended.app' },
+          { title: '12. Contact', body: 'For questions about these terms, contact us at legal@usetended.io' },
         ].map(({ title, body }) => (
           <div key={title} className="mb-8">
             <h2 className="text-lg font-semibold text-[#e2e8f0] mb-2">{title}</h2>

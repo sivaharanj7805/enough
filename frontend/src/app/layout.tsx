@@ -5,7 +5,7 @@ import { SiteProvider } from '@/providers/SiteProvider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { CookieConsent } from '@/components/ui/CookieConsent';
 
-const APP_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://tended.app';
+const APP_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://usetended.io';
 
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),

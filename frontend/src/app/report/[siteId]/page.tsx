@@ -401,7 +401,7 @@ export default function ReportPage({ params }: { params: Promise<{ siteId: strin
             <span className="text-[#22c55e] font-semibold">tended.</span>
             {' '}— Content Ecosystem Intelligence
           </p>
-          <p className="text-xs text-[#1e293b] mt-1">tended.app</p>
+          <p className="text-xs text-[#1e293b] mt-1">usetended.io</p>
         </div>
       </div>
     </div>

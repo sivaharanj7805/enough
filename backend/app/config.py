@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Email (Resend)
     resend_api_key: str = ""
-    email_from: str = "Tended <reports@tended.app>"
+    email_from: str = "Tended <reports@usetended.io>"
 
     # Prospect Discovery (optional)
     google_cse_key: str = ""

@@ -86,7 +86,7 @@ jobs:
 
       - name: Build
         env:
-          NEXT_PUBLIC_API_URL: https://api.tended.app
+          NEXT_PUBLIC_API_URL: https://api.usetended.io
           NEXT_PUBLIC_SUPABASE_URL: https://test.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: test-key
         run: npm run build

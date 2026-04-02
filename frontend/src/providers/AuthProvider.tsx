@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isDemo) {
       const demoUser = {
         id: '11111111-1111-1111-1111-111111111111',
-        email: 'pipeline-test@tended.app',
+        email: 'pipeline-test@usetended.io',
         user_metadata: { name: 'Demo User' },
       } as unknown as User;
       const demoSession = {

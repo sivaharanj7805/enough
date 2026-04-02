@@ -55,8 +55,8 @@ export default function UnsubscribePage() {
             <p className="text-[#64748b] text-sm leading-relaxed">
               You won&apos;t receive any more emails from Tended. If this was a mistake,
               just submit a new audit at{' '}
-              <a href="https://tended.app" className="text-green-600 underline">
-                tended.app
+              <a href="https://usetended.io" className="text-green-600 underline">
+                usetended.io
               </a>.
             </p>
           </>

@@ -295,7 +295,7 @@ class DripSequenceService:
 
     def _base_wrapper(self, inner_html: str, email: str = "") -> str:
         """Wrap email content in Tended-branded template (white, professional)."""
-        unsubscribe = f"https://tended.app/unsubscribe?email={email}" if email else "#"
+        unsubscribe = f"https://usetended.io/unsubscribe?email={email}" if email else "#"
         return f"""
 <div style="max-width:600px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;background:#ffffff;color:#1e293b;padding:32px;border-radius:12px;border:1px solid #e5e7eb;">
   <div style="text-align:center;margin-bottom:24px;">
@@ -304,7 +304,7 @@ class DripSequenceService:
   </div>
   {inner_html}
   <div style="text-align:center;margin-top:32px;">
-    <a href="https://tended.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Subscribe to Tended &rarr;</a>
+    <a href="https://usetended.io" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Subscribe to Tended &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:11px;">
     <a href="{unsubscribe}" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a>
@@ -382,6 +382,6 @@ class DripSequenceService:
   <p style="font-size:14px;color:#374151;">We have <strong>{rec_count} specific, actionable fixes</strong> ready for you. Each one tells you exactly what to do, which post to fix, and what impact to expect.</p>
   <p style="font-size:14px;color:#16a34a;font-weight:600;">$149/month. 30-day money-back guarantee. Cancel anytime.</p>
   <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">
-    <p style="font-size:12px;color:#64748b;">P.S. Know another content team or agency? Forward them this report &mdash; or have them request a free audit at <a href="https://tended.app" style="color:#16a34a;">tended.app</a>.</p>
+    <p style="font-size:12px;color:#64748b;">P.S. Know another content team or agency? Forward them this report &mdash; or have them request a free audit at <a href="https://usetended.io" style="color:#16a34a;">usetended.io</a>.</p>
   </div>"""
         return self._base_wrapper(inner, email=email)

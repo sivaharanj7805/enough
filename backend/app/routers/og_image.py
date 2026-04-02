@@ -138,7 +138,7 @@ async def og_image(
 
   <!-- Footer -->
   <text x="60" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#334155">
-    tended.app · AI-powered content ecosystem intelligence
+    usetended.io · AI-powered content ecosystem intelligence
   </text>
 </svg>"""
 

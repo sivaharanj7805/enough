@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { apiUrl } from '@/lib/api';
 
-const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://tended.app';
+const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://usetended.io';
 const ANON_TOKEN = '11111111-1111-1111-1111-111111111111';
 
 interface AuditReportMeta {

@@ -122,7 +122,7 @@ class WeeklyReportService:
     async def generate_report(self, db: asyncpg.Connection, site_id: UUID) -> dict:
         """Generate a weekly report with HTML and text bodies."""
         settings = get_settings()
-        frontend_url = settings.frontend_url or "https://tended.app"
+        frontend_url = settings.frontend_url or "https://usetended.io"
 
         current = await self._get_current_metrics(db, site_id)
         previous = await self._get_previous_snapshot(db, site_id)

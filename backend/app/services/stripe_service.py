@@ -403,7 +403,7 @@ class StripeService:
   </div>
   <h2 style="font-size:18px;">We're sorry to see you go</h2>
   <p>Your Tended subscription has been cancelled. Your data will remain available for 30 days.</p>
-  <p>If this was a mistake, you can resubscribe anytime at <a href="https://tended.app" style="color:#16a34a;">tended.app/pricing</a>.</p>
+  <p>If this was a mistake, you can resubscribe anytime at <a href="https://usetended.io" style="color:#16a34a;">usetended.io/pricing</a>.</p>
   <p style="color:#94a3b8;font-size:13px;">Your content ecosystem won't monitor itself — we'll be here when you're ready to come back.</p>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
     Tended — Publish Less. Grow More.
@@ -441,7 +441,7 @@ class StripeService:
   <p>We were unable to process your latest payment. Your account remains active until <strong>{deadline_str}</strong> (7-day grace period).</p>
   <p>Please update your payment method to avoid losing access:</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://tended.app/settings/billing" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Update Payment Method &rarr;</a>
+    <a href="https://usetended.io/settings/billing" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Update Payment Method &rarr;</a>
   </div>
   <p style="color:#94a3b8;font-size:13px;">If your payment isn't updated by {deadline_str}, your account will be downgraded.</p>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
@@ -567,10 +567,10 @@ class StripeService:
   <p>Since you cancelled, your blog's content ecosystem has been running unmonitored. New cannibalization pairs could be forming. Orphan posts are accumulating. Your competitors aren't waiting.</p>
   <p>Your health score, recommendations, and ecosystem map are still available — just pick up where you left off.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://tended.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+    <a href="https://usetended.io" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    <a href="https://tended.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    <a href="https://usetended.io/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
     &bull; Tended — Publish Less. Grow More.
   </div>
 </div>""",
@@ -609,10 +609,10 @@ class StripeService:
   </ul>
   <p>Come back and see what's changed.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://tended.app" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
+    <a href="https://usetended.io" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Resubscribe &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    <a href="https://tended.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    <a href="https://usetended.io/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
     &bull; Tended
   </div>
 </div>""",
@@ -648,10 +648,10 @@ class StripeService:
   </div>
   <p>This is our last email. If you'd like to come back, the offer is valid for 14 days.</p>
   <div style="text-align:center;margin:20px 0;">
-    <a href="https://tended.app?coupon=COMEBACK30" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Claim 30% Off &rarr;</a>
+    <a href="https://usetended.io?coupon=COMEBACK30" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Claim 30% Off &rarr;</a>
   </div>
   <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px;">
-    <a href="https://tended.app/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
+    <a href="https://usetended.io/unsubscribe" style="color:#94a3b8;">Unsubscribe</a>
     &bull; Tended
   </div>
 </div>""",

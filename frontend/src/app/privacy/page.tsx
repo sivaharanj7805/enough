@@ -35,7 +35,7 @@ export default function PrivacyPage() {
           },
           {
             title: '5. Data Retention',
-            body: 'Content analysis data is retained for the lifetime of your account. If you delete your account, all associated data is deleted within 30 days. You may request data deletion at any time by emailing privacy@tended.app.',
+            body: 'Content analysis data is retained for the lifetime of your account. If you delete your account, all associated data is deleted within 30 days. You may request data deletion at any time by emailing privacy@usetended.io.',
           },
           {
             title: '6. Third-Party Services',
@@ -47,7 +47,7 @@ export default function PrivacyPage() {
           },
           {
             title: '8. Your Rights (GDPR)',
-            body: 'If you are in the EU/EEA, you have the right to: access your personal data, correct inaccurate data, request deletion, object to processing, and data portability. Contact privacy@tended.app to exercise these rights.',
+            body: 'If you are in the EU/EEA, you have the right to: access your personal data, correct inaccurate data, request deletion, object to processing, and data portability. Contact privacy@usetended.io to exercise these rights.',
           },
           {
             title: '9. Changes',
@@ -55,7 +55,7 @@ export default function PrivacyPage() {
           },
           {
             title: '10. Contact',
-            body: 'Data controller: Tended. For privacy questions: privacy@tended.app',
+            body: 'Data controller: Tended. For privacy questions: privacy@usetended.io',
           },
         ].map(({ title, body }) => (
           <div key={title} className="mb-8">
