@@ -52,5 +52,8 @@ anthropic==0.42.0
 networkx
 rank_bm25
 
+# Monitoring
+sentry-sdk[fastapi]>=2.0
+
 # PDF generation
 reportlab>=4.0
