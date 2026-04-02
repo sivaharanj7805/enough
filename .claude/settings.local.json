@@ -178,7 +178,8 @@
       "Bash(POST=\"2d27345c-7f1f-40e1-937c-e4f599c48ba4\")",
       "Bash(ls /c/Users/Sivaharan/enough-1/frontend/src/app/\\\\\\(dashboard\\\\\\)/)",
       "Bash(cat '/c/Users/Sivaharan/enough-1/frontend/src/app/\\(dashboard\\)/layout.tsx')",
-      "Bash(openssl rand:*)"
+      "Bash(openssl rand:*)",
+      "Bash(sed 's/\\\\s.*$//')"
     ]
   }
 }
