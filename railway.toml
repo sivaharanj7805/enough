@@ -2,8 +2,7 @@
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Temporary minimal server to debug healthcheck
-startCommand = "python healthtest.py"
+startCommand = "python migrate.py || echo 'Migration failed, continuing...' ; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
