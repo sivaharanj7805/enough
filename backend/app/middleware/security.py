@@ -125,6 +125,10 @@ class HostValidationMiddleware(BaseHTTPMiddleware):
             # No restriction configured — allow all
             return await call_next(request)
 
+        # Skip host validation for health checks (Railway/Docker internal requests)
+        if request.url.path == "/health":
+            return await call_next(request)
+
         host = request.headers.get("host", "").split(":")[0].lower()
 
         if host not in self.allowed_hosts and host != "localhost" and host != "127.0.0.1":

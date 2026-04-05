@@ -61,15 +61,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Production validation failed: %s", e)
 
-    # Connect to database
+    # Connect to database with a timeout so the app starts even if DB is slow
     worker_task = None
     try:
-        pool = await get_pool()
+        pool = await asyncio.wait_for(get_pool(), timeout=15)
         logger.info("Database pool ready")
 
         # Start the job queue worker — processes crawl/pipeline jobs from Postgres.
         from app.services.job_queue import run_worker
         worker_task = asyncio.create_task(run_worker(pool))
+    except asyncio.TimeoutError:
+        logger.error("Database connection timed out after 15s — app will start without DB")
     except Exception as e:
         logger.error("Database connection failed: %s", e)
 
