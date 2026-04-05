@@ -17,6 +17,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
+COPY healthtest.py .
 
 RUN adduser --disabled-password --gecos "" appuser && \
     chown -R appuser:appuser /app
