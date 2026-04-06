@@ -23,6 +23,7 @@ const AUDIT_STAGES = [
 function AuditProgressStages({ domain }: { domain: string }) {
   const [activeStage, setActiveStage] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     const totalDuration = AUDIT_STAGES.reduce((s, st) => s + st.duration, 0);
@@ -38,7 +39,12 @@ function AuditProgressStages({ domain }: { domain: string }) {
         if (i === AUDIT_STAGES.length - 1) stage = i;
       }
       setActiveStage(stage);
-      setProgress(Math.min(Math.round((elapsed / totalDuration) * 100), 95));
+      const pct = Math.min(Math.round((elapsed / totalDuration) * 100), 100);
+      setProgress(pct);
+      if (pct >= 100) {
+        setDone(true);
+        clearInterval(timer);
+      }
     }, tickMs);
     return () => clearInterval(timer);
   }, []);
@@ -46,8 +52,14 @@ function AuditProgressStages({ domain }: { domain: string }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-4">
-        <Loader2 size={20} className="animate-spin text-brand-accent" />
-        <h1 className="text-lg font-bold text-brand-text">Analyzing {domain}</h1>
+        {done ? (
+          <CheckCircle size={20} className="text-green-500" />
+        ) : (
+          <Loader2 size={20} className="animate-spin text-brand-accent" />
+        )}
+        <h1 className="text-lg font-bold text-brand-text">
+          {done ? `Report sent for ${domain}` : `Analyzing ${domain}`}
+        </h1>
       </div>
       <div className="w-full h-2 rounded-full bg-brand-border overflow-hidden mb-5">
         <div className="h-full rounded-full bg-brand-accent transition-all duration-1000 ease-out" style={{ width: `${progress}%` }} />
@@ -55,22 +67,28 @@ function AuditProgressStages({ domain }: { domain: string }) {
       <div className="space-y-3">
         {AUDIT_STAGES.map((stage, i) => (
           <div key={stage.label} className="flex items-center gap-3">
-            {i < activeStage ? (
+            {i < activeStage || done ? (
               <Check size={16} className="text-green-500 flex-shrink-0" />
             ) : i === activeStage ? (
               <Loader2 size={16} className="animate-spin text-brand-accent flex-shrink-0" />
             ) : (
               <div className="w-4 h-4 rounded-full border border-brand-border flex-shrink-0" />
             )}
-            <span className={`text-sm ${i <= activeStage ? 'text-brand-text' : 'text-brand-text-muted'}`}>
+            <span className={`text-sm ${i <= activeStage || done ? 'text-brand-text' : 'text-brand-text-muted'}`}>
               {stage.label}
             </span>
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs text-brand-text-muted">
-        Your PDF report will arrive at your inbox in ~20 minutes.
-      </p>
+      {done ? (
+        <p className="mt-4 text-xs text-green-500">
+          Your report should be in your inbox. Check spam if you don&apos;t see it.
+        </p>
+      ) : (
+        <p className="mt-4 text-xs text-brand-text-muted">
+          Your PDF report will arrive at your inbox in ~20 minutes.
+        </p>
+      )}
     </div>
   );
 }
@@ -81,6 +99,11 @@ export default function FreeAuditPage() {
   const [url, setUrl] = useState('');
   const [email, setEmail] = useState(user?.email ?? '');
   const [errors, setErrors] = useState<{ url?: string; email?: string; form?: string }>({});
+
+  // Pre-fill email when auth loads asynchronously
+  useEffect(() => {
+    if (user?.email && !email) setEmail(user.email);
+  }, [user?.email]);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedDomain, setSubmittedDomain] = useState('');
@@ -120,10 +143,20 @@ export default function FreeAuditPage() {
         }
         throw new Error(data?.message || freeAudit.genericError);
       }
-      try {
-        setSubmittedDomain(new URL(finalUrl).hostname);
-      } catch {
-        setSubmittedDomain(finalUrl);
+      let domain = finalUrl;
+      try { domain = new URL(finalUrl).hostname; } catch { /* use finalUrl */ }
+      setSubmittedDomain(domain);
+      // 200 with PDF binary = existing site, trigger download
+      if (res.status === 200 && res.headers.get('content-type')?.includes('application/pdf')) {
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `tended-audit-${domain}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(blobUrl);
       }
       setSubmitted(true);
     } catch (err: unknown) {

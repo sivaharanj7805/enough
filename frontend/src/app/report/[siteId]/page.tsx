@@ -1,8 +1,8 @@
 'use client';
 
 import { use } from 'react';
-import { useAuth } from '@/lib/hooks/useAuth';
-import { useSWRFetch } from '@/lib/hooks/useSWRFetch';
+import useSWR from 'swr';
+import { apiUrl } from '@/lib/api';
 import { Loader2, ExternalLink, AlertTriangle, Trophy, Target, Users } from 'lucide-react';
 
 interface AuditCluster {
@@ -99,11 +99,16 @@ const ECOSYSTEM_EMOJI: Record<string, string> = {
 
 export default function ReportPage({ params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = use(params);
-  const auth = useAuth();
-  const token = auth.session?.access_token;
 
-  const { data: report, isLoading, error } = useSWRFetch<AuditReport>(
-    token && siteId ? `/sites/${siteId}/audit-report` : null
+  // Public endpoint — no auth token required
+  const { data: report, isLoading, error } = useSWR<AuditReport>(
+    siteId ? apiUrl(`/sites/${siteId}/audit-report`) : null,
+    async (url: string) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      return res.json();
+    },
+    { revalidateOnFocus: false }
   );
 
   if (isLoading) {

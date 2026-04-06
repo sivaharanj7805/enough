@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useSubscription } from '@/lib/hooks/useApi';
@@ -45,13 +45,17 @@ export default function DashboardLayout({
     }
   }, [subLoading, isAuthenticated, isPaid, isUnpaidPage, router]);
 
-  if (loading || subLoading) {
+  // Only show full-page spinner on initial load — not on SWR revalidation
+  // which would unmount children and destroy their state
+  const initialLoadDone = useRef(false);
+  if (!initialLoadDone.current && (loading || subLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner size="lg" />
       </div>
     );
   }
+  if (!loading && !subLoading) initialLoadDone.current = true;
 
   if (!isAuthenticated) return null;
 

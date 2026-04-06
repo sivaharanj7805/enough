@@ -24,8 +24,6 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Sparkles,
-  Wand2,
-  XCircle,
 } from 'lucide-react';
 
 type IssueTab = 'all' | 'cannibalization' | 'decay' | 'thin' | 'seo' | 'orphan' | 'readability' | 'ai_readiness';
@@ -177,23 +175,10 @@ export default function IssuesDashboardPage() {
         </p>
       </div>
 
-      {/* Bulk Actions Bar */}
+      {/* Issue count bar */}
       {filteredProblems.length > 0 && (
         <Card className="!p-3">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-xs font-medium text-brand-text-muted">Bulk Actions:</span>
-            <button
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors"
-            >
-              <Wand2 size={12} />
-              Generate recommendations for selected
-            </button>
-            <button
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-surface-hover text-brand-text-muted text-xs font-medium hover:text-brand-text transition-colors"
-            >
-              <XCircle size={12} />
-              Dismiss all low-severity
-            </button>
             <span className="ml-auto text-xs text-brand-text-muted">
               {filteredProblems.length} issues in view
             </span>

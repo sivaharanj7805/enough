@@ -453,7 +453,7 @@ export default function TodayPage() {
           ) : (
             <div className="space-y-2.5">
               {sortedClusters.map((cluster) => (
-                <Link key={cluster.id} href={`/clusters?id=${cluster.id}`} className="flex items-center gap-3 group" aria-label={`View cluster ${cluster.label ?? 'Unnamed'}`}>
+                <Link key={cluster.id} href={`/clusters/${cluster.id}`} className="flex items-center gap-3 group" aria-label={`View cluster ${cluster.label ?? 'Unnamed'}`}>
                   <span className="text-xs text-brand-text-muted truncate flex-1 group-hover:text-brand-text transition-colors">{cluster.label ?? 'Unnamed cluster'}</span>
                   <span className="text-xs font-semibold min-w-[32px] text-right" style={{ color: scoreColor(cluster.health_score) }}>{Math.round(cluster.health_score)}</span>
                   <div className="w-16 h-1.5 rounded-full bg-brand-border overflow-hidden flex-shrink-0">

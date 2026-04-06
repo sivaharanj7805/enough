@@ -105,6 +105,7 @@ const AUDIT_STAGES = [
 function AuditProgress({ domain }: { domain: string }) {
   const [activeStage, setActiveStage] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     // Simulate progress through stages over ~20 minutes
@@ -122,7 +123,12 @@ function AuditProgress({ domain }: { domain: string }) {
         if (i === AUDIT_STAGES.length - 1) stage = i;
       }
       setActiveStage(stage);
-      setProgress(Math.min(Math.round((elapsed / totalDuration) * 100), 95));
+      const pct = Math.min(Math.round((elapsed / totalDuration) * 100), 100);
+      setProgress(pct);
+      if (pct >= 100) {
+        setDone(true);
+        clearInterval(timer);
+      }
     }, tickMs);
 
     return () => clearInterval(timer);
@@ -131,8 +137,14 @@ function AuditProgress({ domain }: { domain: string }) {
   return (
     <div className="mt-10 rounded-xl border border-[#23262F] bg-[#13151B] p-6 text-left">
       <div className="flex items-center gap-3 mb-4">
-        <Loader2 size={20} className="animate-spin text-[#3B82F6]" />
-        <p className="text-lg font-semibold text-[#E8EAED]">Analyzing {domain}</p>
+        {done ? (
+          <Check size={20} className="text-green-400" />
+        ) : (
+          <Loader2 size={20} className="animate-spin text-[#3B82F6]" />
+        )}
+        <p className="text-lg font-semibold text-[#E8EAED]">
+          {done ? `Report sent for ${domain}` : `Analyzing ${domain}`}
+        </p>
       </div>
 
       {/* Progress bar */}
@@ -147,14 +159,14 @@ function AuditProgress({ domain }: { domain: string }) {
       <div className="space-y-3">
         {AUDIT_STAGES.map((stage, i) => (
           <div key={stage.label} className="flex items-center gap-3">
-            {i < activeStage ? (
+            {i < activeStage || done ? (
               <Check size={16} className="text-green-400 flex-shrink-0" />
             ) : i === activeStage ? (
               <Loader2 size={16} className="animate-spin text-[#3B82F6] flex-shrink-0" />
             ) : (
               <div className="w-4 h-4 rounded-full border border-[#23262F] flex-shrink-0" />
             )}
-            <span className={`text-sm ${i <= activeStage ? 'text-[#E8EAED]' : 'text-[#9BA1AD]/50'}`}>
+            <span className={`text-sm ${i <= activeStage || done ? 'text-[#E8EAED]' : 'text-[#9BA1AD]/50'}`}>
               {stage.label}
             </span>
           </div>
@@ -162,19 +174,27 @@ function AuditProgress({ domain }: { domain: string }) {
       </div>
 
       <div className="mt-5 pt-4 border-t border-[#23262F]">
-        <p className="text-[13px] text-[#9BA1AD]">
-          Your PDF report will arrive at your inbox in ~20 minutes.
-        </p>
-        <p className="mt-1 text-[13px] text-[#9BA1AD]">
-          Add <span className="font-medium text-[#E8EAED]">hello@usetended.io</span> to your contacts so it doesn&apos;t go to spam.
-        </p>
+        {done ? (
+          <p className="text-[13px] text-green-400">
+            Your report should be in your inbox. Check spam if you don&apos;t see it.
+          </p>
+        ) : (
+          <>
+            <p className="text-[13px] text-[#9BA1AD]">
+              Your PDF report will arrive at your inbox in ~20 minutes.
+            </p>
+            <p className="mt-1 text-[13px] text-[#9BA1AD]">
+              Add <span className="font-medium text-[#E8EAED]">hello@usetended.io</span> to your contacts so it doesn&apos;t go to spam.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 /* ─── Landing Page Component ─── */
-function LandingPage() {
+function LandingPage({ onAuditSubmitted }: { onAuditSubmitted: () => void }) {
   const [url, setUrl] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -207,7 +227,7 @@ function LandingPage() {
     setErrors({});
     const finalUrl = normalizeUrl(url);
     try {
-      const res = await fetch('/api/sites/audit-report/pdf', {
+      const res = await fetch(apiUrl('/sites/audit-report/pdf'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: finalUrl, email }),
@@ -222,14 +242,21 @@ function LandingPage() {
       } catch {
         setSubmittedDomain(finalUrl);
       }
-      // Handle both 200 (PDF returned) and 202 (pipeline started)
-      if (res.status === 200) {
-        // PDF returned directly for existing sites — still show success
-        setSubmitted(true);
-      } else {
-        // 202 — new site, pipeline started
-        setSubmitted(true);
+      // 200 with PDF binary = existing site, trigger download
+      if (res.status === 200 && res.headers.get('content-type')?.includes('application/pdf')) {
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `tended-audit-${submittedDomain || 'report'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(blobUrl);
       }
+      // Show progress screen (202 = pipeline running, 200 = PDF downloaded)
+      setSubmitted(true);
+      onAuditSubmitted();
     } catch (err: unknown) {
       setErrors({ form: err instanceof Error ? err.message : 'Something went wrong. Please try again.' });
     } finally {
@@ -716,12 +743,14 @@ function LandingPage() {
 export default function HomePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [auditSubmitted, setAuditSubmitted] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) {
+    // Don't redirect if user just submitted the audit form — keep progress screen visible
+    if (!loading && user && !auditSubmitted) {
       router.replace('/today');
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, auditSubmitted]);
 
   if (loading) {
     return (
@@ -731,7 +760,7 @@ export default function HomePage() {
     );
   }
 
-  if (user) {
+  if (user && !auditSubmitted) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0B0D11]">
         <Spinner size="lg" />
@@ -739,5 +768,5 @@ export default function HomePage() {
     );
   }
 
-  return <LandingPage />;
+  return <LandingPage onAuditSubmitted={() => setAuditSubmitted(true)} />;
 }
