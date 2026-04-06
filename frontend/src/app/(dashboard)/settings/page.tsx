@@ -270,7 +270,7 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <label htmlFor="site-url" className="block text-sm font-medium text-brand-text mb-1.5">Domain</label>
-              <input id="site-url" type="url" value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} placeholder="https://yourblog.com" aria-required="true" className={input} />
+              <input id="site-url" type="text" value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} placeholder="https://yourblog.com" aria-required="true" className={input} />
             </div>
             <div>
               <label htmlFor="cms-type" className="block text-sm font-medium text-brand-text mb-1.5">CMS Type</label>

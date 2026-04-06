@@ -1,16 +1,79 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiUrl } from '@/lib/api';
 import { freeAudit } from '@/lib/copy';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { FileText, ArrowRight, CheckCircle } from 'lucide-react';
+import { FileText, ArrowRight, CheckCircle, Loader2, Check } from 'lucide-react';
 import Link from 'next/link';
 
 const URL_RE = /^https?:\/\/.+\..+/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const AUDIT_STAGES = [
+  { label: 'Crawling posts', duration: 5 },
+  { label: 'Understanding content', duration: 7 },
+  { label: 'Running analysis', duration: 5 },
+  { label: 'Scoring health', duration: 3 },
+  { label: 'Building your report', duration: 3 },
+];
+
+function AuditProgressStages({ domain }: { domain: string }) {
+  const [activeStage, setActiveStage] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const totalDuration = AUDIT_STAGES.reduce((s, st) => s + st.duration, 0);
+    const tickMs = 2000;
+    let elapsed = 0;
+    const timer = setInterval(() => {
+      elapsed += tickMs / 1000 / 60;
+      let stage = 0;
+      let cumulative = 0;
+      for (let i = 0; i < AUDIT_STAGES.length; i++) {
+        cumulative += AUDIT_STAGES[i].duration;
+        if (elapsed < cumulative) { stage = i; break; }
+        if (i === AUDIT_STAGES.length - 1) stage = i;
+      }
+      setActiveStage(stage);
+      setProgress(Math.min(Math.round((elapsed / totalDuration) * 100), 95));
+    }, tickMs);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <Loader2 size={20} className="animate-spin text-brand-accent" />
+        <h1 className="text-lg font-bold text-brand-text">Analyzing {domain}</h1>
+      </div>
+      <div className="w-full h-2 rounded-full bg-brand-border overflow-hidden mb-5">
+        <div className="h-full rounded-full bg-brand-accent transition-all duration-1000 ease-out" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="space-y-3">
+        {AUDIT_STAGES.map((stage, i) => (
+          <div key={stage.label} className="flex items-center gap-3">
+            {i < activeStage ? (
+              <Check size={16} className="text-green-500 flex-shrink-0" />
+            ) : i === activeStage ? (
+              <Loader2 size={16} className="animate-spin text-brand-accent flex-shrink-0" />
+            ) : (
+              <div className="w-4 h-4 rounded-full border border-brand-border flex-shrink-0" />
+            )}
+            <span className={`text-sm ${i <= activeStage ? 'text-brand-text' : 'text-brand-text-muted'}`}>
+              {stage.label}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 text-xs text-brand-text-muted">
+        Your PDF report will arrive at your inbox in ~20 minutes.
+      </p>
+    </div>
+  );
+}
 
 export default function FreeAuditPage() {
   const { user } = useAuth();
@@ -73,13 +136,9 @@ export default function FreeAuditPage() {
   if (submitted) {
     return (
       <div className="max-w-lg mx-auto py-16">
-        <Card className="text-center space-y-4 p-8">
-          <CheckCircle size={48} className="mx-auto text-[#22c55e]" />
-          <h1 className="text-xl font-bold text-brand-text">{freeAudit.successHeading}</h1>
-          <p className="text-sm text-brand-text-muted">
-            {freeAudit.successMessage(submittedDomain)}
-          </p>
-          <div className="pt-4 border-t border-brand-border">
+        <Card className="p-8">
+          <AuditProgressStages domain={submittedDomain} />
+          <div className="mt-5 pt-4 border-t border-brand-border">
             <p className="text-xs text-brand-text-muted mb-3">{freeAudit.upgradeCta}</p>
             <Link href="/billing">
               <Button variant="primary" size="sm">
@@ -113,7 +172,7 @@ export default function FreeAuditPage() {
             </label>
             <input
               id="audit-url"
-              type="url"
+              type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder={freeAudit.urlPlaceholder}

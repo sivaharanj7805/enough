@@ -93,6 +93,86 @@ const PLANS = {
   },
 };
 
+/* ─── Audit Progress Component ─── */
+const AUDIT_STAGES = [
+  { label: 'Crawling posts', duration: 5 },
+  { label: 'Understanding content', duration: 7 },
+  { label: 'Running analysis', duration: 5 },
+  { label: 'Scoring health', duration: 3 },
+  { label: 'Building your report', duration: 3 },
+];
+
+function AuditProgress({ domain }: { domain: string }) {
+  const [activeStage, setActiveStage] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    // Simulate progress through stages over ~20 minutes
+    const totalDuration = AUDIT_STAGES.reduce((s, st) => s + st.duration, 0); // minutes
+    const tickMs = 2000; // update every 2s
+    let elapsed = 0;
+
+    const timer = setInterval(() => {
+      elapsed += tickMs / 1000 / 60; // in minutes
+      let cumulative = 0;
+      let stage = 0;
+      for (let i = 0; i < AUDIT_STAGES.length; i++) {
+        cumulative += AUDIT_STAGES[i].duration;
+        if (elapsed < cumulative) { stage = i; break; }
+        if (i === AUDIT_STAGES.length - 1) stage = i;
+      }
+      setActiveStage(stage);
+      setProgress(Math.min(Math.round((elapsed / totalDuration) * 100), 95));
+    }, tickMs);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="mt-10 rounded-xl border border-[#23262F] bg-[#13151B] p-6 text-left">
+      <div className="flex items-center gap-3 mb-4">
+        <Loader2 size={20} className="animate-spin text-[#3B82F6]" />
+        <p className="text-lg font-semibold text-[#E8EAED]">Analyzing {domain}</p>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full h-2 rounded-full bg-[#23262F] overflow-hidden mb-5">
+        <div
+          className="h-full rounded-full bg-[#3B82F6] transition-all duration-1000 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      {/* Stages */}
+      <div className="space-y-3">
+        {AUDIT_STAGES.map((stage, i) => (
+          <div key={stage.label} className="flex items-center gap-3">
+            {i < activeStage ? (
+              <Check size={16} className="text-green-400 flex-shrink-0" />
+            ) : i === activeStage ? (
+              <Loader2 size={16} className="animate-spin text-[#3B82F6] flex-shrink-0" />
+            ) : (
+              <div className="w-4 h-4 rounded-full border border-[#23262F] flex-shrink-0" />
+            )}
+            <span className={`text-sm ${i <= activeStage ? 'text-[#E8EAED]' : 'text-[#9BA1AD]/50'}`}>
+              {stage.label}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 pt-4 border-t border-[#23262F]">
+        <p className="text-[13px] text-[#9BA1AD]">
+          Your PDF report will arrive at your inbox in ~20 minutes.
+        </p>
+        <p className="mt-1 text-[13px] text-[#9BA1AD]">
+          Add <span className="font-medium text-[#E8EAED]">hello@usetended.io</span> to your contacts so it doesn&apos;t go to spam.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Landing Page Component ─── */
 function LandingPage() {
   const [url, setUrl] = useState('');
@@ -207,22 +287,13 @@ function LandingPage() {
 
           {/* Audit Form */}
           {submitted ? (
-            <div className="mt-10 rounded-xl border border-[#23262F] bg-[#13151B] p-6 text-center">
-              <Check size={32} className="mx-auto mb-3 text-green-400" />
-              <p className="text-lg font-semibold">We&apos;re analyzing {submittedDomain}...</p>
-              <p className="mt-2 text-[14px] text-[#9BA1AD]">
-                Check your inbox in 20-25 minutes.
-              </p>
-              <p className="mt-2 text-[13px] text-[#9BA1AD]">
-                Add <span className="font-medium text-[#E8EAED]">hello@usetended.io</span> to your contacts so the report doesn&apos;t go to spam.
-              </p>
-            </div>
+            <AuditProgress domain={submittedDomain} />
           ) : (
             <form onSubmit={(e) => void handleSubmit(e)} className="mt-10">
               <div className="flex flex-col sm:flex-row items-stretch gap-3">
                 <div className="flex-1">
                   <input
-                    type="url"
+                    type="text"
                     placeholder="https://yourblog.com"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
