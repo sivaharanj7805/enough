@@ -57,6 +57,7 @@ from app.models.schemas import (
     ContentProblemResponse,
     ContentProblemSummary,
     EcosystemVisualsResponse,
+    ImpactEstimateResponse,
     OracleRequest,
     OracleVerdictResponse,
     PipelineStatusResponse,
@@ -1234,6 +1235,17 @@ async def update_recommendation_status(
     if not row:
         raise HTTPException(status_code=404, detail="Recommendation not found")
 
+    # Record impact baseline when a recommendation is completed
+    if body.status == "completed":
+        try:
+            from app.services.impact_tracking import ImpactTracker
+            tracker = ImpactTracker()
+            await tracker.record_completion(db, recommendation_id)
+        except Exception:
+            logger.warning(
+                "Failed to record impact baseline for %s", recommendation_id, exc_info=True,
+            )
+
     import json
     actions = row["specific_actions"]
     if isinstance(actions, str):
@@ -1782,6 +1794,122 @@ async def since_last_visit(
         completed_recommendations_count=completed_recs,
         new_alerts=[PositionAlertResponse(**a) for a in new_alert_list[:5]],
         last_visit=last_visit.isoformat() if last_visit else None,
+    )
+
+
+# ──────────────── Analysis Diff ────────────────
+
+
+@router.get("/{site_id}/intelligence/analysis-diff")
+async def get_analysis_diff(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Get the most recent analysis diff (before/after comparison)."""
+    await _verify_site(site_id, user_id, db)
+
+    row = await db.fetchrow(
+        """SELECT score_before, score_after, score_delta,
+                  factor_changes, improvements, new_issues, degradations, analyzed_at
+           FROM analysis_diffs
+           WHERE site_id = $1
+           ORDER BY analyzed_at DESC LIMIT 1""",
+        site_id,
+    )
+    if not row:
+        return None
+
+    import json
+
+    def _parse(val: str | list | None) -> list:
+        if val is None:
+            return []
+        if isinstance(val, list):
+            return val
+        try:
+            return json.loads(val)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    return {
+        "score_before": float(row["score_before"]) if row["score_before"] is not None else None,
+        "score_after": float(row["score_after"]) if row["score_after"] is not None else None,
+        "score_delta": float(row["score_delta"]) if row["score_delta"] is not None else None,
+        "factor_changes": _parse(row["factor_changes"]),
+        "improvements": _parse(row["improvements"]),
+        "new_issues": _parse(row["new_issues"]),
+        "degradations": _parse(row["degradations"]),
+        "analyzed_at": row["analyzed_at"].isoformat() if row["analyzed_at"] else None,
+    }
+
+
+# ──────────────── Impact Estimate ────────────────
+
+# Estimated health score points per recommendation type.
+_IMPACT_WEIGHTS: dict[str, float] = {
+    "merge": 3.0,
+    "expand": 2.0,
+    "optimize": 1.5,
+    "refresh": 1.5,
+    "interlink": 1.0,
+    "growth": 1.0,
+    "delete": 0.5,
+}
+
+
+@router.get(
+    "/{site_id}/intelligence/recommendations/impact-estimate",
+    response_model=ImpactEstimateResponse,
+)
+async def get_impact_estimate(
+    site_id: UUID,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Estimate health score impact from recommendations completed since last analysis."""
+    await _verify_site(site_id, user_id, db)
+
+    # Find last analysis timestamp
+    last_analysis = await db.fetchval(
+        "SELECT analyzed_at FROM health_score_history WHERE site_id = $1 ORDER BY analyzed_at DESC LIMIT 1",
+        site_id,
+    )
+
+    # Count completed recs by type since last analysis (or all if no analysis yet)
+    if last_analysis:
+        rows = await db.fetch(
+            """SELECT recommendation_type, COUNT(*) AS cnt
+               FROM recommendations
+               WHERE site_id = $1 AND status = 'completed' AND updated_at > $2
+               GROUP BY recommendation_type""",
+            site_id, last_analysis,
+        )
+    else:
+        rows = await db.fetch(
+            """SELECT recommendation_type, COUNT(*) AS cnt
+               FROM recommendations
+               WHERE site_id = $1 AND status = 'completed'
+               GROUP BY recommendation_type""",
+            site_id,
+        )
+
+    completed_count = sum(r["cnt"] for r in rows)
+    if completed_count == 0:
+        return ImpactEstimateResponse(estimated_points=0, completed_since_last_analysis=0)
+
+    # Compute weighted sum
+    total_posts = await db.fetchval("SELECT COUNT(*) FROM posts WHERE site_id = $1", site_id) or 1
+    raw_points = sum(
+        _IMPACT_WEIGHTS.get(r["recommendation_type"], 1.0) * r["cnt"]
+        for r in rows
+    )
+    # Scale: points per rec diminish as more are completed (log-ish scaling)
+    estimated = min(15.0, raw_points / max(total_posts / 50, 1))
+
+    return ImpactEstimateResponse(
+        estimated_points=round(estimated, 1),
+        completed_since_last_analysis=completed_count,
     )
 
 

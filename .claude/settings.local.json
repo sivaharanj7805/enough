@@ -180,7 +180,8 @@
       "Bash(cat '/c/Users/Sivaharan/enough-1/frontend/src/app/\\(dashboard\\)/layout.tsx')",
       "Bash(openssl rand:*)",
       "Bash(sed 's/\\\\s.*$//')",
-      "Bash(xargs cat:*)"
+      "Bash(xargs cat:*)",
+      "Bash(find /c/Users/Sivaharan/enough-1 -maxdepth 2 -type f \\\\\\(-name *.md -o -name .env* \\\\\\) ! -path */.git/* ! -path */.venv/* ! -path */node_modules/* ! -path */.next/*)"
     ]
   }
 }

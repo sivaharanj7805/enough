@@ -372,6 +372,47 @@ export const ERROR_MESSAGES = {
   networkOffline: "You're offline. Some features may be unavailable.",
 };
 
+// ─── Retention / Today Page ──────────────────────
+
+export const retention = {
+  estimatedImpact: (points: number) =>
+    `Estimated health impact: +${points} point${points !== 1 ? 's' : ''} when re-analyzed`,
+  ga4CtaEnhancedTitle: 'See if your fixes are working',
+  ga4CtaEnhanced: (n: number) =>
+    `You've completed ${n} recommendation${n !== 1 ? 's' : ''}. Connect Google Analytics to track the real impact of your changes.`,
+  ga4CtaConnect: 'Connect Google Analytics',
+  diffTitle: 'Re-analysis Complete',
+  diffScoreChange: (before: number, after: number, delta: number) =>
+    `Score: ${before} \u2192 ${after} (${delta > 0 ? '+' : ''}${delta})`,
+  diffImprovements: 'Improvements',
+  diffNewIssues: 'New Issues',
+  diffDegradations: 'Degradations',
+  diffFactorChanges: 'Factor Changes',
+  diffDismiss: 'Dismiss',
+} as const;
+
+// ─── Free Audit ──────────────────────────────────
+
+export const freeAudit = {
+  heading: 'Free Content Audit',
+  subheading: 'Get a PDF report with your health score, AI Readiness grade, and top issues — delivered to your inbox.',
+  urlLabel: 'Blog URL',
+  urlPlaceholder: 'https://yourblog.com',
+  urlError: 'Enter a valid URL starting with http:// or https://',
+  emailLabel: 'Email',
+  emailPlaceholder: 'you@example.com',
+  emailError: 'Enter a valid email address',
+  submit: 'Generate Free Audit',
+  submitting: 'Generating...',
+  successHeading: 'Audit started',
+  successMessage: (domain: string) =>
+    `We're analyzing ${domain} now. Your PDF report will arrive in your inbox in about 20-25 minutes.`,
+  rateLimitError: 'You\'ve reached the limit of 3 free audits per day. Try again tomorrow.',
+  genericError: 'Something went wrong. Please try again.',
+  upgradeCta: 'Want the full picture? Upgrade for complete analysis.',
+  upgradeButton: 'View Plans',
+} as const;
+
 // ─── Tooltips ──────────────────────────────────
 
 export const TOOLTIPS = {

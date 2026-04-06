@@ -206,6 +206,18 @@ export function useHealthHistory(siteId: string | null) {
   );
 }
 
+export function useAnalysisDiff(siteId: string | null) {
+  return useSWRFetch<import('@/lib/types').AnalysisDiff | null>(
+    siteId ? `/sites/${siteId}/intelligence/analysis-diff` : null
+  );
+}
+
+export function useImpactEstimate(siteId: string | null) {
+  return useSWRFetch<import('@/lib/types').ImpactEstimate>(
+    siteId ? `/sites/${siteId}/intelligence/recommendations/impact-estimate` : null
+  );
+}
+
 export function useTopContentGap(siteId: string | null) {
   return useSWRFetch<TopContentGap | null>(
     siteId ? `/sites/${siteId}/intelligence/top-content-gap` : null

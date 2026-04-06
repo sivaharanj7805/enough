@@ -764,6 +764,12 @@ class TopContentGapResponse(BaseModel):
     brief_text: str | None
 
 
+class ImpactEstimateResponse(BaseModel):
+    """Estimated health score impact from completed recommendations since last analysis."""
+    estimated_points: float
+    completed_since_last_analysis: int
+
+
 class ROISummaryResponse(BaseModel):
     """ROI summary for the Today view."""
     completed_recommendations: int

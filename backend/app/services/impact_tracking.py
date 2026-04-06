@@ -35,13 +35,9 @@ class ImpactTracker:
         Called when recommendation status changes to 'completed'.
         Returns the impact record or None if recommendation not found.
         """
+        # Use recommendations.site_id directly — some recs have problem_id=NULL
         rec = await db.fetchrow(
-            """
-            SELECT r.id, r.post_id, cp.site_id
-            FROM recommendations r
-            JOIN content_problems cp ON cp.id = r.problem_id
-            WHERE r.id = $1
-            """,
+            "SELECT id, post_id, site_id FROM recommendations WHERE id = $1",
             recommendation_id,
         )
 

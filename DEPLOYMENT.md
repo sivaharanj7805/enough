@@ -497,5 +497,5 @@ THINGS THAT I HAVE IDENTIFIED:
 - how do i get STRIPE_PRICE_GROWTH and STRIPE_PRICE_SCALE
 - i get this: {"code":400,"error_code":"validation_failed","msg":"Unsupported provider: provider is not enabled"}, when i try logging 
   in with google, or signing up with google
-- when someone signs up for free, they dont have the option to come up with a free pdf of their blog/website.they dont have the option to insert their website for a free pdf. 
+- when someone signs up for free, they dont have the option to come up with a free pdf of their blog/website.they dont have the option to insert their website for a free pdf. get this done.
 -

@@ -149,6 +149,12 @@ class HealthScorer:
         """
         logger.info("Starting health scoring for site %s", site_id)
 
+        # Capture previous snapshot for analysis diff (before scoring overwrites values)
+        _prev_snapshot = await db.fetchrow(
+            "SELECT score, factor_scores FROM health_score_history WHERE site_id = $1 ORDER BY analyzed_at DESC LIMIT 1",
+            site_id,
+        )
+
         def _report(msg: str) -> None:
             logger.info("Health scoring [%s]: %s", site_id, msg)
             if on_progress:
@@ -340,6 +346,34 @@ class HealthScorer:
                     site_id, float(avg_score or 0), json.dumps(factor_scores),
                 )
                 logger.info("Recorded health score history for site %s: %.1f", site_id, avg_score or 0)
+
+                # Update impact measurements for completed recommendations
+                try:
+                    from app.services.impact_tracking import ImpactTracker
+                    tracker = ImpactTracker()
+                    impact_updated = await tracker.update_impacts(db, site_id)
+                    if impact_updated:
+                        logger.info("Updated %d impact measurements for site %s", impact_updated, site_id)
+                except Exception as e2:
+                    logger.warning("Failed to update impact measurements for site %s: %s", site_id, e2)
+
+                # Generate analysis diff (before/after comparison)
+                try:
+                    prev_score = float(_prev_snapshot["score"]) if _prev_snapshot else None
+                    prev_factors = _prev_snapshot["factor_scores"] if _prev_snapshot else None
+                    if isinstance(prev_factors, str):
+                        prev_factors = json.loads(prev_factors)
+
+                    from app.services.analysis_diff import generate_and_store_diff
+                    await generate_and_store_diff(
+                        db, site_id,
+                        prev_score=prev_score,
+                        prev_factors=prev_factors,
+                        new_score=float(avg_score or 0),
+                        new_factors=factor_scores,
+                    )
+                except Exception as e3:
+                    logger.warning("Failed to generate analysis diff for site %s: %s", site_id, e3)
             except Exception as e:
                 logger.warning("Failed to record health score history for site %s: %s", site_id, e)
 

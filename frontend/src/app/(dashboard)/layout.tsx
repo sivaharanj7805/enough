@@ -12,7 +12,7 @@ import { OraclePanel } from '@/components/oracle/OraclePanel';
 import { Sparkles } from 'lucide-react';
 
 // Only billing is accessible without a paid subscription (so they can actually pay)
-const UNPAID_PAGES = ['/billing'];
+const UNPAID_PAGES = ['/billing', '/free-audit'];
 
 export default function DashboardLayout({
   children,

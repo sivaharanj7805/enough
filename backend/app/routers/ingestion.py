@@ -474,6 +474,29 @@ async def trigger_weekly_digest(
     return TaskTriggerResponse(message="Weekly digest emails queued", site_id=None)
 
 
+@router.post("/cron/monthly-report", response_model=TaskTriggerResponse)
+async def trigger_monthly_report(
+    background_tasks: BackgroundTasks,
+    _cron: None = Depends(verify_cron_secret),
+):
+    """Send monthly health report emails to all paid users.
+
+    Includes health score delta, completed recommendations, and new issues.
+    Wire to a monthly cron (e.g., 1st of month at 9am).
+    """
+    async def _send_reports():
+        from app.database import get_pool
+        from app.services.monthly_email import send_all_monthly_reports
+
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            sent = await send_all_monthly_reports(db)
+            logger.info("Monthly report: sent %d reports", sent)
+
+    background_tasks.add_task(_send_reports)
+    return TaskTriggerResponse(message="Monthly report emails queued", site_id=None)
+
+
 @router.get("/{site_id}/pipeline/status")
 async def get_pipeline_status(
     site_id: UUID,

@@ -10,13 +10,17 @@ import {
   useProblems,
   useCannibalizationPairs,
   useHealthHistory,
+  useAnalysisDiff,
+  useImpactEstimate,
 } from '@/lib/hooks/useApi';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch, apiUrl } from '@/lib/api';
+import { retention } from '@/lib/copy';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PipelineProgress } from '@/components/dashboard/PipelineProgress';
 import Link from 'next/link';
-import { ArrowRight, AlertTriangle, RefreshCw, X, Download, FileText, Settings } from 'lucide-react';
+import { ArrowRight, AlertTriangle, RefreshCw, X, Download, FileText, Settings, TrendingUp, TrendingDown, CheckCircle, BarChart3 } from 'lucide-react';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import type { Recommendation, Cluster } from '@/lib/types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -105,8 +109,11 @@ export default function TodayPage() {
   const { data: problems } = useProblems(siteId);
   const { data: cannibPairs } = useCannibalizationPairs(siteId);
   const { data: healthHistory } = useHealthHistory(siteId);
+  const { data: analysisDiff } = useAnalysisDiff(siteId);
+  const { data: impactEstimate } = useImpactEstimate(siteId);
 
   const [alertDismissed, setAlertDismissed] = useState(false);
+  const [diffDismissed, setDiffDismissed] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -142,6 +149,23 @@ export default function TodayPage() {
     .sort((a, b) => a.health_score - b.health_score);
 
   const ga4Connected = !!currentSite?.ga4_property_id;
+
+  // Sparkline data — sorted oldest to newest
+  const sparklineData = healthHistory && healthHistory.length >= 3
+    ? [...healthHistory]
+        .filter((h) => h.analyzed_at)
+        .sort((a, b) => new Date(a.analyzed_at!).getTime() - new Date(b.analyzed_at!).getTime())
+        .map((h) => ({ score: Math.round(h.score) }))
+    : null;
+
+  // Impact estimate
+  const estPoints = impactEstimate?.estimated_points ?? 0;
+  const estCompleted = impactEstimate?.completed_since_last_analysis ?? 0;
+
+  // Analysis diff — show if recent (within 7 days) and not dismissed
+  const showDiff = !diffDismissed && analysisDiff && analysisDiff.score_delta !== null
+    && analysisDiff.analyzed_at
+    && Date.now() - new Date(analysisDiff.analyzed_at).getTime() < 7 * 86400000;
 
   const newIssueCount = Array.isArray(problems)
     ? problems.filter((p) => p.resolved_at === null && Date.now() - new Date(p.detected_at).getTime() < 7 * 86400000).length
@@ -276,21 +300,85 @@ export default function TodayPage() {
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-accent/5 border border-brand-accent/20 text-sm text-brand-text">{statusMsg}</div>
       )}
 
-      {/* 3. Health Score Card */}
+      {/* 3. Health Score Card + Sparkline */}
       <div className={CARD}>
-        <div className="flex items-center gap-4">
-          <span className="text-5xl font-bold" style={{ color: scoreColor(currentScore) }}>{currentScore}</span>
-          {scoreDelta !== null && scoreDelta !== 0 ? (
-            <span className={`text-lg font-semibold ${scoreDelta > 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {scoreDelta > 0 ? `\u2191${scoreDelta}` : `\u2193${Math.abs(scoreDelta)}`}
-            </span>
-          ) : (
-            <span className="text-lg font-semibold text-brand-text-tertiary">&mdash;</span>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-4">
+              <span className="text-5xl font-bold" style={{ color: scoreColor(currentScore) }}>{currentScore}</span>
+              {scoreDelta !== null && scoreDelta !== 0 ? (
+                <span className={`text-lg font-semibold ${scoreDelta > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {scoreDelta > 0 ? `\u2191${scoreDelta}` : `\u2193${Math.abs(scoreDelta)}`}
+                </span>
+              ) : (
+                <span className="text-lg font-semibold text-brand-text-tertiary">&mdash;</span>
+              )}
+            </div>
+            <p className="text-sm font-medium text-brand-text-muted mt-1">Content Health Score ({scoreLabel(currentScore)})</p>
+            <p className="text-xs text-brand-text-tertiary mt-1">{healthContext}</p>
+          </div>
+          {sparklineData && (
+            <div className="w-[120px] h-[48px] flex-shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sparklineData}>
+                  <Line type="monotone" dataKey="score" stroke={scoreColor(currentScore)} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </div>
-        <p className="text-sm font-medium text-brand-text-muted mt-1">Content Health Score ({scoreLabel(currentScore)})</p>
-        <p className="text-xs text-brand-text-tertiary mt-1">{healthContext}</p>
       </div>
+
+      {/* Analysis Diff Card */}
+      {showDiff && analysisDiff && (
+        <div className={`${CARD} space-y-3`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart3 size={16} className="text-brand-accent" />
+              <h3 className="text-sm font-semibold text-brand-text">{retention.diffTitle}</h3>
+            </div>
+            <button onClick={() => setDiffDismissed(true)} className="text-brand-text-tertiary hover:text-brand-text-muted transition-colors" aria-label={retention.diffDismiss}><X size={14} /></button>
+          </div>
+          {analysisDiff.score_before !== null && analysisDiff.score_after !== null && analysisDiff.score_delta !== null && (
+            <p className="text-sm text-brand-text font-medium">
+              {retention.diffScoreChange(Math.round(analysisDiff.score_before), Math.round(analysisDiff.score_after), Math.round(analysisDiff.score_delta))}
+            </p>
+          )}
+          {analysisDiff.improvements.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-green-500 mb-1 flex items-center gap-1"><CheckCircle size={12} /> {retention.diffImprovements}</p>
+              <ul className="text-xs text-brand-text-muted space-y-0.5 pl-4">
+                {analysisDiff.improvements.map((item, i) => <li key={i}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+          {analysisDiff.new_issues.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-amber-500 mb-1 flex items-center gap-1"><AlertTriangle size={12} /> {retention.diffNewIssues}</p>
+              <ul className="text-xs text-brand-text-muted space-y-0.5 pl-4">
+                {analysisDiff.new_issues.map((item, i) => <li key={i}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+          {analysisDiff.factor_changes.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-brand-text-muted mb-1">{retention.diffFactorChanges}</p>
+              <div className="space-y-1">
+                {analysisDiff.factor_changes.slice(0, 4).map((fc) => (
+                  <div key={fc.factor} className="flex items-center gap-2 text-xs">
+                    {fc.delta > 0 ? <TrendingUp size={12} className="text-green-500" /> : <TrendingDown size={12} className="text-red-500" />}
+                    <span className="text-brand-text-muted capitalize">{fc.factor.replace(/_/g, ' ')}</span>
+                    <span className="text-brand-text-tertiary">{fc.before.toFixed(0)} &rarr; {fc.after.toFixed(0)}</span>
+                    <span className={`font-semibold ${fc.delta > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {fc.delta > 0 ? '+' : ''}{fc.delta.toFixed(0)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 4. Four Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -337,6 +425,12 @@ export default function TodayPage() {
           <div className="w-full h-2.5 rounded-full bg-brand-border overflow-hidden">
             <div className="h-full rounded-full bg-green-500 transition-all duration-500" style={{ width: `${completedPct}%` }} />
           </div>
+          {estCompleted > 0 && estPoints > 0 && (
+            <p className="mt-2 text-xs text-green-500 flex items-center gap-1.5">
+              <TrendingUp size={12} />
+              {retention.estimatedImpact(Math.round(estPoints))}
+            </p>
+          )}
           <div className="mt-4 space-y-2">
             {timelineItems.map((item, i) => (
               <div key={i} className="flex items-center gap-3">
@@ -375,16 +469,24 @@ export default function TodayPage() {
         {!ga4Connected ? (
           <div className={CARD}>
             <div className="flex items-center gap-2 mb-2">
-              <Settings size={16} className="text-brand-text-muted" />
-              <h3 className="text-sm font-semibold text-brand-text">Connect GA4</h3>
+              {completedTotal >= 5 ? <BarChart3 size={16} className="text-brand-accent" /> : <Settings size={16} className="text-brand-text-muted" />}
+              <h3 className="text-sm font-semibold text-brand-text">
+                {completedTotal >= 5 ? retention.ga4CtaEnhancedTitle : 'Connect GA4'}
+              </h3>
             </div>
-            <p className="text-sm text-brand-text-muted mb-3">Connect Google Analytics for deeper insights.</p>
-            <ul className="text-xs text-brand-text-tertiary space-y-1 mb-4 list-disc list-inside">
-              <li>Track real traffic impact of your changes</li>
-              <li>Identify declining posts before they lose rankings</li>
-            </ul>
+            <p className="text-sm text-brand-text-muted mb-3">
+              {completedTotal >= 5
+                ? retention.ga4CtaEnhanced(completedTotal)
+                : 'Connect Google Analytics for deeper insights.'}
+            </p>
+            {completedTotal < 5 && (
+              <ul className="text-xs text-brand-text-tertiary space-y-1 mb-4 list-disc list-inside">
+                <li>Track real traffic impact of your changes</li>
+                <li>Identify declining posts before they lose rankings</li>
+              </ul>
+            )}
             <Link href="/settings" className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-accent hover:text-brand-accent-hover transition-colors" aria-label="Go to settings to connect GA4">
-              Connect GA4 <ArrowRight size={12} />
+              {retention.ga4CtaConnect} <ArrowRight size={12} />
             </Link>
           </div>
         ) : (

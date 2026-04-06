@@ -18,7 +18,9 @@ import {
   AlertTriangle,
   FileText,
   X,
+  ArrowRight,
 } from 'lucide-react';
+import Link from 'next/link';
 import type {
   SubscriptionResponse,
   CheckoutResponse,
@@ -230,6 +232,26 @@ export default function BillingPage() {
           </p>
         </div>
       </div>
+
+      {/* Free audit CTA for free-tier users */}
+      {currentTier === 'free' && (
+        <Link href="/free-audit" className="block">
+          <div className="flex items-center justify-between rounded-xl border border-brand-accent/20 bg-brand-accent/5 px-5 py-4 hover:bg-brand-accent/10 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-accent/20">
+                <FileText size={20} className="text-brand-accent" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-brand-text">Try before you buy</p>
+                <p className="text-xs text-brand-text-muted">
+                  Get a free PDF audit of your blog with health scores, AI Readiness, and top issues.
+                </p>
+              </div>
+            </div>
+            <ArrowRight size={18} className="text-brand-accent flex-shrink-0" />
+          </div>
+        </Link>
+      )}
 
       {/* Current Plan Card */}
       <Card>

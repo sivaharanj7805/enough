@@ -492,6 +492,24 @@ export interface AIScores {
   pct_ai_ready: number | null;
 }
 
+// ─── Analysis Diff ──────────────────────────────
+export interface AnalysisDiff {
+  score_before: number | null;
+  score_after: number | null;
+  score_delta: number | null;
+  factor_changes: Array<{ factor: string; before: number; after: number; delta: number }>;
+  improvements: string[];
+  new_issues: string[];
+  degradations: string[];
+  analyzed_at: string | null;
+}
+
+// ─── Impact Estimate ────────────────────────────
+export interface ImpactEstimate {
+  estimated_points: number;
+  completed_since_last_analysis: number;
+}
+
 // ─── Subscription ───────────────────────────────
 export interface Subscription {
   tier: string;
