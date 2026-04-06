@@ -26,6 +26,7 @@ async def get_pool() -> asyncpg.Pool:
             max_size=settings.db_pool_max_size,
             command_timeout=60,
             ssl=ssl_mode,
+            statement_cache_size=0,  # Supabase uses pgbouncer which doesn't support prepared statements
         )
         logger.info("Database connection pool created")
     return _pool
