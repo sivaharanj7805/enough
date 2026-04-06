@@ -115,12 +115,13 @@ async def send_magic_link(request: Request, body: LoginRequest):
 @router.get("/google")
 async def google_oauth_redirect(
     settings: Annotated[Settings, Depends(_settings)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
     site_id: str = Query(default="", description="Site ID to link Google account to"),
 ):
     """Redirect to Google OAuth consent screen for GA4/GSC access.
 
     Pass ?site_id=<uuid> to automatically link the token to a site after auth.
-    The site_id is encoded in the OAuth state parameter (HMAC-signed to prevent tampering).
+    The site_id and user_id are encoded in the OAuth state parameter (HMAC-signed).
     """
     import base64
     import hashlib
@@ -132,15 +133,17 @@ async def google_oauth_redirect(
         "https://www.googleapis.com/auth/webmasters.readonly",
     ]
 
-    # Build signed state to carry site_id through the OAuth flow
-    state_data = {"site_id": site_id} if site_id else {}
+    # Build signed state to carry site_id + user_id through the OAuth flow
+    state_data = {"user_id": user_id}
+    if site_id:
+        state_data["site_id"] = site_id
     state_json = json.dumps(state_data, separators=(",", ":"))
     state_b64 = base64.urlsafe_b64encode(state_json.encode()).decode()
     state_sig = hmac.new(
         settings.secret_key.encode(),
         state_b64.encode(),
         hashlib.sha256,
-    ).hexdigest()[:16]
+    ).hexdigest()
     state = f"{state_b64}.{state_sig}"
 
     from urllib.parse import urlencode
@@ -190,18 +193,20 @@ async def google_oauth_callback(
 
         # Verify and extract state
         site_id = None
+        user_id = None
         if state and "." in state:
             state_b64, state_sig = state.rsplit(".", 1)
             expected_sig = hmac.new(
                 settings.secret_key.encode(),
                 state_b64.encode(),
                 hashlib.sha256,
-            ).hexdigest()[:16]
+            ).hexdigest()
 
             if hmac.compare_digest(state_sig, expected_sig):
                 try:
                     state_data = json.loads(base64.urlsafe_b64decode(state_b64))
                     site_id = state_data.get("site_id")
+                    user_id = state_data.get("user_id")
                 except (json.JSONDecodeError, Exception):
                     pass
             else:
@@ -213,8 +218,9 @@ async def google_oauth_callback(
                     detail="Invalid OAuth state — please restart the authorization flow",
                 )
 
-        # Auto-store tokens if we have a valid site_id
-        if site_id and tokens.get("refresh_token"):
+        # Auto-store tokens if we have a valid site_id AND user_id (ownership enforced)
+        frontend_url = settings.frontend_url
+        if site_id and user_id and tokens.get("refresh_token"):
             import time
 
             from app.database import get_pool
@@ -227,31 +233,22 @@ async def google_oauth_callback(
                 encrypted = encrypt_token(token_data)
                 pool = await get_pool()
                 async with pool.acquire() as conn:
-                    await conn.execute(
-                        "UPDATE sites SET google_tokens = $1 WHERE id = $2",
-                        encrypted, site_uuid,
+                    result = await conn.execute(
+                        "UPDATE sites SET google_tokens = $1 WHERE id = $2 AND user_id = $3",
+                        encrypted, site_uuid, user_id,
                     )
-                logger.info("Auto-stored Google tokens for site %s", site_id)
+                    if result == "UPDATE 0":
+                        logger.warning("Google token store failed: user %s does not own site %s", user_id, site_id)
+                        return RedirectResponse(f"{frontend_url}/settings?google_error=not_owner")
+                logger.info("Auto-stored Google tokens for site %s (user %s)", site_id, user_id)
             except Exception as store_err:
                 logger.error("Failed to auto-store tokens: %s", store_err)
+                return RedirectResponse(f"{frontend_url}/settings?google_error=store_failed")
 
-        # Redirect to frontend settings with status
-        frontend_url = settings.frontend_url
-        if site_id and tokens.get("refresh_token"):
             return RedirectResponse(f"{frontend_url}/settings?google_connected=1&site_id={site_id}")
-        else:
-            # Fallback: return tokens as JSON so user can manually store
-            return {
-                "access_token": tokens.get("access_token"),
-                "refresh_token": tokens.get("refresh_token"),
-                "expires_in": tokens.get("expires_in"),
-                "site_id": site_id,
-                "message": (
-                    f"Token ready for site {site_id}. Call PUT /sites/{site_id}/google-token."
-                    if site_id
-                    else "Use PUT /sites/{site_id}/google-token to store the refresh_token."
-                ),
-            }
+
+        # No valid site_id or user_id — redirect with error (never return raw tokens)
+        return RedirectResponse(f"{frontend_url}/settings?google_error=missing_state")
     except httpx.HTTPStatusError as e:
         logger.error("Google OAuth token exchange failed: %s", e.response.text)
         raise HTTPException(status_code=400, detail="OAuth token exchange failed")

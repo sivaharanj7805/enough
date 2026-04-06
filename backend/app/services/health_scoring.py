@@ -44,6 +44,29 @@ EXTERNAL_DATA_FACTORS = {"traffic_trend", "ranking", "engagement"}
 CRAWL_ONLY_FACTORS = {"freshness", "content_depth", "internal_links", "technical_seo", "ai_readiness"}
 
 
+def compute_ai_readiness(
+    *,
+    ai_citability_score: float | None = None,
+    eeat_score: float | None = None,
+    schema_score: float | None = None,
+    extraction_score: float | None = None,
+    default: float | None = 40.0,
+) -> float | None:
+    """Compute AI readiness as mean of available AI dimension scores.
+
+    Central formula — used by both health_scoring (Step 7) and analytics
+    (post detail endpoint).  When none of the 4 dimensions have values,
+    returns *default* (40.0 for pipeline scoring, None for display).
+    """
+    ai_dims = [
+        v for v in [ai_citability_score, eeat_score, schema_score, extraction_score]
+        if v is not None
+    ]
+    if ai_dims:
+        return sum(ai_dims) / len(ai_dims)
+    return default
+
+
 def compute_dynamic_weights(
     has_ga4: bool, has_gsc: bool,
 ) -> dict[str, float]:
@@ -583,13 +606,13 @@ class HealthScorer:
             # Must run ai_citability BEFORE health_scoring in the pipeline.
             ai_scores_row = ai_scores_map.get(post_id)
             if ai_scores_row:
-                ai_dims = [v for v in [
-                    ai_scores_row.get("ai_citability_score"),
-                    ai_scores_row.get("eeat_score"),
-                    ai_scores_row.get("schema_score"),
-                    ai_scores_row.get("extraction_score"),
-                ] if v is not None]
-                ai_readiness_score = sum(ai_dims) / len(ai_dims) if ai_dims else 40.0
+                ai_readiness_score = compute_ai_readiness(
+                    ai_citability_score=ai_scores_row.get("ai_citability_score"),
+                    eeat_score=ai_scores_row.get("eeat_score"),
+                    schema_score=ai_scores_row.get("schema_score"),
+                    extraction_score=ai_scores_row.get("extraction_score"),
+                    default=40.0,
+                )
             else:
                 ai_readiness_score = 40.0  # Neutral default — don't penalize unscored posts
 

@@ -10,7 +10,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import get_db
-from app.dependencies import get_current_user_id
+from app.dependencies import get_current_user_id, require_paid_subscription
 from app.models.schemas import (
     AnalyticsOverview,
     GA4MetricResponse,
@@ -20,9 +20,10 @@ from app.models.schemas import (
     PostListResponse,
     PostResponse,
 )
+from app.services.health_scoring import compute_ai_readiness
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_paid_subscription)])
 
 
 def _to_display_score(value: float | None, *, is_ratio: bool = False) -> float | None:
@@ -232,14 +233,14 @@ async def get_post_detail(
         role = health_row["role"]
         ai_citability_score = health_row["ai_citability_score"]
 
-        # Compute AI readiness score from 4 AI dimensions (same as health_scoring.py)
-        ai_dims = [v for v in [
-            health_row["ai_citability_score"],
-            health_row["eeat_score"],
-            health_row["schema_score"],
-            health_row["extraction_score"],
-        ] if v is not None]
-        ai_readiness = sum(ai_dims) / len(ai_dims) if ai_dims else None
+        # AI readiness — shared formula with health_scoring.py
+        ai_readiness = compute_ai_readiness(
+            ai_citability_score=health_row["ai_citability_score"],
+            eeat_score=health_row["eeat_score"],
+            schema_score=health_row["schema_score"],
+            extraction_score=health_row["extraction_score"],
+            default=None,
+        )
 
         # Compute content_richness (engagement_score is the predicted_engagement proxy)
         engagement = health_row["engagement_score"]
@@ -285,6 +286,7 @@ async def get_post_detail(
         cluster_name=cluster_name,
         factor_scores=factor_scores,
         ai_citability_score=ai_citability_score,
+        score_confidence=health_row["score_confidence"] if health_row else None,
         ga4_metrics=ga4_metrics,
         gsc_metrics=gsc_metrics,
         internal_links=internal_links,

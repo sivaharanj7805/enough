@@ -102,6 +102,7 @@ export interface PostDetail extends Post {
   cluster_name: string | null;
   factor_scores: Record<string, number | null> | null;
   ai_citability_score: number | null;
+  score_confidence: 'full' | 'partial' | 'crawl_only' | null;
   ga4_metrics: GA4Metric[];
   gsc_metrics: GSCMetric[];
   internal_links: InternalLink[];

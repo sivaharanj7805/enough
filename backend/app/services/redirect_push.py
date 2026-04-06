@@ -7,6 +7,8 @@ from uuid import UUID
 import asyncpg
 import httpx
 
+from app.utils.ssrf_protection import validate_url_not_internal
+
 logger = logging.getLogger(__name__)
 
 
@@ -211,6 +213,14 @@ class RedirectPusher:
                 check_url = old_url
                 if not old_url.startswith("http"):
                     check_url = f"https://{domain}{old_url}"
+
+                # SSRF protection: skip internal/private URLs
+                try:
+                    validate_url_not_internal(check_url, "redirect_url")
+                except ValueError:
+                    logger.warning("Skipping SSRF-blocked redirect URL: %s", check_url)
+                    failed += 1
+                    continue
 
                 try:
                     resp = await client.get(check_url)

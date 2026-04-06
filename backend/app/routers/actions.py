@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id
+from app.dependencies import get_current_user_id, require_paid_subscription
 from app.models.schemas import (
     BatchPushMetaResponse,
     CalendarRecommendation,
@@ -24,7 +24,7 @@ from app.models.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_paid_subscription)])
 
 
 # ──────────────────────── Helpers ────────────────────────

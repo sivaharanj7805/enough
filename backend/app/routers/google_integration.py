@@ -59,7 +59,7 @@ async def start_google_oauth(
         settings.secret_key.encode(),
         state_b64.encode(),
         hashlib.sha256,
-    ).hexdigest()[:16]
+    ).hexdigest()
     state = f"{state_b64}.{state_sig}"
     auth_url = get_auth_url(state)
     return {"auth_url": auth_url}
@@ -89,7 +89,7 @@ async def google_oauth_callback(
         settings.secret_key.encode(),
         state_b64.encode(),
         hashlib.sha256,
-    ).hexdigest()[:16]
+    ).hexdigest()
 
     if not hmac.compare_digest(state_sig, expected_sig):
         logger.warning("OAuth state signature mismatch — rejecting callback (possible tampering)")

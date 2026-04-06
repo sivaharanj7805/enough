@@ -11,6 +11,7 @@ import asyncpg
 from anthropic import AsyncAnthropic
 
 from app.config import get_settings
+from app.utils.llm_cost import log_llm_usage
 from app.utils.rate_limiter import RateLimiter
 from app.utils.token_guard import truncate_for_api
 
@@ -188,6 +189,7 @@ class ConsolidationPlanner:
 
     async def generate_draft(
         self, db: asyncpg.Connection, cluster_id: UUID,
+        *, site_id: UUID | None = None,
     ) -> dict:
         """Generate an AI-merged consolidation draft for a cluster.
 
@@ -279,6 +281,12 @@ meta description (under 155 chars) for the consolidated post"""
                 messages=[{"role": "user", "content": prompt}],
             )
             draft_markdown = response.content[0].text
+            await log_llm_usage(
+                db, site_id=site_id, service="consolidation",
+                model=CLAUDE_MODEL,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+            )
         except Exception as e:
             logger.error("Claude draft generation failed: %s", e)
             raise

@@ -13,7 +13,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id, verify_cron_secret
+from app.dependencies import SubscriptionGuard, get_current_user_id, verify_cron_secret
 from app.models.schemas import CrawlStatusResponse, TaskTriggerResponse
 from app.services.embeddings import EmbeddingPipeline
 from app.services.ga4 import GA4Connector
@@ -156,6 +156,9 @@ async def _run_crawl(site_id: UUID, site: dict) -> None:
             logger.debug("Failed to update error status in DB: %s", exc)
 
 
+require_posts = SubscriptionGuard("posts")
+
+
 @router.post("/{site_id}/crawl", response_model=TaskTriggerResponse)
 @_limiter.limit("5/minute")
 async def trigger_crawl(
@@ -164,6 +167,7 @@ async def trigger_crawl(
     user_id: Annotated[str, Depends(get_current_user_id)],
     db: Annotated[asyncpg.Connection, Depends(get_db)],
     background_tasks: BackgroundTasks,
+    _tier: None = Depends(require_posts),
 ):
     """Trigger a content crawl (WordPress or sitemap) as a background task."""
     site = await _get_site_for_ingestion(site_id, user_id, db)

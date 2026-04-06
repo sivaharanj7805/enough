@@ -21,6 +21,7 @@ import asyncpg
 from anthropic import AsyncAnthropic
 
 from app.config import get_settings
+from app.utils.llm_cost import log_llm_usage
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -118,7 +119,7 @@ class IntentClassifier:
 
         for i in range(0, len(posts), batch_size):
             batch = posts[i:i + batch_size]
-            intents = await self._classify_batch(batch)
+            intents = await self._classify_batch(batch, db=db, site_id=site_id)
 
             for post, intent in zip(batch, intents, strict=False):
                 await db.execute(
@@ -138,6 +139,7 @@ class IntentClassifier:
 
     async def _classify_batch(
         self, posts: list[asyncpg.Record],
+        *, db: asyncpg.Connection | None = None, site_id: UUID | None = None,
     ) -> list[str]:
         """Classify intent for a batch of posts via Claude."""
         posts_text = ""
@@ -169,6 +171,13 @@ class IntentClassifier:
                     ),
                 }],
             )
+            if db:
+                await log_llm_usage(
+                    db, site_id=site_id, service="intent_classifier",
+                    model=CLAUDE_MODEL,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                )
             text = response.content[0].text.strip()
             intents = []
             self._last_batch_details = []  # Store sub-intent + confidence

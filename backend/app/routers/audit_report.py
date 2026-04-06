@@ -23,6 +23,7 @@ from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
 from app.dependencies import get_current_user_id
+from app.utils.ssrf_protection import validate_url_not_internal
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1238,6 +1239,12 @@ async def generate_audit_pdf_endpoint(
 
     if not domain:
         raise HTTPException(400, "Invalid URL")
+
+    # SSRF protection: reject internal/private domains
+    try:
+        validate_url_not_internal(f"https://{domain}", "url")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     site = await db.fetchrow(
         "SELECT id, name, domain, last_crawl_at FROM sites WHERE lower(domain) = lower($1) LIMIT 1",

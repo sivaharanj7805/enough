@@ -33,15 +33,12 @@ const PROTECTED_PREFIXES = [
   '/wrapped',
   '/patcher',
   '/pioneer',
+  '/workshop',
+  '/recommendations',
 ];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  // Demo mode bypasses auth — the AuthProvider handles fake sessions client-side
-  if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') {
-    return NextResponse.next();
-  }
 
   // Only protect dashboard routes
   const isProtected = PROTECTED_PREFIXES.some(
@@ -121,5 +118,7 @@ export const config = {
     '/wrapped/:path*',
     '/patcher/:path*',
     '/pioneer/:path*',
+    '/workshop/:path*',
+    '/recommendations/:path*',
   ],
 };

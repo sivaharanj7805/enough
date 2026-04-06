@@ -814,6 +814,7 @@ class AICitabilityService:
         scores_eeat = []
         scores_schema = []
         scores_extract = []
+        upsert_rows: list[tuple] = []
 
         for i, row in enumerate(rows):
             body_text = row["body_text"] or ""
@@ -852,22 +853,12 @@ class AICitabilityService:
                 **{f"extract_{k}": v for k, v in extract_signals.items()},
             }
 
-            await db.execute(
-                """
-                INSERT INTO post_health_scores (post_id, ai_citability_score, eeat_score, schema_score, extraction_score, ai_signals)
-                VALUES ($6, $1, $2, $3, $4, $5)
-                ON CONFLICT (post_id) DO UPDATE SET
-                    ai_citability_score = EXCLUDED.ai_citability_score,
-                    eeat_score = EXCLUDED.eeat_score,
-                    schema_score = EXCLUDED.schema_score,
-                    extraction_score = EXCLUDED.extraction_score,
-                    ai_signals = EXCLUDED.ai_signals
-                """,
+            upsert_rows.append((
+                row["id"],
                 float(cite_score), float(eeat_score),
                 float(schema_score), float(extract_score),
                 json.dumps(all_signals),
-                row["id"],
-            )
+            ))
 
             scores_cite.append(cite_score)
             scores_eeat.append(eeat_score)
@@ -875,7 +866,25 @@ class AICitabilityService:
             scores_extract.append(extract_score)
 
             if (i + 1) % 100 == 0:
-                logger.info("AI scoring: %d/%d posts done", i + 1, total)
+                logger.info("AI scoring: %d/%d posts computed", i + 1, total)
+
+        # Batch upsert all scores in one round-trip
+        if upsert_rows:
+            await db.executemany(
+                """
+                INSERT INTO post_health_scores
+                    (post_id, ai_citability_score, eeat_score, schema_score, extraction_score, ai_signals)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                ON CONFLICT (post_id) DO UPDATE SET
+                    ai_citability_score = EXCLUDED.ai_citability_score,
+                    eeat_score = EXCLUDED.eeat_score,
+                    schema_score = EXCLUDED.schema_score,
+                    extraction_score = EXCLUDED.extraction_score,
+                    ai_signals = EXCLUDED.ai_signals
+                """,
+                upsert_rows,
+            )
+            logger.info("AI scoring: batch-upserted %d rows", len(upsert_rows))
 
         def _avg(lst: list) -> float:
             return round(sum(lst) / len(lst), 1) if lst else 0.0

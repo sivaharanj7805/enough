@@ -10,6 +10,8 @@ from uuid import UUID
 import anthropic
 import asyncpg
 
+from app.utils.llm_cost import log_llm_usage
+
 logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
@@ -214,6 +216,12 @@ async def enrich_recommendation(
                 messages=[{"role": "user", "content": prompt}],
             )
             response_text = message.content[0].text.strip()
+            await log_llm_usage(
+                db, site_id=site_id, service="on_demand_enrichment",
+                model=CLAUDE_MODEL,
+                input_tokens=message.usage.input_tokens,
+                output_tokens=message.usage.output_tokens,
+            )
 
             # Parse JSON — strip markdown code fences if present
             if response_text.startswith("```"):

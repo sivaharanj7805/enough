@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { apiUrl } from '@/lib/api';
 
 const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://usetended.io';
-const ANON_TOKEN = '11111111-1111-1111-1111-111111111111';
+// Server-side only token for fetching public report metadata (not exposed to client)
+const REPORT_API_TOKEN = process.env.REPORT_API_TOKEN || '';
 
 interface AuditReportMeta {
   headline: string;
@@ -17,7 +18,7 @@ interface AuditReportMeta {
 async function fetchAuditMeta(siteId: string): Promise<AuditReportMeta | null> {
   try {
     const res = await fetch(apiUrl(`/sites/${siteId}/audit-report`), {
-      headers: { Authorization: `Bearer ${ANON_TOKEN}` },
+      headers: REPORT_API_TOKEN ? { Authorization: `Bearer ${REPORT_API_TOKEN}` } : {},
       next: { revalidate: 3600 },
     });
     if (!res.ok) return null;

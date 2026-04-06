@@ -12,6 +12,8 @@ from uuid import UUID
 import asyncpg
 import httpx
 
+from app.utils.ssrf_protection import validate_domain_not_internal
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +30,12 @@ async def discover_prospects_manual(
     for domain in domains:
         domain = domain.strip().lower().replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
         if not domain or len(domain) > 253:
+            continue
+        # SSRF protection: skip internal/private domains
+        try:
+            validate_domain_not_internal(domain, "prospect_domain")
+        except ValueError:
+            logger.warning("Skipping internal domain prospect: %s", domain)
             continue
         try:
             await db.execute(
@@ -112,6 +120,9 @@ async def find_contact_email(domain: str) -> str | None:
     """
     email_pattern = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
     generic_prefixes = {"noreply", "no-reply", "support", "info", "hello", "contact", "admin", "webmaster", "help"}
+
+    # SSRF protection: reject internal/private domains
+    validate_domain_not_internal(domain, "prospect_domain")
 
     found_emails: list[str] = []
     pages_to_check = [

@@ -14,12 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_current_user_id(authorization: Annotated[str, Header()]) -> str:
-    """Extract and validate user ID from the authorization header.
-
-    Phase 1: Accepts a Supabase JWT and extracts the `sub` claim.
-    Falls back to treating the raw token as user_id for local dev
-    when SUPABASE_URL is not configured.
-    """
+    """Extract and validate user ID from a Supabase JWT authorization header."""
     token = authorization.replace("Bearer ", "").strip()
     if not token:
         raise HTTPException(status_code=401, detail="Missing authorization token")
@@ -38,7 +33,8 @@ async def get_current_user_id(authorization: Annotated[str, Header()]) -> str:
                 token,
                 jwt_secret,
                 algorithms=["HS256"],
-                options={"verify_exp": True, "verify_aud": False},
+                audience="authenticated",
+                options={"verify_exp": True, "verify_aud": True},
             )
             user_id = decoded.get("sub")
             if user_id:
@@ -46,22 +42,9 @@ async def get_current_user_id(authorization: Annotated[str, Header()]) -> str:
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired — please sign in again")
     except jwt.InvalidTokenError:
-        # Not a valid JWT — fall through to UUID dev fallback
-        pass
+        raise HTTPException(status_code=401, detail="Invalid authorization token")
     except ImportError:
-        pass
-
-    # Dev-only fallback: treat token as raw user_id (UUID format check)
-    # NEVER allow this in production — require proper JWT validation
-    from app.config import get_settings
-    _settings = get_settings()
-    if _settings.environment != "production":
-        try:
-            UUID(token)  # Validate it's at least a valid UUID
-            logger.warning("Using dev UUID fallback for auth — NOT safe for production")
-            return token
-        except ValueError:
-            pass
+        raise HTTPException(status_code=500, detail="JWT library not available")
 
     raise HTTPException(status_code=401, detail="Invalid authorization token")
 
@@ -121,6 +104,28 @@ class SubscriptionGuard:
 require_oracle = SubscriptionGuard("oracle")
 require_consolidation = SubscriptionGuard("consolidation")
 require_site_limit = SubscriptionGuard("sites")
+require_posts = SubscriptionGuard("posts")
+
+
+async def require_paid_subscription(
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    db: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> None:
+    """Reject free-tier users from accessing paid features.
+
+    This is a lightweight guard that checks subscription status without
+    counting usage — use SubscriptionGuard for feature-specific limits.
+    """
+    from app.services.stripe_service import StripeService
+
+    service = StripeService()
+    sub = await service.get_subscription(db, user_id)
+    tier = sub.get("tier", "free")
+    if tier == "free":
+        raise HTTPException(
+            status_code=403,
+            detail="This feature requires a paid subscription. Please upgrade.",
+        )
 
 
 async def get_verified_site(

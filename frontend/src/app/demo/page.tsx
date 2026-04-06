@@ -22,12 +22,15 @@ import {
 } from 'lucide-react';
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '') + '/v1';
-const TOKEN = '11111111-1111-1111-1111-111111111111';
-const SITE_ID = '32296e5d-7924-4d9f-92b8-7f774c634fad';
+const DEMO_SITE_ID = process.env.DEMO_SITE_ID || '';
+const DEMO_TOKEN = process.env.DEMO_API_TOKEN || '';
 
 async function apiFetch<T>(path: string): Promise<T> {
+  if (!DEMO_TOKEN || !DEMO_SITE_ID) {
+    throw new Error('Demo not configured');
+  }
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${DEMO_TOKEN}`, 'Content-Type': 'application/json' },
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
@@ -166,12 +169,12 @@ export default function DemoPage() {
     async function load() {
       try {
         const [h, cl, pr, rc, cp, po] = await Promise.allSettled([
-          apiFetch<SiteHealth>(`/sites/${SITE_ID}/intelligence/health`),
-          apiFetch<Cluster[]>(`/sites/${SITE_ID}/intelligence/clusters`),
-          apiFetch<Problem[]>(`/sites/${SITE_ID}/intelligence/problems`),
-          apiFetch<{ recommendations: Rec[] }>(`/sites/${SITE_ID}/intelligence/recommendations`),
-          apiFetch<CannPair[]>(`/sites/${SITE_ID}/intelligence/cannibalization`),
-          apiFetch<{ posts: Post[] }>(`/sites/${SITE_ID}/posts?limit=500`),
+          apiFetch<SiteHealth>(`/sites/${DEMO_SITE_ID}/intelligence/health`),
+          apiFetch<Cluster[]>(`/sites/${DEMO_SITE_ID}/intelligence/clusters`),
+          apiFetch<Problem[]>(`/sites/${DEMO_SITE_ID}/intelligence/problems`),
+          apiFetch<{ recommendations: Rec[] }>(`/sites/${DEMO_SITE_ID}/intelligence/recommendations`),
+          apiFetch<CannPair[]>(`/sites/${DEMO_SITE_ID}/intelligence/cannibalization`),
+          apiFetch<{ posts: Post[] }>(`/sites/${DEMO_SITE_ID}/posts?limit=500`),
         ]);
         if (h.status === 'fulfilled') setHealth(h.value);
         if (cl.status === 'fulfilled') setClusters(cl.value);

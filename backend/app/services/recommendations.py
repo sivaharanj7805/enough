@@ -21,6 +21,7 @@ import asyncpg
 from anthropic import AsyncAnthropic
 
 from app.config import get_settings
+from app.utils.llm_cost import log_llm_usage
 from app.utils.rate_limiter import RateLimiter
 from app.utils.token_guard import truncate_for_api
 
@@ -84,6 +85,9 @@ class RecommendationEngine:
         settings = get_settings()
         self.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.rate_limiter = RateLimiter(requests_per_second=10)
+        # Set per-run for cost logging (populated by generate_for_site / callers)
+        self._cost_db: asyncpg.Connection | None = None
+        self._cost_site_id: UUID | None = None
 
     async def generate_for_site(
         self, db: asyncpg.Connection, site_id: UUID,
@@ -94,6 +98,8 @@ class RecommendationEngine:
         Returns number of recommendations generated.
         """
         logger.info("Generating recommendations for site %s", site_id)
+        self._cost_db = db
+        self._cost_site_id = site_id
 
         # Check which problems already have recommendations (crash resume)
         existing_problem_ids = set()
@@ -290,6 +296,8 @@ class RecommendationEngine:
 
         Called when a user clicks on a cannibalization pair.
         """
+        self._cost_db = db
+        self._cost_site_id = site_id
         pair = await db.fetchrow(
             """
             SELECT cp.*,
@@ -1164,6 +1172,13 @@ Respond in JSON:
                     system=system_prompt,
                     messages=[{"role": "user", "content": prompt}],
                 )
+                if self._cost_db:
+                    await log_llm_usage(
+                        self._cost_db, site_id=self._cost_site_id,
+                        service="recommendations", model=CLAUDE_MODEL,
+                        input_tokens=response.usage.input_tokens,
+                        output_tokens=response.usage.output_tokens,
+                    )
                 raw = response.content[0].text.strip()
                 return self._parse_json(raw)
             except Exception as e:

@@ -13,6 +13,7 @@ import asyncpg
 from openai import AsyncOpenAI
 
 from app.config import get_settings
+from app.utils.llm_cost import log_llm_usage
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -93,10 +94,14 @@ class EmbeddingPipeline:
                     input=texts,
                     dimensions=DIMENSIONS,
                 )
+                await log_llm_usage(
+                    db, site_id=site_id, service="embeddings",
+                    model=MODEL, input_tokens=response.usage.total_tokens,
+                )
             except Exception as e:
                 logger.error("OpenAI embedding API error: %s", e)
                 for _j, row in enumerate(batch):
-                    await self._generate_single(db, row)
+                    await self._generate_single(db, row, site_id=site_id)
                     total_generated += 1
                 continue
 
@@ -141,6 +146,10 @@ class EmbeddingPipeline:
                         dimensions=DIMENSIONS,
                     )
                     chunk_vectors.append(response.data[0].embedding)
+                    await log_llm_usage(
+                        db, site_id=site_id, service="embeddings_chunked",
+                        model=MODEL, input_tokens=response.usage.total_tokens,
+                    )
 
                 # Mean-pool all chunk vectors into one post embedding
                 vector = self._mean_vector(chunk_vectors)
@@ -173,7 +182,9 @@ class EmbeddingPipeline:
         )
         return total_generated
 
-    async def _generate_single(self, db: asyncpg.Connection, row: asyncpg.Record) -> None:
+    async def _generate_single(
+        self, db: asyncpg.Connection, row: asyncpg.Record, *, site_id: UUID | None = None,
+    ) -> None:
         """Generate embedding for a single post (fallback for batch failures)."""
         text = self._prepare_text(row.get("title"), row["body_text"])
 
@@ -185,6 +196,10 @@ class EmbeddingPipeline:
                 dimensions=DIMENSIONS,
             )
             vector = response.data[0].embedding
+            await log_llm_usage(
+                db, site_id=site_id, service="embeddings_single",
+                model=MODEL, input_tokens=response.usage.total_tokens,
+            )
 
             await db.execute(
                 """

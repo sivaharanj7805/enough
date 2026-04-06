@@ -40,7 +40,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.database import get_db, get_pool
-from app.dependencies import get_current_user_id, require_consolidation, require_oracle
+from app.dependencies import get_current_user_id, require_consolidation, require_oracle, require_paid_subscription
 
 limiter = Limiter(key_func=get_remote_address)
 from datetime import UTC
@@ -77,7 +77,7 @@ from app.models.schemas import (
 from app.utils.task_retry import with_retry
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_paid_subscription)])
 
 
 # ──────────────────────── Helpers ────────────────────────
@@ -791,7 +791,7 @@ async def generate_consolidation_draft(
 
     planner = ConsolidationPlanner()
     try:
-        result = await planner.generate_draft(db, cluster_id)
+        result = await planner.generate_draft(db, cluster_id, site_id=site_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

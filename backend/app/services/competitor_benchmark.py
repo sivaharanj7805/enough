@@ -16,6 +16,7 @@ from app.services.ai_citability import (
     compute_schema_score,
 )
 from app.services.sitemap import SitemapCrawler
+from app.utils.ssrf_protection import validate_domain_not_internal
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,9 @@ async def benchmark_competitor(
     Returns a comparison dict with our scores, their scores, and gaps.
     Caps at max_pages to keep cost/time reasonable.
     """
+    # SSRF protection: reject internal/private domains
+    validate_domain_not_internal(competitor_domain, "competitor_domain")
+
     logger.info("Benchmarking competitor %s for site %s (max %d pages)", competitor_domain, site_id, max_pages)
 
     # 1. Crawl competitor

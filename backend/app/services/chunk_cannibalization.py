@@ -19,6 +19,8 @@ import asyncpg
 import numpy as np
 import openai
 
+from app.utils.llm_cost import log_llm_usage
+
 logger = logging.getLogger(__name__)
 
 EMBED_MODEL = "text-embedding-3-small"
@@ -87,15 +89,15 @@ def split_into_chunks(body_html: str, title: str) -> list[str]:
     return chunks if chunks else [title]
 
 
-async def embed_chunks(texts: list[str], client: openai.AsyncOpenAI) -> list[list[float]]:
-    """Embed a list of text chunks. Returns list of embedding vectors."""
+async def embed_chunks(texts: list[str], client: openai.AsyncOpenAI) -> tuple[list[list[float]], int]:
+    """Embed a list of text chunks. Returns (embeddings, total_tokens)."""
     if not texts:
-        return []
+        return [], 0
     resp = await client.embeddings.create(
         model=EMBED_MODEL,
         input=[t[:1000] for t in texts],  # cap per chunk
     )
-    return [item.embedding for item in resp.data]
+    return [item.embedding for item in resp.data], resp.usage.total_tokens
 
 
 async def confirm_chunk_overlap(
@@ -179,7 +181,11 @@ async def confirm_chunk_overlap(
 
             # Embed all chunks for both posts in one batch
             all_chunks = chunks_a + chunks_b
-            embeddings = await embed_chunks(all_chunks, client)
+            embeddings, tokens_used = await embed_chunks(all_chunks, client)
+            await log_llm_usage(
+                db, site_id=site_id, service="chunk_cannibalization",
+                model=EMBED_MODEL, input_tokens=tokens_used,
+            )
 
             emb_a = np.array(embeddings[:len(chunks_a)])
             emb_b = np.array(embeddings[len(chunks_a):])

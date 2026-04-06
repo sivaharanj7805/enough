@@ -22,6 +22,8 @@ from uuid import UUID
 import asyncpg
 import numpy as np
 
+from app.utils.llm_cost import log_llm_usage
+
 logger = logging.getLogger(__name__)
 
 _STOP_WORDS = frozenset({
@@ -754,7 +756,10 @@ async def label_clusters_fast(db: asyncpg.Connection, site_id: UUID) -> int:
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
 
-async def _claude_label_cluster(client, titles: list[str], site_domain: str) -> str:
+async def _claude_label_cluster(
+    client, titles: list[str], site_domain: str,
+    *, db: asyncpg.Connection | None = None, site_id: UUID | None = None,
+) -> str:
     """Ask Claude to produce a 2-4 word topic label from post titles."""
     prompt = (
         f"These are {len(titles)} blog post titles from {site_domain}, all in the same topic cluster.\n\n"
@@ -771,6 +776,13 @@ async def _claude_label_cluster(client, titles: list[str], site_domain: str) -> 
         max_tokens=20,
         messages=[{"role": "user", "content": prompt}],
     )
+    if db:
+        await log_llm_usage(
+            db, site_id=site_id, service="cluster_labels",
+            model=CLAUDE_MODEL,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
     return response.content[0].text.strip().strip('"').strip("'")
 
 
@@ -819,7 +831,7 @@ async def backfill_claude_labels(db: asyncpg.Connection, site_id: UUID) -> int:
             continue
 
         try:
-            label = await _claude_label_cluster(client, title_list, domain)
+            label = await _claude_label_cluster(client, title_list, domain, db=db, site_id=site_id)
             if label and len(label) >= 3:
                 await db.execute(
                     "UPDATE clusters SET label = $1 WHERE id = $2",

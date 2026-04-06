@@ -33,24 +33,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [manualToken, setManualToken] = useState<string | null>(null);
 
   useEffect(() => {
-    // Demo mode: bypass Supabase auth with pipeline test user
-    const isDemo = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
-    if (isDemo) {
-      const demoUser = {
-        id: '11111111-1111-1111-1111-111111111111',
-        email: 'pipeline-test@usetended.io',
-        user_metadata: { name: 'Demo User' },
-      } as unknown as User;
-      const demoSession = {
-        access_token: '11111111-1111-1111-1111-111111111111',
-        user: demoUser,
-      } as unknown as Session;
-      setUser(demoUser);
-      setSession(demoSession);
-      setLoading(false);
-      return;
-    }
-
     // Hydrate manual token from localStorage (only on client, inside useEffect)
     const storedToken = localStorage.getItem('tended_access_token');
     if (storedToken) setManualToken(storedToken);

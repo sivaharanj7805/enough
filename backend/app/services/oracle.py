@@ -12,6 +12,7 @@ from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
 from app.config import get_settings
+from app.utils.llm_cost import log_llm_usage
 from app.utils.rate_limiter import RateLimiter
 from app.utils.token_guard import truncate_for_api
 
@@ -111,6 +112,11 @@ class PrePublishOracle:
         except Exception as e:
             logger.error("Failed to generate draft embedding: %s", e)
             return []
+
+        await log_llm_usage(
+            db, site_id=site_id, service="oracle_embedding",
+            model=EMBEDDING_MODEL, input_tokens=resp.usage.total_tokens,
+        )
 
         # Format as pgvector
         vec_str = "[" + ",".join(str(v) for v in draft_embedding) + "]"
@@ -326,7 +332,6 @@ Reply in this exact JSON format:
             raw = response.content[0].text.strip()
 
             # Parse JSON from Claude response
-            # Try to extract JSON from the response
             verdict = self._parse_json_response(raw)
         except Exception as e:
             logger.error("Claude oracle verdict failed: %s", e)
@@ -338,6 +343,15 @@ Reply in this exact JSON format:
                 "reasoning": f"AI analysis unavailable — please review manually before publishing. Error: {e}",
                 "recommendation": "Manual review required — check for existing similar posts before publishing.",
             }
+            response = None
+
+        if response:
+            await log_llm_usage(
+                db, site_id=site_id, service="oracle_verdict",
+                model=CLAUDE_MODEL,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+            )
 
         # Build final response
         return {

@@ -55,11 +55,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting Tended backend...")
 
-    # Validate production configuration at startup
+    # Validate production configuration at startup — fatal if misconfigured
     try:
         validate_production()
     except Exception as e:
         logger.error("Production validation failed: %s", e)
+        raise
 
     # Connect to database with a timeout so the app starts even if DB is slow
     worker_task = None

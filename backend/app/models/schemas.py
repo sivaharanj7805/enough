@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ──────────────────────────── Auth ────────────────────────────
 
@@ -97,6 +97,7 @@ class PostDetailResponse(PostResponse):
     cluster_name: str | None = None
     factor_scores: dict | None = None
     ai_citability_score: float | None = None
+    score_confidence: str | None = None  # "full", "partial", or "crawl_only"
     ga4_metrics: list["GA4MetricResponse"] = []
     gsc_metrics: list["GSCMetricResponse"] = []
     internal_links: list[InternalLinkSchema] = []
@@ -345,6 +346,7 @@ class OracleRequest(BaseModel):
     draft_text: str | None = None
     target_keyword: str | None = None
 
+    @field_validator("draft_text")
     @classmethod
     def validate_draft_length(cls, v: str | None) -> str | None:
         if v is not None and len(v) > 500_000:
@@ -505,17 +507,23 @@ class StewardProfile(BaseModel):
 
 class CheckoutRequest(BaseModel):
     """Stripe checkout request."""
-    price_id: str
+    price_id: str = Field(..., pattern=r"^(growth|scale|price_[a-zA-Z0-9_]+)$")
     success_url: str
     cancel_url: str
 
+    @field_validator("success_url", "cancel_url")
     @classmethod
     def validate_redirect_url(cls, url: str) -> str:
         """Ensure redirect URLs point to our own frontend."""
-        import os
-        frontend = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-        if not url.startswith(frontend):
-            raise ValueError(f"Redirect URL must start with {frontend}")
+        from urllib.parse import urlparse
+
+        from app.config import get_settings
+        settings = get_settings()
+        frontend = settings.frontend_url or "http://localhost:3000"
+        parsed = urlparse(url)
+        expected = urlparse(frontend)
+        if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
+            raise ValueError(f"Redirect URL must match {frontend} origin")
         return url
 
 
