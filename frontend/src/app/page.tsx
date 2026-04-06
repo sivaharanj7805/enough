@@ -104,9 +104,15 @@ function LandingPage() {
   const [annual, setAnnual] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
+  const normalizeUrl = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (!trimmed) return trimmed;
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  };
+
   const validate = useCallback(() => {
     const errs: { url?: string; email?: string } = {};
-    if (!URL_RE.test(url)) errs.url = 'Enter a valid URL starting with http:// or https://';
+    if (!URL_RE.test(normalizeUrl(url))) errs.url = 'Enter a valid URL starting with http:// or https://';
     if (!EMAIL_RE.test(email)) errs.email = 'Enter a valid email address';
     return errs;
   }, [url, email]);
@@ -119,11 +125,12 @@ function LandingPage() {
 
     setLoading(true);
     setErrors({});
+    const finalUrl = normalizeUrl(url);
     try {
       const res = await fetch(apiUrl('/sites/audit-report/pdf'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, email }),
+        body: JSON.stringify({ url: finalUrl, email }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -131,9 +138,9 @@ function LandingPage() {
       }
       // Extract domain for display
       try {
-        setSubmittedDomain(new URL(url).hostname);
+        setSubmittedDomain(new URL(finalUrl).hostname);
       } catch {
-        setSubmittedDomain(url);
+        setSubmittedDomain(finalUrl);
       }
       // Handle both 200 (PDF returned) and 202 (pipeline started)
       if (res.status === 200) {

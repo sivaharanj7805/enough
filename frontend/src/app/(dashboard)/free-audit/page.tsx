@@ -22,9 +22,15 @@ export default function FreeAuditPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submittedDomain, setSubmittedDomain] = useState('');
 
+  const normalizeUrl = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (!trimmed) return trimmed;
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  };
+
   const validate = () => {
     const errs: { url?: string; email?: string } = {};
-    if (!URL_RE.test(url)) errs.url = freeAudit.urlError;
+    if (!URL_RE.test(normalizeUrl(url))) errs.url = freeAudit.urlError;
     if (!EMAIL_RE.test(email)) errs.email = freeAudit.emailError;
     return errs;
   };
@@ -37,11 +43,12 @@ export default function FreeAuditPage() {
 
     setLoading(true);
     setErrors({});
+    const finalUrl = normalizeUrl(url);
     try {
       const res = await fetch(apiUrl('/sites/audit-report/pdf'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, email }),
+        body: JSON.stringify({ url: finalUrl, email }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -51,9 +58,9 @@ export default function FreeAuditPage() {
         throw new Error(data?.message || freeAudit.genericError);
       }
       try {
-        setSubmittedDomain(new URL(url).hostname);
+        setSubmittedDomain(new URL(finalUrl).hostname);
       } catch {
-        setSubmittedDomain(url);
+        setSubmittedDomain(finalUrl);
       }
       setSubmitted(true);
     } catch (err: unknown) {
