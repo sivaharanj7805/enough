@@ -1,4 +1,5 @@
 const isDev = process.env.NODE_ENV !== 'production';
+const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -10,6 +11,16 @@ const nextConfig = {
   typescript: {
     // Still hard-fail on real type errors.
     ignoreBuildErrors: false,
+  },
+
+  // Proxy /api/* to backend — mirrors vercel.json rewrites for local dev
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/v1/:path*`,
+      },
+    ];
   },
 
   // Security headers applied to all routes

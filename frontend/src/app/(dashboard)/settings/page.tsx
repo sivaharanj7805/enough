@@ -6,7 +6,7 @@ import { useSite } from '@/lib/hooks/useSite';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { apiFetch, apiUrl } from '@/lib/api';
+import { apiFetch, apiUrl, backendUrl } from '@/lib/api';
 import { CheckCircle, XCircle, RefreshCw, Settings, Globe, Bell, User, Search, TrendingUp, Link2 } from 'lucide-react';
 
 interface GoogleStatus { connected: boolean; gsc_site_url: string | null; ga4_property_id: string | null; last_gsc_sync: string | null; last_ga4_sync: string | null }
@@ -79,7 +79,7 @@ export default function SettingsPage() {
     if (e) toast(`Google connection failed: ${e}`, { type: 'error' });
   }, [siteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleConnect = () => { if (siteId) window.location.href = apiUrl(`/sites/${siteId}/google/connect`); };
+  const handleConnect = () => { if (siteId) window.location.href = backendUrl(`/sites/${siteId}/google/connect`); };
 
   const handleDisconnect = async () => {
     if (!siteId || !confirm('Disconnect Google account? This will stop data syncing.')) return;

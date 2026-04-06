@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { apiUrl } from '@/lib/api';
+import { backendUrl } from '@/lib/api';
 
 const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? 'https://usetended.io';
 // Server-side only token for fetching public report metadata (not exposed to client)
@@ -17,7 +17,7 @@ interface AuditReportMeta {
 
 async function fetchAuditMeta(siteId: string): Promise<AuditReportMeta | null> {
   try {
-    const res = await fetch(apiUrl(`/sites/${siteId}/audit-report`), {
+    const res = await fetch(backendUrl(`/sites/${siteId}/audit-report`), {
       headers: REPORT_API_TOKEN ? { Authorization: `Bearer ${REPORT_API_TOKEN}` } : {},
       next: { revalidate: 3600 },
     });
@@ -62,7 +62,7 @@ export async function generateMetadata({
       type: 'article',
       images: [
         {
-          url: apiUrl(`/sites/${siteId}/og-image`),
+          url: backendUrl(`/sites/${siteId}/og-image`),
           width: 1200,
           height: 630,
           alt: title,
@@ -73,7 +73,7 @@ export async function generateMetadata({
       card: 'summary_large_image',
       title,
       description,
-      images: [apiUrl(`/sites/${siteId}/og-image`)],
+      images: [backendUrl(`/sites/${siteId}/og-image`)],
     },
     alternates: {
       canonical: reportUrl,

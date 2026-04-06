@@ -207,7 +207,7 @@ function LandingPage() {
     setErrors({});
     const finalUrl = normalizeUrl(url);
     try {
-      const res = await fetch(apiUrl('/sites/audit-report/pdf'), {
+      const res = await fetch('/api/sites/audit-report/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: finalUrl, email }),

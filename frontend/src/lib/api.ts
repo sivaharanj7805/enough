@@ -1,13 +1,11 @@
-const API_BASE = (() => {
-  const url = process.env.NEXT_PUBLIC_API_URL;
-  if (!url) {
-    if (typeof window !== 'undefined') {
-      console.error('NEXT_PUBLIC_API_URL is not set — API calls will fail');
-    }
-    return 'http://localhost:8000/v1';
-  }
-  return url + '/v1';
-})();
+// Use the /api/ proxy path which Next.js rewrites (dev) and Vercel rewrites (prod)
+// route to the backend. This avoids CORS and CSP issues entirely since the browser
+// sees all requests as same-origin.
+const API_BASE = '/api';
+
+// Absolute backend URL — only for server-side fetches, OAuth redirects, and OG image URLs
+// where a relative path won't work.
+const BACKEND_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/v1';
 
 export class ApiError extends Error {
   status: number;
@@ -55,4 +53,9 @@ export async function apiFetch<T>(
 
 export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+/** Absolute backend URL for OAuth redirects, server-side fetches, and OG images. */
+export function backendUrl(path: string): string {
+  return `${BACKEND_URL}${path}`;
 }

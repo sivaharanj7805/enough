@@ -18,7 +18,7 @@ describe('apiFetch', () => {
 
     await apiFetch('/sites');
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/v1/sites'),
+      expect.stringContaining('/api/sites'),
       expect.any(Object)
     );
   });
@@ -107,13 +107,13 @@ describe('ApiError', () => {
 });
 
 describe('apiUrl', () => {
-  it('builds full URL with v1 prefix', () => {
+  it('builds URL with /api prefix', () => {
     const url = apiUrl('/sites');
-    expect(url).toContain('/v1/sites');
+    expect(url).toBe('/api/sites');
   });
 
   it('handles paths with query params', () => {
     const url = apiUrl('/sites?limit=10');
-    expect(url).toContain('/v1/sites?limit=10');
+    expect(url).toBe('/api/sites?limit=10');
   });
 });
