@@ -16,6 +16,8 @@ export interface Site {
   gsc_site_url: string | null;
   last_crawl_at: string | null;
   last_analytics_sync_at: string | null;
+  recrawl_schedule: string | null;
+  digest_frequency: string | null;
   created_at: string;
   updated_at: string;
 }

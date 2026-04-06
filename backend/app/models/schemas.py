@@ -50,6 +50,8 @@ class SiteResponse(BaseModel):
     gsc_site_url: str | None
     last_crawl_at: datetime | None
     last_analytics_sync_at: datetime | None
+    recrawl_schedule: str | None = None
+    digest_frequency: str | None = None
     created_at: datetime
     updated_at: datetime
 

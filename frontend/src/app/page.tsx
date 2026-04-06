@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Spinner } from '@/components/ui/Spinner';
 import { apiUrl } from '@/lib/api';
+import { freeAudit } from '@/lib/copy';
 import Link from 'next/link';
 import {
   Shield,
@@ -234,21 +235,22 @@ function LandingPage({ onAuditSubmitted }: { onAuditSubmitted: () => void }) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.message || 'Something went wrong. Please try again.');
+        if (res.status === 429) {
+          throw new Error(freeAudit.rateLimitError);
+        }
+        throw new Error(data?.detail || data?.message || 'Something went wrong. Please try again.');
       }
       // Extract domain for display
-      try {
-        setSubmittedDomain(new URL(finalUrl).hostname);
-      } catch {
-        setSubmittedDomain(finalUrl);
-      }
+      let domain = finalUrl;
+      try { domain = new URL(finalUrl).hostname; } catch { /* use finalUrl */ }
+      setSubmittedDomain(domain);
       // 200 with PDF binary = existing site, trigger download
       if (res.status === 200 && res.headers.get('content-type')?.includes('application/pdf')) {
         const blob = await res.blob();
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = blobUrl;
-        a.download = `tended-audit-${submittedDomain || 'report'}.pdf`;
+        a.download = `tended-audit-${domain}.pdf`;
         document.body.appendChild(a);
         a.click();
         a.remove();

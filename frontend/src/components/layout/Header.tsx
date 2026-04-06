@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { ChevronRight, ChevronDown, RefreshCw, Loader2 } from 'lucide-react';
 import { useSite } from '@/lib/hooks/useSite';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useToast } from '@/components/ui/Toast';
 import { apiFetch } from '@/lib/api';
 
 /* ─── Route → label map for breadcrumbs ──────── */
@@ -102,6 +103,7 @@ export function Header() {
   const pathname = usePathname();
   const { currentSite } = useSite();
   const { token } = useAuth();
+  const { toast } = useToast();
   const [reanalyzing, setReanalyzing] = useState(false);
 
   const breadcrumbs = useMemo(() => buildBreadcrumbs(pathname), [pathname]);
@@ -113,8 +115,9 @@ export function Header() {
     setReanalyzing(true);
     try {
       await apiFetch(`/sites/${currentSite.id}/pipeline`, { method: 'POST', token });
+      toast('Re-analysis started. This may take 10-40 minutes.', { type: 'success' });
     } catch (err) {
-      console.error('Re-analysis failed:', err);
+      toast(err instanceof Error ? err.message : 'Failed to start re-analysis.', { type: 'error' });
     } finally {
       setReanalyzing(false);
     }

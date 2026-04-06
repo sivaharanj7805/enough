@@ -59,7 +59,13 @@ export default function SettingsPage() {
   const [digest, setDigest] = useState('Weekly');
   const [savingNotif, setSavingNotif] = useState(false);
 
-  useEffect(() => { if (currentSite?.domain) setSiteUrl(currentSite.domain); }, [currentSite?.domain]);
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  useEffect(() => {
+    if (currentSite?.domain) setSiteUrl(currentSite.domain);
+    if (currentSite?.cms_type) setCmsType(capitalize(currentSite.cms_type));
+    if (currentSite?.recrawl_schedule) setRecrawl(capitalize(currentSite.recrawl_schedule));
+    if (currentSite?.digest_frequency) setDigest(capitalize(currentSite.digest_frequency));
+  }, [currentSite?.domain, currentSite?.cms_type, currentSite?.recrawl_schedule, currentSite?.digest_frequency]);
 
   const fetchStatus = async () => {
     if (!siteId) return;
@@ -102,14 +108,18 @@ export default function SettingsPage() {
 
   const saveGSCUrl = async () => {
     if (!siteId || !gscUrl) return;
-    await apiFetch(`/sites/${siteId}/gsc/site-url`, { method: 'PATCH', token, body: JSON.stringify({ gsc_site_url: gscUrl }) });
-    toast('GSC site URL saved', { type: 'success' }); await fetchStatus();
+    try {
+      await apiFetch(`/sites/${siteId}/gsc/site-url`, { method: 'PATCH', token, body: JSON.stringify({ gsc_site_url: gscUrl }) });
+      toast('GSC site URL saved', { type: 'success' }); await fetchStatus();
+    } catch (e: unknown) { toast(e instanceof Error ? e.message : 'Failed to save GSC URL', { type: 'error' }); }
   };
 
   const saveGA4Id = async () => {
     if (!siteId || !ga4Id) return;
-    await apiFetch(`/sites/${siteId}/ga4/property-id`, { method: 'PATCH', token, body: JSON.stringify({ property_id: ga4Id }) });
-    toast('GA4 property ID saved', { type: 'success' }); await fetchStatus();
+    try {
+      await apiFetch(`/sites/${siteId}/ga4/property-id`, { method: 'PATCH', token, body: JSON.stringify({ property_id: ga4Id }) });
+      toast('GA4 property ID saved', { type: 'success' }); await fetchStatus();
+    } catch (e: unknown) { toast(e instanceof Error ? e.message : 'Failed to save GA4 property ID', { type: 'error' }); }
   };
 
   const syncData = async (type: 'gsc' | 'ga4' | 'all') => {

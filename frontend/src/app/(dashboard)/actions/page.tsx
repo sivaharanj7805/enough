@@ -7,6 +7,7 @@ import { useSite } from '@/lib/hooks/useSite';
 import { useRecommendations } from '@/lib/hooks/useApi';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch, apiUrl } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 import { mutate } from 'swr';
 import { empty, recType as REC_TYPE_LABELS, EMPTY_STATES, BUTTON_LABELS } from '@/lib/copy';
 import type { Recommendation } from '@/lib/types';
@@ -101,6 +102,7 @@ function ActionCard({ rec, siteId, token, expanded, onToggle, onStatusUpdate, cm
   onToggle: () => void; onStatusUpdate: (id: string, next: string, prev: string, label: string) => void; cmsType?: string; highlighted?: boolean;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (highlighted && cardRef.current) {
@@ -123,7 +125,7 @@ function ActionCard({ rec, siteId, token, expanded, onToggle, onStatusUpdate, cm
       const r = await apiFetch<{ guidance?: Record<string, unknown> }>(`/sites/${siteId}/intelligence/recommendations/${rec.id}/enrich`, { method: 'POST', token });
       if (r.guidance) setEnriched(r.guidance);
       mutate((k: unknown) => Array.isArray(k) && typeof k[0] === 'string' && k[0].includes('recommendations'));
-    } catch { /* noop */ } finally { setEnriching(false); }
+    } catch (err) { toast(err instanceof Error ? err.message : 'Failed to enrich recommendation.', { type: 'error' }); } finally { setEnriching(false); }
   }, [siteId, rec.id, token]);
 
   const changeStatus = useCallback((next: string, label: string) => onStatusUpdate(rec.id, next, rec.status, label), [rec.id, rec.status, onStatusUpdate]);
@@ -218,7 +220,20 @@ function ActionCard({ rec, siteId, token, expanded, onToggle, onStatusUpdate, cm
             <div className="flex flex-wrap gap-2">
               {isWordPress && hasMeta && <PushToWPBtn siteId={siteId} postId={rec.post_id} title={(ai.suggested_title || ai.new_title || ai.suggested_new_title) as string | undefined} metaDescription={ai.meta_description as string | undefined} token={token} />}
               {isMerge && clusterId && <Link href={`/consolidation/${clusterId}`} className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#f97316]/10 text-[#f97316] hover:bg-[#f97316]/20 transition-colors"><Layers size={12} /> Start Consolidation</Link>}
-              {isMerge && clusterId && <a href={apiUrl(`/sites/${siteId}/intelligence/consolidation/${clusterId}/redirect-map?format=htaccess`)} download className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#64748b]/10 text-[#94a3b8] hover:bg-[#64748b]/20 transition-colors"><FileText size={12} /> Download Redirects</a>}
+              {isMerge && clusterId && <button onClick={async () => {
+                try {
+                  const res = await fetch(apiUrl(`/sites/${siteId}/intelligence/consolidation/${clusterId}/redirect-map?format=htaccess`), {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  });
+                  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+                  const blob = await res.blob();
+                  const blobUrl = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = blobUrl; a.download = 'redirects.htaccess';
+                  document.body.appendChild(a); a.click(); a.remove();
+                  URL.revokeObjectURL(blobUrl);
+                } catch (err) { toast(err instanceof Error ? err.message : 'Failed to download redirects.', { type: 'error' }); }
+              }} className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#64748b]/10 text-[#94a3b8] hover:bg-[#64748b]/20 transition-colors"><FileText size={12} /> Download Redirects</button>}
             </div>
           )}
           {!enriched && !enrichedData?.ai_enriched && (
@@ -271,6 +286,7 @@ export default function ActionsPage() {
   const highlightId = searchParams.get('highlight');
   const siteId = currentSite?.id ?? null;
   const { data: recsData, isLoading } = useRecommendations(siteId);
+  const { toast } = useToast();
 
   const [statusFilter, setStatusFilter] = useState<StatusKey | 'all'>('pending');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -344,7 +360,7 @@ export default function ActionsPage() {
     try {
       await apiFetch(`/sites/${siteId}/intelligence/recommendations/${recId}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }), token: session?.access_token });
       mutate((k: unknown) => Array.isArray(k) && typeof k[0] === 'string' && k[0].includes('recommendations'));
-    } catch { return; }
+    } catch (err) { toast(err instanceof Error ? err.message : 'Failed to update status.', { type: 'error' }); return; }
     if (next === 'completed' || next === 'dismissed') {
       const tid = setTimeout(() => setUndoAction(null), 5000);
       undoRef.current = tid;
@@ -359,7 +375,7 @@ export default function ActionsPage() {
     try {
       await apiFetch(`/sites/${siteId}/intelligence/recommendations/${undoAction.recId}/status`, { method: 'PATCH', body: JSON.stringify({ status: undoAction.prev }), token: session?.access_token });
       mutate((k: unknown) => Array.isArray(k) && typeof k[0] === 'string' && k[0].includes('recommendations'));
-    } catch { /* noop */ }
+    } catch (err) { toast(err instanceof Error ? err.message : 'Failed to undo.', { type: 'error' }); }
     setUndoAction(null);
   }, [undoAction, siteId, session?.access_token]);
 

@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { useSite } from '@/lib/hooks/useSite';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 
 interface StreakData {
   current_streak: number;
@@ -25,6 +26,7 @@ const MILESTONE_COLORS: Record<string, { bg: string; text: string; label: string
 export function StreakCard() {
   const { currentSite } = useSite();
   const { session } = useAuth();
+  const { toast } = useToast();
   const token =
     session?.access_token ??
     (typeof window !== 'undefined' ? localStorage.getItem('tended_access_token') : null);
@@ -55,8 +57,8 @@ export function StreakCard() {
       );
       setStreak(result);
       setJustCheckedIn(true);
-    } catch {
-      // silent
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Check-in failed. Try again.', { type: 'error' });
     }
     setCheckingIn(false);
   };

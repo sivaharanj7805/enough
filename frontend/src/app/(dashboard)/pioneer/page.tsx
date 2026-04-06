@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   ArrowRight, RotateCcw, ChevronDown, ChevronRight, Download,
-  Send, Plus, Trash2, GripVertical, Check, Minus,
+  Plus, Trash2, GripVertical, Check, Minus,
 } from 'lucide-react';
 import { useSite } from '@/lib/hooks/useSite';
 import { useClusters } from '@/lib/hooks/useApi';
@@ -152,7 +152,7 @@ function BuildCanvas({ idea, cluster, clusters, onExport }: {
 }) {
   const [activeSection, setActive] = useState<SectionKey>('title');
   const [openSet, setOpenSet] = useState<Set<SectionKey>>(() => new Set<SectionKey>(['title']));
-  const [askInput, setAskInput] = useState('');
+  // askInput removed — no backend endpoint for in-canvas questions yet
   const [bs, setBs] = useState<BuildState>({
     title: '', angle: '', outline: [{ id: mkId(), text: '' }], data: '',
     linksTo: cluster ? [
@@ -286,12 +286,6 @@ function BuildCanvas({ idea, cluster, clusters, onExport }: {
               {cluster.description && <p className="text-xs text-brand-text-muted">{cluster.description}</p>}
             </Card>
           )}
-        </div>
-        <div className="border-t border-[#1e293b] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <input type="text" value={askInput} onChange={(e) => setAskInput(e.target.value)} placeholder={copy.askPlaceholder} aria-label={copy.askPlaceholder} className="flex-1 rounded-lg border border-[#1e293b] bg-[#0f172a] px-3 py-1.5 text-xs text-brand-text placeholder:text-[#475569] focus:border-[#3b82f6] focus:outline-none transition-colors" />
-            <button className="rounded-lg bg-[#1e293b] p-1.5 text-[#475569] hover:text-brand-text transition-colors" aria-label="Send question"><Send size={12} /></button>
-          </div>
         </div>
       </div>
     </div>

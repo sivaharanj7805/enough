@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSite } from '@/lib/hooks/useSite';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { apiFetch } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import {
@@ -67,6 +68,7 @@ function Badge({ c, children }: { c: string; children: React.ReactNode }) {
 
 // ─── Detail Panel ───────────────────────────────────
 function DetailPanel({ d, siteId, token }: { d: BriefDetail; siteId: string; token: string | null }) {
+  const { toast } = useToast();
   const [refineInput, setRefineInput] = useState('');
   const [userNotes, setUserNotes] = useState('');
   const [refining, setRefining] = useState(false);
@@ -85,7 +87,7 @@ function DetailPanel({ d, siteId, token }: { d: BriefDetail; siteId: string; tok
       const nid = res?.brief_id ?? res?.id;
       if (nid) setRd(await apiFetch<BriefDetail>(`/sites/${siteId}/intelligence/briefs/${nid}`, { token: token ?? undefined }));
       setRefineInput('');
-    } catch { /* silent */ } finally { setRefining(false); }
+    } catch (err) { toast(err instanceof Error ? err.message : 'Failed to refine brief.', { type: 'error' }); } finally { setRefining(false); }
   };
 
   const oh = (s: OutlineItem) => s.heading ?? s.text ?? '';
@@ -212,6 +214,7 @@ function BriefCard({ brief: b, siteId, token, onDelete, autoExpand }: {
   brief: BriefSummary; siteId: string; token: string | null;
   onDelete: (id: string) => void; autoExpand?: boolean;
 }) {
+  const { toast } = useToast();
   const [expanded, setExpanded] = useState(autoExpand ?? false);
   const [detail, setDetail] = useState<BriefDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -227,7 +230,7 @@ function BriefCard({ brief: b, siteId, token, onDelete, autoExpand }: {
     if (autoExpand && !detail && siteId && token) {
       setLoadingDetail(true);
       apiFetch<BriefDetail>(`/sites/${siteId}/intelligence/briefs/${b.id}`, { token })
-        .then(setDetail).catch(() => {}).finally(() => setLoadingDetail(false));
+        .then(setDetail).catch(() => { toast('Failed to load brief details.', { type: 'error' }); }).finally(() => setLoadingDetail(false));
     }
   }, [autoExpand, b.id, detail, siteId, token]);
 
@@ -239,7 +242,7 @@ function BriefCard({ brief: b, siteId, token, onDelete, autoExpand }: {
     if (!detail) {
       setLoadingDetail(true);
       try { setDetail(await apiFetch<BriefDetail>(`/sites/${siteId}/intelligence/briefs/${b.id}`, { token: token ?? undefined })); }
-      catch { /* no detail */ } finally { setLoadingDetail(false); }
+      catch { toast('Failed to load brief details.', { type: 'error' }); } finally { setLoadingDetail(false); }
     }
   };
   const doDelete = async () => {

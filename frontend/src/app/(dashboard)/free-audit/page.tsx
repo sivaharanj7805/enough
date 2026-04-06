@@ -141,7 +141,7 @@ export default function FreeAuditPage() {
         if (res.status === 429) {
           throw new Error(freeAudit.rateLimitError);
         }
-        throw new Error(data?.message || freeAudit.genericError);
+        throw new Error(data?.detail || data?.message || freeAudit.genericError);
       }
       let domain = finalUrl;
       try { domain = new URL(finalUrl).hostname; } catch { /* use finalUrl */ }
